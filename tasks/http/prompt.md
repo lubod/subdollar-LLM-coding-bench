@@ -1,5 +1,13 @@
 You are building an RFC-compliant HTTP/1.1 web server from scratch.
 
+### Software Engineering (SWE) & Code Quality Standards
+Your implementation must meet high professional software engineering standards:
+1. **Clean Architecture & Modularity**: Structure code with clear separation of concerns (TCP listener, HTTP request/header parser, router/handler mapping, file I/O layer, and response formatter). Avoid monolithic scripts or hardcoded shortcuts.
+2. **Robust Concurrency & Thread Safety**: Ensure the server can handle multiple concurrent HTTP client requests without race conditions, deadlocks, or socket blocking.
+3. **Resilient Error Handling**: Safely handle malformed HTTP requests, missing headers, large payloads, file permission errors, non-existent paths, and sudden client disconnects without crashing or leaking file descriptors.
+4. **Idiomatic Style & Best Practices**: Write clean, idiomatic code adhering to standard conventions for your chosen language (e.g., Go, Rust, Python, Node.js).
+5. **Production Readiness**: Code should be production-grade, maintainable, performant, and robust under load.
+
 ### Constraints & Language Freedom
 - You are free to choose ANY programming language (Go, Python, Rust, Node.js, C, etc.).
 - All code must reside in the current workspace.
@@ -30,4 +38,4 @@ Your server must listen on port 8080 and implement HTTP/1.1:
 1. The server will be verified with a test suite exercising all status codes, headers, and file uploads/downloads.
 2. The server will be stress-tested with `wrk -t2 -c20 -d3s http://localhost:8080/`.
 
-Test your server thoroughly before finishing!
+Test your server thoroughly with `curl` before finishing!

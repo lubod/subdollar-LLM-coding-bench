@@ -1,5 +1,13 @@
 You are building an in-memory Redis-compatible server from scratch.
 
+### Software Engineering (SWE) & Code Quality Standards
+Your implementation must meet high professional software engineering standards:
+1. **Clean Architecture & Modularity**: Structure code with clear separation of concerns (TCP networking, RESP protocol serialization/deserialization, in-memory data store, and command dispatch). Avoid monolithic scripts or hardcoded shortcuts.
+2. **Robust Concurrency & Thread Safety**: Ensure thread-safe access to the shared key-value store using appropriate concurrency primitives (e.g., mutexes, sync.Map, RwLocks, or actor/channel models). The server must handle multiple concurrent client connections without race conditions or deadlocks.
+3. **Resilient Error Handling**: Safely handle unexpected socket EOFs, client disconnects, malformed RESP wire inputs, boundary conditions, and invalid command arguments without crashing or leaking memory/file descriptors.
+4. **Idiomatic Style & Best Practices**: Write clean, idiomatic code adhering to standard conventions for your chosen language (e.g., Go formatting & error checking, Rust Result/Error idioms, Python typing & structure).
+5. **Production Readiness**: Code should be production-grade, maintainable, performant, and self-contained.
+
 ### Constraints & Language Freedom
 - You are free to choose ANY programming language of your choice (Go, Python, Rust, Node.js, C, C++, etc.).
 - Choose the language and design that maximizes reliability, simplicity, and throughput.
@@ -37,4 +45,4 @@ Your server must accept TCP connections on port 6379 and parse the Redis Seriali
 1. Your server will be tested by a test harness sending raw TCP protocol commands and comparing responses against real Redis.
 2. Your server will undergo a concurrency and throughput test using `redis-benchmark -p 6379 -n 5000 -c 10 -t get,set -q`.
 
-Test your server thoroughly before finishing!
+Test your server thoroughly with `redis-cli -p 6379` before finishing!
