@@ -28,7 +28,7 @@ use crate::report::{
     BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, PublishResult, RunArchiver,
     RunManifest, RunPublisher, RunTokenUsage, SummaryGenerator,
 };
-use crate::sandbox::{OmpRunner, OmpSessionStats, SandboxManager};
+use crate::sandbox::{AgentExecutionLimits, OmpRunner, OmpSessionStats, SandboxManager};
 use crate::verifier::{HttpVerifier, RedisVerifier};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,6 +73,8 @@ pub struct RunRequest {
     pub eval_only: bool,
     #[serde(default)]
     pub effort: Option<String>,
+    #[serde(default)]
+    pub timeout_min: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -419,12 +421,19 @@ async fn start_run(
             let _ = tx_log.send(formatted);
         };
 
+        let timeout_m = req.timeout_min.unwrap_or(15);
+        let limits = AgentExecutionLimits {
+            max_turns: if req.max_turns > 0 { Some(req.max_turns) } else { None },
+            max_budget_usd: if req.budget_usd > 0.0 { Some(req.budget_usd) } else { None },
+            timeout_seconds: if timeout_m > 0 { Some(timeout_m * 60) } else { None },
+        };
+
         log(&mut console_buffer, format!("========================================================="));
         log(&mut console_buffer, format!(">>> Benchmark Run: {}", run_id));
-        log(&mut console_buffer, format!("    Model:  {}", req.model));
-        log(&mut console_buffer, format!("    Effort: {}", effort_setting));
-        log(&mut console_buffer, format!("    Task:   {}", req.task));
-        log(&mut console_buffer, format!("    Budget: ${:.2} USD | Max Turns: {}", req.budget_usd, req.max_turns));
+        log(&mut console_buffer, format!("    Model:   {}", req.model));
+        log(&mut console_buffer, format!("    Effort:  {}", effort_setting));
+        log(&mut console_buffer, format!("    Task:    {}", req.task));
+        log(&mut console_buffer, format!("    Budget:  ${:.2} USD | Max Turns: {} | Timeout: {} min", req.budget_usd, req.max_turns, timeout_m));
         log(&mut console_buffer, format!("========================================================="));
 
         let effective_api_key = req.api_key
@@ -478,7 +487,7 @@ async fn start_run(
                 &prompt_content,
                 work_path,
                 effective_api_key.as_deref(),
-                req.max_turns,
+                limits,
                 Some(&effort_setting),
                 move |line| {
                     let ts = Utc::now().format("%H:%M:%S").to_string();

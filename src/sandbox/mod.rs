@@ -2,4 +2,4 @@ pub mod docker;
 pub mod omp;
 
 pub use docker::SandboxManager;
-pub use omp::{OmpRunner, OmpSessionStats};
+pub use omp::{AgentExecutionLimits, OmpRunner, OmpSessionStats};

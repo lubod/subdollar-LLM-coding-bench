@@ -33,6 +33,10 @@ pub enum Commands {
         #[arg(long, default_value_t = 0.50)]
         budget_usd: f64,
 
+        /// Maximum execution time in minutes before stopping agent (e.g. 15 for 15m)
+        #[arg(long, default_value_t = 15)]
+        timeout_min: u64,
+
         /// OpenRouter API Key (optional, defaults to OPENROUTER_API_KEY env var)
         #[arg(long, env = "OPENROUTER_API_KEY")]
         api_key: Option<String>,

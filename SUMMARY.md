@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-04 11:57:06 UTC*
+*Last Updated: 2026-09-04 11:59:35 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -17,10 +17,7 @@
 
 | Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 🥇 1 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | Redis | `Python` | 100% (4/4) | 25869 req/s | $0.0000 | **10000.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085143/) |
-| 🥈 2 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | HTTP/1.1 | `Python` | 100% (5/5) | 22195 req/s | $0.0080 | **125.2** pts/¢ | [Inspect](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_090340/) |
-| 🥉 3 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | Redis | `Rust` | 100% (4/4) | 74405 req/s | $0.0107 | **93.4** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848/) |
-| 4 | `openrouter/qwen/qwen3.8-flash` | `max` | Redis | `Rust` | 100% (4/4) | 61463 req/s | $0.4279 | **2.3** pts/¢ | [Inspect](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
+| 🥇 1 | `openrouter/qwen/qwen3.8-flash` | `max` | Redis | `Rust` | 100% (4/4) | 61463 req/s | $0.4279 | **2.3** pts/¢ | [Inspect](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
 
 ---
 
@@ -34,8 +31,6 @@ The candidate LLM is instructed to build a production-grade, concurrent Redis cl
 
 | Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Python` | 100% | 25869 req/s | $0.0000 | 10000.0 pts/¢ | [runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085143/](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085143/) |
-| `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Rust` | 100% | 74405 req/s | $0.0107 | 93.4 pts/¢ | [runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848/](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848/) |
 | `openrouter/qwen/qwen3.8-flash` | `max` | `Rust` | 100% | 61463 req/s | $0.4279 | 2.3 pts/¢ | [runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
 
 ---
@@ -46,10 +41,6 @@ The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server fr
 - **Features**: `GET /` (200 OK), `404 Not Found Handling`, `GET /echo/{str}` with dynamic `Content-Length`, `GET /user-agent` header reflection, `POST` and `GET /files/{filename}` file persistence, HTTP/1.1 socket keep-alive reuse.
 - **Packaging Freedom**: Working `Dockerfile` or executable `./start.sh`.
 - **Verification**: 5-stage automated conformance suite + `wrk -t4 -c20 -d5s http://127.0.0.1:8080/`.
-
-| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Python` | 100% | 22195 req/s | $0.0080 | 125.2 pts/¢ | [runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_090340/](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_090340/) |
 
 ---
 
@@ -67,8 +58,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `aa73174` (branch `master`) |
-| **Benchmark Captured** | 2026-09-04T11:57:06.350076639+00:00 |
+| **Git Baseline** | Commit `fda675c` (branch `master`) |
+| **Benchmark Captured** | 2026-09-04T11:59:35.090973447+00:00 |
 
 ---
 

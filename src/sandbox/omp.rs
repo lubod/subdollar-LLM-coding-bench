@@ -12,6 +12,23 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
 
+#[derive(Debug, Clone, Copy)]
+pub struct AgentExecutionLimits {
+    pub max_turns: Option<u32>,
+    pub max_budget_usd: Option<f64>,
+    pub timeout_seconds: Option<u64>,
+}
+
+impl Default for AgentExecutionLimits {
+    fn default() -> Self {
+        Self {
+            max_turns: Some(15),
+            max_budget_usd: Some(0.50),
+            timeout_seconds: Some(900), // 15 minutes default
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
 pub struct OmpSessionStats {
@@ -30,10 +47,10 @@ impl OmpRunner {
         prompt: &str,
         workdir: &Path,
         api_key: Option<&str>,
-        max_turns: u32,
+        limits: AgentExecutionLimits,
         effort: Option<&str>,
     ) -> Result<OmpSessionStats> {
-        Self::run_agent_with_logger(model, prompt, workdir, api_key, max_turns, effort, |line| {
+        Self::run_agent_with_logger(model, prompt, workdir, api_key, limits, effort, |line| {
             println!("{}", line);
         })
     }
@@ -43,14 +60,14 @@ impl OmpRunner {
         prompt: &str,
         workdir: &Path,
         api_key: Option<&str>,
-        _max_turns: u32,
+        limits: AgentExecutionLimits,
         effort: Option<&str>,
         mut log_fn: F,
     ) -> Result<OmpSessionStats>
     where
         F: FnMut(String) + Send + 'static,
     {
-        info!("Launching OMP agent with model: {}, effort: {:?}", model, effort);
+        info!("Launching OMP agent with model: {}, effort: {:?}, limits: {:?}", model, effort, limits);
 
         let start_time = SystemTime::now();
 
@@ -63,6 +80,10 @@ impl OmpRunner {
             .env("PI_NO_PTY", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        if let Some(max_secs) = limits.timeout_seconds {
+            cmd.arg(format!("--max-time={}s", max_secs));
+        }
 
         if let Some(eff) = effort {
             let eff_clean = eff.trim().to_lowercase();
@@ -90,12 +111,34 @@ impl OmpRunner {
         let (tx, rx) = mpsc::channel();
         let running = Arc::new(AtomicBool::new(true));
 
+        let turn_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let accumulated_cost = Arc::new(Mutex::new(0.0f64));
+        let limit_reached = Arc::new(AtomicBool::new(false));
+        let limit_reason = Arc::new(Mutex::new(Option::<String>::None));
+
         // Spawn thread to tail the active session .jsonl file in real-time
         let running_tailer = running.clone();
         let tx_tailer = tx.clone();
         let active_file_tailer = active_file.clone();
+        let turn_counter_tailer = turn_counter.clone();
+        let accumulated_cost_tailer = accumulated_cost.clone();
+        let limit_reached_tailer = limit_reached.clone();
+        let limit_reason_tailer = limit_reason.clone();
+        let limits_tailer = limits;
+
         let tailer_handle = thread::spawn(move || {
-            Self::tail_session_file(start_time, existing_files, active_file_tailer, running_tailer, tx_tailer);
+            Self::tail_session_file(
+                start_time,
+                existing_files,
+                active_file_tailer,
+                running_tailer,
+                tx_tailer,
+                limits_tailer,
+                turn_counter_tailer,
+                accumulated_cost_tailer,
+                limit_reached_tailer,
+                limit_reason_tailer,
+            );
         });
 
         // Spawn thread to read stdout
@@ -127,16 +170,41 @@ impl OmpRunner {
         }
         drop(tx);
 
+        let start_instant = std::time::Instant::now();
         let status = loop {
+            // Check wall-clock timeout watchdog
+            if let Some(max_secs) = limits.timeout_seconds {
+                if start_instant.elapsed().as_secs() >= max_secs {
+                    let msg = format!("[LIMIT] Watchdog: maximum time limit ({}s) reached. Concluding agent run...", max_secs);
+                    log_fn(msg.clone());
+                    limit_reached.store(true, Ordering::SeqCst);
+                    *limit_reason.lock().unwrap() = Some(msg);
+                    let _ = child.kill();
+                    break None;
+                }
+            }
+
+            // Check if turn or budget limit was reached
+            if limit_reached.load(Ordering::SeqCst) {
+                if let Ok(lock) = limit_reason.lock() {
+                    if let Some(ref r) = *lock {
+                        log_fn(r.clone());
+                    }
+                }
+                let _ = child.kill();
+                break None;
+            }
+
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(line) => log_fn(line),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if let Some(s) = child.try_wait().map_err(|e| anyhow!("Failed to check omp status: {}", e))? {
-                        break s;
+                        break Some(s);
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    break child.wait().map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
+                    let s = child.wait().map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
+                    break Some(s);
                 }
             }
         };
@@ -148,9 +216,14 @@ impl OmpRunner {
             log_fn(line);
         }
 
-        if !status.success() {
-            warn!("OMP agent exited with non-zero status: {:?}", status.code());
-            return Err(anyhow!("OMP agent exited with non-zero status: {:?}", status.code()));
+        let stopped_by_limit = limit_reached.load(Ordering::SeqCst);
+        if !stopped_by_limit {
+            if let Some(s) = status {
+                if !s.success() {
+                    warn!("OMP agent exited with non-zero status: {:?}", s.code());
+                    return Err(anyhow!("OMP agent exited with non-zero status: {:?}", s.code()));
+                }
+            }
         }
 
         let final_path = active_file.lock().unwrap().clone();
@@ -189,6 +262,11 @@ impl OmpRunner {
         active_file: Arc<Mutex<Option<PathBuf>>>,
         running: Arc<AtomicBool>,
         tx: mpsc::Sender<String>,
+        limits: AgentExecutionLimits,
+        turn_counter: Arc<std::sync::atomic::AtomicU32>,
+        accumulated_cost: Arc<Mutex<f64>>,
+        limit_reached: Arc<AtomicBool>,
+        limit_reason: Arc<Mutex<Option<String>>>,
     ) {
         let dirs = Self::get_sessions_dirs();
 
@@ -235,6 +313,37 @@ impl OmpRunner {
                 }
                 Ok(_) => {
                     if line_buf.ends_with('\n') {
+                        // Check limits in session line
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line_buf.trim()) {
+                            // 1. Assistant turn check
+                            if val.pointer("/message/role").and_then(|r| r.as_str()) == Some("assistant") {
+                                let c = turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
+                                if let Some(max_t) = limits.max_turns {
+                                    if c >= max_t {
+                                        let msg = format!("[LIMIT] Reached turn limit ({} / {} turns). Concluding agent run...", c, max_t);
+                                        *limit_reason.lock().unwrap() = Some(msg.clone());
+                                        limit_reached.store(true, Ordering::SeqCst);
+                                        let _ = tx.send(msg);
+                                    }
+                                }
+                            }
+                            // 2. Budget check
+                            if let Some(cost) = val.pointer("/message/usage/cost/total").and_then(|c| c.as_f64()) {
+                                if let Ok(mut c_lock) = accumulated_cost.lock() {
+                                    *c_lock += cost;
+                                    let current_spend = *c_lock;
+                                    if let Some(max_b) = limits.max_budget_usd {
+                                        if current_spend >= max_b {
+                                            let msg = format!("[LIMIT] Reached budget cap (${:.4} / ${:.2} USD). Concluding agent run...", current_spend, max_b);
+                                            *limit_reason.lock().unwrap() = Some(msg.clone());
+                                            limit_reached.store(true, Ordering::SeqCst);
+                                            let _ = tx.send(msg);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if let Some(events) = Self::format_session_line(&line_buf) {
                             for ev in events {
                                 let _ = tx.send(ev);

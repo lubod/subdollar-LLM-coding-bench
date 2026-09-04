@@ -15,7 +15,7 @@ use subdollar_bench::report::{
     BenchmarkRunResult, LeaderboardManager, RunArchiver, RunManifest, RunPublisher, RunTokenUsage,
     SummaryGenerator,
 };
-use subdollar_bench::sandbox::{OmpRunner, SandboxManager};
+use subdollar_bench::sandbox::{AgentExecutionLimits, OmpRunner, SandboxManager};
 use subdollar_bench::verifier::{HttpVerifier, RedisVerifier};
 use subdollar_bench::web;
 
@@ -31,6 +31,7 @@ async fn main() -> Result<()> {
             effort,
             max_turns,
             budget_usd,
+            timeout_min,
             api_key,
             workdir,
             eval_only,
@@ -40,10 +41,12 @@ async fn main() -> Result<()> {
 
             println!("{}", "=========================================================".bold().blue());
             println!("  {} - Autonomous Under-$1 LLM Coding Benchmark", "SubDollarBench".bold().cyan());
-            println!("  Model:  {}", model.bold().yellow());
-            println!("  Effort: {}", effort.bold().cyan());
-            println!("  Task:   {}", task.to_string().bold().green());
-            println!("  Budget: ${:.2}", budget_usd);
+            println!("  Model:   {}", model.bold().yellow());
+            println!("  Effort:  {}", effort.bold().cyan());
+            println!("  Task:    {}", task.to_string().bold().green());
+            println!("  Budget:  ${:.2}", budget_usd);
+            println!("  Turns:   {}", max_turns);
+            println!("  Timeout: {}m", timeout_min);
             println!("{}", "=========================================================".bold().blue());
 
             let work_path = Path::new(&workdir);
@@ -82,7 +85,12 @@ async fn main() -> Result<()> {
             // 3. Run OMP Agent (unless eval_only)
             let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !eval_only {
                 println!("\n{}", ">>> Spawning OMP Agent in headless mode...".bold().magenta());
-                let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), max_turns, Some(&effort))?;
+                let limits = AgentExecutionLimits {
+                    max_turns: if max_turns > 0 { Some(max_turns) } else { None },
+                    max_budget_usd: if budget_usd > 0.0 { Some(budget_usd) } else { None },
+                    timeout_seconds: if timeout_min > 0 { Some(timeout_min * 60) } else { None },
+                };
+                let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), limits, Some(&effort))?;
                 let p = stats.prompt_tokens;
                 let c = stats.cached_tokens;
                 let comp = stats.completion_tokens;
