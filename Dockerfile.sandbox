@@ -1,0 +1,52 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# Install base dependencies, build toolchains, and reference servers
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    clang \
+    cmake \
+    curl \
+    git \
+    golang-go \
+    netcat-openbsd \
+    nginx \
+    nodejs \
+    npm \
+    procps \
+    python3 \
+    python3-dev \
+    python3-pip \
+    redis-server \
+    redis-tools \
+    sudo \
+    unzip \
+    wrk \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash && \
+    cp /root/.bun/bin/bun /usr/local/bin/bun
+
+# Install OMP (Oh My Pi agent harness)
+RUN npm install -g @oh-my-pi/pi-coding-agent
+
+# Ubuntu 24.04 already has user 'ubuntu' (UID 1000)
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Install Rust toolchain for ubuntu user
+USER ubuntu
+ENV HOME=/home/ubuntu
+ENV PATH="/home/ubuntu/.cargo/bin:${PATH}"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+
+# Prepare workspace
+WORKDIR /workspace
+USER root
+RUN chown -R ubuntu:ubuntu /workspace
+USER ubuntu
+
+CMD ["/bin/bash"]

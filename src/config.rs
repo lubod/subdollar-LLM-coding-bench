@@ -1,0 +1,78 @@
+use clap::{Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
+
+#[derive(Parser, Debug)]
+#[command(name = "subdollar-bench")]
+#[command(about = "Autonomous Under-$1 System-Building Benchmark for Budget LLMs", long_about = None)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Run an autonomous benchmark on a model using OMP harness
+    Run {
+        /// Model identifier on OpenRouter (e.g. openrouter/google/gemini-2.5-flash)
+        #[arg(short, long)]
+        model: String,
+
+        /// Task to run
+        #[arg(short, long, value_enum, default_value_t = TaskType::Redis)]
+        task: TaskType,
+
+        /// Maximum turns/steps allowed for OMP
+        #[arg(long, default_value_t = 15)]
+        max_turns: u32,
+
+        /// Maximum cost budget in USD (e.g. 0.20 for 20 cents)
+        #[arg(long, default_value_t = 0.50)]
+        budget_usd: f64,
+
+        /// OpenRouter API Key (optional, defaults to OPENROUTER_API_KEY env var)
+        #[arg(long, env = "OPENROUTER_API_KEY")]
+        api_key: Option<String>,
+
+        /// Path to workspace directory for the generated project
+        #[arg(long, default_value = "./workspace")]
+        workdir: String,
+
+        /// Skip OMP agent run and evaluate existing server directly
+        #[arg(long, default_value_t = false)]
+        eval_only: bool,
+    },
+
+    /// Directly run verification test suite against a running server
+    Eval {
+        /// Task to verify
+        #[arg(short, long, value_enum)]
+        task: TaskType,
+
+        /// Target port
+        #[arg(short, long)]
+        port: Option<u16>,
+    },
+
+    /// Display current benchmark leaderboard from saved results
+    Leaderboard {
+        /// Directory containing result JSON files
+        #[arg(short, long, default_value = "./results")]
+        results_dir: String,
+    },
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskType {
+    Redis,
+    Http,
+}
+
+impl std::fmt::Display for TaskType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskType::Redis => write!(f, "redis"),
+            TaskType::Http => write!(f, "http"),
+        }
+    }
+}

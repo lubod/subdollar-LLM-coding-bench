@@ -1,0 +1,218 @@
+mod bench;
+mod config;
+mod cost;
+mod report;
+mod sandbox;
+mod verifier;
+
+use anyhow::{anyhow, Result};
+use chrono::Utc;
+use clap::Parser;
+use colored::*;
+use config::{Cli, Commands, TaskType};
+use cost::ModelPricing;
+use report::{BenchmarkRunResult, LeaderboardManager};
+use sandbox::{OmpRunner, SandboxManager};
+use std::fs;
+use std::path::Path;
+use std::time::Duration;
+use tokio::time::sleep;
+use tracing::warn;
+use verifier::{HttpVerifier, RedisVerifier};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Run {
+            model,
+            task,
+            max_turns,
+            budget_usd,
+            api_key,
+            workdir,
+            eval_only,
+        } => {
+            println!("{}", "=========================================================".bold().blue());
+            println!("  {} - Autonomous Under-$1 LLM Coding Benchmark", "SubDollarBench".bold().cyan());
+            println!("  Model: {}", model.bold().yellow());
+            println!("  Task:  {}", task.to_string().bold().green());
+            println!("  Budget: ${:.2}", budget_usd);
+            println!("{}", "=========================================================".bold().blue());
+
+            let work_path = Path::new(&workdir);
+            fs::create_dir_all(work_path)?;
+
+            let sandbox = SandboxManager::new();
+
+            // 1. Start reference services in Docker
+            match task {
+                TaskType::Redis => {
+                    let _ = sandbox.start_reference_redis(6380);
+                }
+                TaskType::Http => {
+                    let _ = sandbox.start_reference_http(8081);
+                }
+            }
+
+            // 2. Read task prompt
+            let prompt_file = format!("tasks/{}/prompt.md", task);
+            let prompt_content = fs::read_to_string(&prompt_file)
+                .map_err(|_| anyhow!("Could not read prompt file: {}", prompt_file))?;
+
+            // 3. Run OMP Agent (unless eval_only)
+            let (prompt_tokens, completion_tokens) = if !eval_only {
+                println!("\n{}", ">>> Spawning OMP Agent in headless mode...".bold().magenta());
+                let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), max_turns)?;
+                (stats.prompt_tokens, stats.completion_tokens)
+            } else {
+                println!("\n{}", ">>> Skipping OMP agent run (--eval-only set)".italic());
+                (0, 0)
+            };
+
+            // 4. Start candidate server inside Docker
+            let target_port = match task {
+                TaskType::Redis => 6379,
+                TaskType::Http => 8080,
+            };
+
+            println!("{}", ">>> Starting candidate clone inside isolated Docker container...".bold().cyan());
+            let _ = sandbox.start_candidate_in_docker(work_path, target_port);
+            sleep(Duration::from_secs(3)).await;
+
+            // 5. Run Verification
+            println!("\n{}", ">>> Running Protocol Verification Test Suite...".bold().cyan());
+            let (pass_rate, passed_stages, total_stages) = match task {
+                TaskType::Redis => {
+                    let verifier = RedisVerifier::new(6379, Some(6380));
+                    let summary = verifier.run_all().await;
+                    for stage in &summary.stages {
+                        if stage.passed {
+                            println!("  [PASS] {}", stage.name.green());
+                        } else {
+                            println!("  [FAIL] {}", stage.name.red());
+                            if let Some(err) = &stage.error {
+                                println!("         Error: {}", err.dimmed());
+                            }
+                        }
+                    }
+                    (summary.pass_rate, summary.passed_count, summary.total_stages)
+                }
+                TaskType::Http => {
+                    let verifier = HttpVerifier::new(8080);
+                    let summary = verifier.run_all().await;
+                    for stage in &summary.stages {
+                        if stage.passed {
+                            println!("  [PASS] {}", stage.name.green());
+                        } else {
+                            println!("  [FAIL] {}", stage.name.red());
+                            if let Some(err) = &stage.error {
+                                println!("         Error: {}", err.dimmed());
+                            }
+                        }
+                    }
+                    (summary.pass_rate, summary.passed_count, summary.total_stages)
+                }
+            };
+
+            // 6. Concurrency / Load benchmark (if passed functional tests)
+            let mut throughput = None;
+            if pass_rate >= 75.0 {
+                println!("\n{}", ">>> Running Stress & Concurrency Benchmark in Docker...".bold().cyan());
+                match task {
+                    TaskType::Redis => {
+                        match bench::BenchmarkRunner::run_redis_benchmark(6379) {
+                            Ok(tp) => {
+                                println!("  Throughput: {} req/sec", format!("{:.0}", tp).bold().green());
+                                throughput = Some(tp);
+                            }
+                            Err(e) => warn!("Redis benchmark failed: {}", e),
+                        }
+                    }
+                    TaskType::Http => {
+                        match bench::BenchmarkRunner::run_wrk_benchmark(8080) {
+                            Ok(tp) => {
+                                println!("  Throughput: {} req/sec", format!("{:.0}", tp).bold().green());
+                                throughput = Some(tp);
+                            }
+                            Err(e) => warn!("HTTP benchmark failed: {}", e),
+                        }
+                    }
+                }
+            }
+
+            // 7. Cost & Token calculation
+            let pricing = ModelPricing::for_model(&model);
+            let cost_usd = pricing.compute_cost(prompt_tokens, completion_tokens);
+            let cost_cents = (cost_usd * 100.0).max(0.01);
+            let efficiency_score = pass_rate / cost_cents;
+            let lang = LeaderboardManager::detect_language(work_path);
+
+            let run_id = format!("{}_{}_{}", task, model.replace('/', "_"), Utc::now().format("%Y%m%d_%H%M%S"));
+            let result = BenchmarkRunResult {
+                id: run_id,
+                model: model.clone(),
+                task: task.to_string(),
+                language: lang,
+                pass_rate,
+                passed_stages,
+                total_stages,
+                throughput_req_sec: throughput,
+                prompt_tokens,
+                completion_tokens,
+                total_cost_usd: cost_usd,
+                efficiency_score,
+                timestamp: Utc::now().to_rfc3339(),
+            };
+
+            LeaderboardManager::save_result("./results", &result)?;
+
+            println!("\n{}", "=========================================================".bold().blue());
+            println!("  Results Summary for {}:", model.bold());
+            println!("  - Language Chosen: {}", result.language.bold().cyan());
+            println!("  - Pass Rate:       {:.1}% ({}/{})", pass_rate, passed_stages, total_stages);
+            println!("  - Total Cost:      ${:.4} USD", cost_usd);
+            println!("  - Efficiency:      {:.1} points / cent", efficiency_score);
+            println!("{}", "=========================================================".bold().blue());
+
+            // Print full leaderboard
+            let all = LeaderboardManager::load_all("./results");
+            LeaderboardManager::print_table(&all);
+
+            sandbox.cleanup();
+        }
+
+        Commands::Eval { task, port } => {
+            let p = port.unwrap_or(match task {
+                TaskType::Redis => 6379,
+                TaskType::Http => 8080,
+            });
+            println!("Evaluating {} on port {}...", task, p);
+            match task {
+                TaskType::Redis => {
+                    let v = RedisVerifier::new(p, None);
+                    let res = v.run_all().await;
+                    println!("Pass rate: {:.1}% ({}/{})", res.pass_rate, res.passed_count, res.total_stages);
+                }
+                TaskType::Http => {
+                    let v = HttpVerifier::new(p);
+                    let res = v.run_all().await;
+                    println!("Pass rate: {:.1}% ({}/{})", res.pass_rate, res.passed_count, res.total_stages);
+                }
+            }
+        }
+
+        Commands::Leaderboard { results_dir } => {
+            let all = LeaderboardManager::load_all(&results_dir);
+            if all.is_empty() {
+                println!("No benchmark results found in {}", results_dir);
+            } else {
+                LeaderboardManager::print_table(&all);
+            }
+        }
+    }
+
+    Ok(())
+}
