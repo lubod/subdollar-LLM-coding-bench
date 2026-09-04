@@ -246,7 +246,7 @@ impl SandboxManager {
 
     pub fn cleanup(&self) {
         let _ = Command::new("docker")
-            .args(["rm", "-f", "subdollar-ref-redis", "subdollar-ref-http", "subdollar-candidate"])
+            .args(["rm", "-f", "subdollar-ref-redis", "subdollar-ref-http", "subdollar-candidate", "subdollar-omp-agent"])
             .output();
     }
 }

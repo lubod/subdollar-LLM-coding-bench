@@ -479,7 +479,7 @@ async fn start_run(
         // 3. Run OMP Agent
         let mut agent_failed = false;
         let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !req.eval_only {
-            log(&mut console_buffer, format!("[OMP] Spawning OMP agent with model '{}' (Effort: {})...", req.model, effort_setting));
+            log(&mut console_buffer, format!("[OMP] Spawning OMP agent inside isolated Docker sandbox ('subdollar-sandbox') with model '{}' (Effort: {})...", req.model, effort_setting));
             let tx_sub = tx.clone();
             let log_buf_sub = state_clone.log_buffer.clone();
             match OmpRunner::run_agent_with_logger(

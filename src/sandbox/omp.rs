@@ -67,19 +67,66 @@ impl OmpRunner {
     where
         F: FnMut(String) + Send + 'static,
     {
-        info!("Launching OMP agent with model: {}, effort: {:?}, limits: {:?}", model, effort, limits);
+        info!("Launching OMP agent in Docker sandbox with model: {}, effort: {:?}, limits: {:?}", model, effort, limits);
 
         let start_time = SystemTime::now();
+        let container_name = "subdollar-omp-agent";
 
-        let mut cmd = Command::new("omp");
-        cmd.arg("--approval-mode=yolo")
+        // Pre-clean any stale agent container
+        let _ = Command::new("docker")
+            .args(["rm", "-f", container_name])
+            .output();
+
+        let canonical_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
+        let mount_workdir = format!("{}:/workspace", canonical_workdir.display());
+
+        let host_omp_dir = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/home/ubuntu"))
+            .join(".omp");
+        let host_sessions_dir = host_omp_dir.join("agent").join("sessions");
+        let _ = std::fs::create_dir_all(&host_sessions_dir);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&host_omp_dir, std::fs::Permissions::from_mode(0o777));
+            let _ = std::fs::set_permissions(&host_omp_dir.join("agent"), std::fs::Permissions::from_mode(0o777));
+            let _ = std::fs::set_permissions(&host_sessions_dir, std::fs::Permissions::from_mode(0o777));
+        }
+        let mount_omp = format!("{}:/home/ubuntu/.omp", host_omp_dir.display());
+
+        let mut cmd = Command::new("docker");
+        cmd.arg("run")
+            .arg("--rm")
+            .arg("--name")
+            .arg(container_name)
+            .arg("--net=host")
+            .arg("-v")
+            .arg(&mount_workdir)
+            .arg("-v")
+            .arg(&mount_omp)
+            .arg("-w")
+            .arg("/workspace")
+            .arg("-e")
+            .arg("PI_NO_PTY=1")
+            .arg("-e")
+            .arg("HOME=/home/ubuntu");
+
+        let effective_key = api_key
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("OPENROUTER_API_KEY").ok());
+        if let Some(ref key) = effective_key {
+            cmd.arg("-e").arg(format!("OPENROUTER_API_KEY={}", key));
+        }
+
+        cmd.arg("subdollar-sandbox")
+            .arg("omp")
+            .arg("--approval-mode=yolo")
             .arg("-p")
             .arg(prompt)
             .arg(format!("--model={}", model))
-            .arg(format!("--cwd={}", workdir.display()))
-            .env("PI_NO_PTY", "1")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .arg("--cwd=/workspace")
+            .arg("--session-dir=/home/ubuntu/.omp/agent/sessions");
 
         if let Some(max_secs) = limits.timeout_seconds {
             cmd.arg(format!("--max-time={}s", max_secs));
@@ -95,18 +142,14 @@ impl OmpRunner {
             cmd.arg("--print-thoughts");
         }
 
-        let effective_key = api_key
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("OPENROUTER_API_KEY").ok());
-        if let Some(ref key) = effective_key {
-            cmd.env("OPENROUTER_API_KEY", key);
-        }
+        cmd.stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let existing_files = Self::collect_all_session_files();
         let active_file: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
 
-        info!("Executing OMP command in: {}", workdir.display());
-        let mut child = cmd.spawn().map_err(|e| anyhow!("Failed to spawn omp: {}", e))?;
+        info!("Executing OMP agent container '{}' with workdir: {}", container_name, canonical_workdir.display());
+        let mut child = cmd.spawn().map_err(|e| anyhow!("Failed to spawn omp in docker: {}", e))?;
 
         let (tx, rx) = mpsc::channel();
         let running = Arc::new(AtomicBool::new(true));
@@ -170,6 +213,11 @@ impl OmpRunner {
         }
         drop(tx);
 
+        let kill_agent = || {
+            let _ = Command::new("docker").args(["kill", container_name]).output();
+            let _ = Command::new("docker").args(["rm", "-f", container_name]).output();
+        };
+
         let start_instant = std::time::Instant::now();
         let status = loop {
             // Check wall-clock timeout watchdog
@@ -179,6 +227,7 @@ impl OmpRunner {
                     log_fn(msg.clone());
                     limit_reached.store(true, Ordering::SeqCst);
                     *limit_reason.lock().unwrap() = Some(msg);
+                    kill_agent();
                     let _ = child.kill();
                     break None;
                 }
@@ -191,6 +240,7 @@ impl OmpRunner {
                         log_fn(r.clone());
                     }
                 }
+                kill_agent();
                 let _ = child.kill();
                 break None;
             }
@@ -209,6 +259,7 @@ impl OmpRunner {
             }
         };
 
+        kill_agent();
         running.store(false, Ordering::SeqCst);
         let _ = tailer_handle.join();
 
