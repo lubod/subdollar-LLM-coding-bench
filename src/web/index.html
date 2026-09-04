@@ -910,7 +910,7 @@
         <!-- Task Selection -->
         <div class="form-group">
           <label for="task">Benchmark Task</label>
-          <select id="task" onchange="loadPrompt()">
+          <select id="task" onchange="onTaskChange(this.value)">
             <option value="redis">Redis (RESP Key-Value Clone)</option>
             <option value="http">HTTP/1.1 Web Server</option>
           </select>
@@ -1024,7 +1024,7 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <span class="hint" style="font-weight: 600; color: #fff;">Task Spec:</span>
-              <select id="promptTaskSelect" onchange="loadPrompt(this.value)" style="padding: 4px 10px; font-size: 0.78rem; font-weight: 600;">
+              <select id="promptTaskSelect" onchange="onTaskChange(this.value)" style="padding: 4px 10px; font-size: 0.78rem; font-weight: 600;">
                 <option value="redis">⚡ redis (In-Memory Redis Server)</option>
                 <option value="http">🌐 http (HTTP/1.1 Web Server)</option>
               </select>
@@ -1453,12 +1453,25 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     let currentLoadedPromptText = '';
     let currentPromptViewMode = localStorage.getItem('prompt_view_mode') || 'preview';
 
-    async function loadPrompt(taskOverride) {
-      const task = taskOverride || (document.getElementById('promptTaskSelect') ? document.getElementById('promptTaskSelect').value : document.getElementById('task').value);
-      const sel = document.getElementById('promptTaskSelect');
-      if (sel && sel.value !== task) sel.value = task;
+    function onTaskChange(task) {
+      if (!task) return;
+      localStorage.setItem('selected_benchmark_task', task);
       const mainSel = document.getElementById('task');
       if (mainSel && mainSel.value !== task) mainSel.value = task;
+      const promptSel = document.getElementById('promptTaskSelect');
+      if (promptSel && promptSel.value !== task) promptSel.value = task;
+      loadPrompt(task);
+    }
+
+    async function loadPrompt(taskOverride) {
+      const mainSel = document.getElementById('task');
+      const savedTask = localStorage.getItem('selected_benchmark_task');
+      const task = taskOverride || (mainSel ? mainSel.value : null) || savedTask || 'redis';
+
+      if (mainSel && mainSel.value !== task) mainSel.value = task;
+      const promptSel = document.getElementById('promptTaskSelect');
+      if (promptSel && promptSel.value !== task) promptSel.value = task;
+      localStorage.setItem('selected_benchmark_task', task);
 
       const indicator = document.getElementById('promptStatusIndicator');
       if (indicator) indicator.textContent = 'Loading...';
@@ -1540,7 +1553,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     }
 
     async function savePrompt() {
-      const task = document.getElementById('promptTaskSelect') ? document.getElementById('promptTaskSelect').value : document.getElementById('task').value;
+      const task = (document.getElementById('task') && document.getElementById('task').value) || (document.getElementById('promptTaskSelect') && document.getElementById('promptTaskSelect').value) || 'redis';
       const content = (document.getElementById('promptEditor') && document.getElementById('promptEditor').value) || currentLoadedPromptText;
       const saveBtn = document.getElementById('promptSaveBtn');
       if (saveBtn) saveBtn.disabled = true;
@@ -2524,7 +2537,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
     // Initial load & persistent status sync
     fetchModels();
-    loadPrompt();
+    const initialSavedTask = localStorage.getItem('selected_benchmark_task') || 'redis';
+    onTaskChange(initialSavedTask);
     toggleAutoRefresh(true);
     if (localStorage.getItem('sidebar_hidden') === 'true') { toggleSidebar(); }
     setRunsViewMode(currentRunsView);
