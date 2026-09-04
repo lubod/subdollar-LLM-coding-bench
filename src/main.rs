@@ -44,6 +44,9 @@ async fn main() -> Result<()> {
             println!("{}", "=========================================================".bold().blue());
 
             let work_path = Path::new(&workdir);
+            if !eval_only {
+                let _ = fs::remove_dir_all(work_path);
+            }
             fs::create_dir_all(work_path)?;
 
             let sandbox = SandboxManager::new();
@@ -92,9 +95,20 @@ async fn main() -> Result<()> {
                 TaskType::Http => 8080,
             };
 
-            println!("{}", ">>> Starting candidate clone inside isolated Docker container...".bold().cyan());
-            let _ = sandbox.start_candidate_in_docker(work_path, target_port);
-            sleep(Duration::from_secs(3)).await;
+            let has_runnable = sandbox.ensure_runnable_candidate(work_path).unwrap_or(false);
+            if !has_runnable {
+                println!("{}", ">>> [ERROR] No runnable start.sh or Dockerfile found in ./workspace!".bold().red());
+            } else {
+                println!("{}", ">>> Starting candidate container inside isolated Docker sandbox...".bold().cyan());
+                let _ = sandbox.start_candidate_in_docker(work_path, target_port);
+                println!("{}", format!(">>> Waiting for candidate port {} readiness (timeout: 30s)...", target_port).cyan());
+                let ready = sandbox.wait_for_port(target_port, 30).await;
+                if ready {
+                    println!("{}", format!(">>> Candidate server online on port {}!", target_port).green());
+                } else {
+                    println!("{}", format!(">>> [WARN] Candidate port {} not responding after 30s. Proceeding to tests...", target_port).yellow());
+                }
+            }
 
             // 5. Run Verification
             println!("\n{}", ">>> Running Protocol Verification Test Suite...".bold().cyan());

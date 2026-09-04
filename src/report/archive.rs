@@ -6,17 +6,17 @@ use std::path::{Path, PathBuf};
 use crate::verifier::StageResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileInfo {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunTokenUsage {
     pub prompt_tokens: u64,
     pub cached_tokens: u64,
     pub completion_tokens: u64,
     pub total_tokens: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FileInfo {
-    pub name: String,
-    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,28 +115,46 @@ impl RunArchiver {
 
     pub fn get_workspace_file(runs_dir: &Path, run_id: &str, filename: &str) -> Option<String> {
         let clean_id = Path::new(run_id).file_name()?.to_str()?;
-        let clean_filename = Path::new(filename).file_name()?.to_str()?;
-        let file_path = runs_dir.join(clean_id).join("workspace").join(clean_filename);
+        if filename.contains("..") || filename.starts_with('/') {
+            return None;
+        }
+        let file_path = runs_dir.join(clean_id).join("workspace").join(filename);
         fs::read_to_string(file_path).ok()
     }
 
     pub fn scan_workspace_files(workspace_dir: &Path) -> Vec<FileInfo> {
         let mut files = Vec::new();
-        if let Ok(entries) = fs::read_dir(workspace_dir) {
+        Self::scan_recursive(workspace_dir, "", &mut files);
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+        files
+    }
+
+    fn scan_recursive(dir: &Path, rel_prefix: &str, out: &mut Vec<FileInfo>) {
+        if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
+                let file_name = entry.file_name();
+                let name_str = file_name.to_string_lossy();
+                if name_str == ".git" || name_str == "target" || name_str == "node_modules" {
+                    continue;
+                }
+                let rel_name = if rel_prefix.is_empty() {
+                    name_str.to_string()
+                } else {
+                    format!("{}/{}", rel_prefix, name_str)
+                };
                 if p.is_file() {
                     if let Ok(meta) = entry.metadata() {
-                        files.push(FileInfo {
-                            name: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                        out.push(FileInfo {
+                            name: rel_name,
                             size_bytes: meta.len(),
                         });
                     }
+                } else if p.is_dir() {
+                    Self::scan_recursive(&p, &rel_name, out);
                 }
             }
         }
-        files.sort_by(|a, b| a.name.cmp(&b.name));
-        files
     }
 
     fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
@@ -175,13 +193,14 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&ws_dir).unwrap();
 
-        // Create sample workspace files
-        fs::write(ws_dir.join("main.go"), "package main\nfunc main() {}\n").unwrap();
-        fs::write(ws_dir.join("start.sh"), "#!/bin/bash\ngo run main.go\n").unwrap();
+        // Create sample workspace files (nested)
+        fs::create_dir_all(ws_dir.join("src")).unwrap();
+        fs::write(ws_dir.join("src/main.go"), "package main\nfunc main() {}\n").unwrap();
+        fs::write(ws_dir.join("start.sh"), "#!/bin/bash\ngo run src/main.go\n").unwrap();
 
         let scanned = RunArchiver::scan_workspace_files(&ws_dir);
         assert_eq!(scanned.len(), 2);
-        assert!(scanned.iter().any(|f| f.name == "main.go"));
+        assert!(scanned.iter().any(|f| f.name == "src/main.go"));
 
         let manifest = RunManifest {
             run_id: "test_run_123".to_string(),
@@ -234,8 +253,8 @@ mod tests {
         let log = RunArchiver::get_console_log(&runs_dir, "test_run_123").unwrap();
         assert!(log.contains("[INIT] Starting test run"));
 
-        // Verify get_workspace_file
-        let code = RunArchiver::get_workspace_file(&runs_dir, "test_run_123", "main.go").unwrap();
+        // Verify get_workspace_file with subpath
+        let code = RunArchiver::get_workspace_file(&runs_dir, "test_run_123", "src/main.go").unwrap();
         assert!(code.contains("package main"));
 
         let _ = fs::remove_dir_all(&temp_dir);

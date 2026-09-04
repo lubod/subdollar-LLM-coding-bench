@@ -1,7 +1,8 @@
 use anyhow::Result;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct SandboxManager;
 
@@ -54,6 +55,80 @@ impl SandboxManager {
         Ok(())
     }
 
+    /// Recursively find a file by name within directory
+    fn find_file_recursive(dir: &Path, filename: &str) -> Option<PathBuf> {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.file_name().and_then(|n| n.to_str()) == Some(filename) {
+                    return Some(path);
+                } else if path.is_dir() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with('.') || name == "target" || name == "node_modules" {
+                            continue;
+                        }
+                    }
+                    if let Some(found) = Self::find_file_recursive(&path, filename) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if candidate has either a Dockerfile or start.sh (root or nested)
+    pub fn ensure_runnable_candidate(&self, workdir: &Path) -> Result<bool> {
+        let canonical_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
+
+        // 1. Check if root Dockerfile exists
+        if canonical_workdir.join("Dockerfile").exists() {
+            return Ok(true);
+        }
+
+        // 2. Check if nested Dockerfile exists
+        if let Some(nested_dockerfile) = Self::find_file_recursive(&canonical_workdir, "Dockerfile") {
+            info!("Found nested Dockerfile at: {}", nested_dockerfile.display());
+            let root_df = canonical_workdir.join("Dockerfile");
+            if !root_df.exists() {
+                let _ = fs::copy(&nested_dockerfile, &root_df);
+            }
+            return Ok(true);
+        }
+
+        // 3. Check if root start.sh exists
+        if canonical_workdir.join("start.sh").exists() {
+            return Ok(true);
+        }
+
+        // 4. Search for nested start.sh and generate wrapper
+        if let Some(nested_start) = Self::find_file_recursive(&canonical_workdir, "start.sh") {
+            info!("Found nested start.sh at: {}", nested_start.display());
+            if let Ok(rel) = nested_start.strip_prefix(&canonical_workdir) {
+                if let Some(parent) = rel.parent() {
+                    let parent_str = parent.display().to_string();
+                    if !parent_str.is_empty() {
+                        let wrapper_content = format!(
+                            "#!/bin/bash\ncd \"/workspace/{}\"\nchmod +x start.sh 2>/dev/null || true\nexec ./start.sh\n",
+                            parent_str
+                        );
+                        let root_start = canonical_workdir.join("start.sh");
+                        let _ = fs::write(&root_start, wrapper_content);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&root_start, fs::Permissions::from_mode(0o755));
+                        }
+                        info!("Created root start.sh forwarding to subfolder: {}", parent_str);
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
     pub fn start_candidate_in_docker(&self, workdir: &Path, port: u16) -> Result<()> {
         info!("Starting candidate clone in Docker on port {}", port);
         let _ = Command::new("docker")
@@ -61,9 +136,55 @@ impl SandboxManager {
             .output();
 
         let canonical_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
-        let mount_arg = format!("{}:/workspace", canonical_workdir.display());
         let port_arg = format!("{}:{}", port, port);
 
+        // Ensure runnable (detects nested start.sh / Dockerfile)
+        let _ = self.ensure_runnable_candidate(&canonical_workdir);
+
+        // CASE A: Dockerfile exists -> Build and run custom Docker container
+        let dockerfile_path = canonical_workdir.join("Dockerfile");
+        if dockerfile_path.exists() {
+            info!("Detected Dockerfile in candidate workspace! Building candidate Docker image...");
+            let build_status = Command::new("docker")
+                .args(["build", "-t", "subdollar-candidate-custom", "."])
+                .current_dir(&canonical_workdir)
+                .output();
+
+            match build_status {
+                Ok(out) if out.status.success() => {
+                    info!("Successfully built custom Docker image 'subdollar-candidate-custom'");
+                    let run_res = Command::new("docker")
+                        .args([
+                            "run",
+                            "-d",
+                            "--name",
+                            "subdollar-candidate",
+                            "-p",
+                            &port_arg,
+                            "subdollar-candidate-custom",
+                        ])
+                        .output();
+                    if let Ok(run_out) = run_res {
+                        if !run_out.status.success() {
+                            warn!("Failed to start custom container: {}", String::from_utf8_lossy(&run_out.stderr));
+                        }
+                    }
+                    return Ok(());
+                }
+                Ok(out) => {
+                    warn!(
+                        "Candidate Dockerfile build failed: {}. Falling back to start.sh...",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to execute docker build: {}. Falling back to start.sh...", e);
+                }
+            }
+        }
+
+        // CASE B: Standard Sandbox with start.sh
+        let mount_arg = format!("{}:/workspace", canonical_workdir.display());
         let _ = Command::new("docker")
             .args([
                 "run",
@@ -82,6 +203,21 @@ impl SandboxManager {
             .output();
 
         Ok(())
+    }
+
+    /// Actively poll the target TCP port until the candidate is ready, up to timeout_secs
+    pub async fn wait_for_port(&self, port: u16, timeout_secs: u64) -> bool {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        while start.elapsed() < timeout {
+            if tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
+                // Give a 500ms stabilization window
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        false
     }
 
     pub fn get_candidate_logs(&self) -> String {

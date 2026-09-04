@@ -8,11 +8,14 @@ Your implementation must meet high professional software engineering standards:
 4. **Idiomatic Style & Best Practices**: Write clean, idiomatic code adhering to standard conventions for your chosen language (e.g., Go formatting & error checking, Rust Result/Error idioms, Python typing & structure).
 5. **Production Readiness**: Code should be production-grade, maintainable, performant, and self-contained.
 
-### Constraints & Language Freedom
+### Constraints & Packaging Freedom (Dockerfile or start.sh)
 - You are free to choose ANY programming language of your choice (Go, Python, Rust, Node.js, C, C++, etc.).
 - Choose the language and design that maximizes reliability, simplicity, and throughput.
-- All code must reside in the current workspace.
-- You MUST create an executable `./start.sh` script that starts your server listening on `0.0.0.0:6379`.
+- All code and configuration must reside in the current workspace.
+- **Entrypoint / Execution Options (You can choose either)**:
+  1. **Working Dockerfile (Recommended)**: Create a working `Dockerfile` that builds and packages your server and exposes port 6379. If a `Dockerfile` is present in the workspace, the test harness will automatically build and run your Docker container directly!
+  2. **Executable `./start.sh`**: Alternatively, create an executable `./start.sh` script that launches your server listening on `0.0.0.0:6379`. Our pre-configured test sandbox has Rust (cargo), Go, Python 3, Node.js, and C/C++ pre-installed.
+  (Both options are fully supported by the benchmark runner!)
 
 ### Reference Server Available for Testing
 An official Redis server is already running in this environment on port 6380!

@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+pub use crate::verifier::StageResult;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkRunResult {
     pub id: String,
@@ -32,26 +34,55 @@ pub struct LeaderboardManager;
 impl LeaderboardManager {
     pub fn detect_language(workdir: &Path) -> String {
         let mut counts = std::collections::HashMap::new();
-        if let Ok(entries) = fs::read_dir(workdir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                    match ext {
-                        "go" => *counts.entry("Go").or_insert(0) += 1,
-                        "py" => *counts.entry("Python").or_insert(0) += 1,
-                        "rs" => *counts.entry("Rust").or_insert(0) += 1,
-                        "js" | "ts" => *counts.entry("Node.js").or_insert(0) += 1,
-                        "c" | "cpp" => *counts.entry("C/C++").or_insert(0) += 1,
-                        _ => {}
-                    }
-                }
-            }
-        }
+        Self::count_lang_files_recursive(workdir, 0, &mut counts);
         counts
             .into_iter()
             .max_by_key(|&(_, count)| count)
             .map(|(lang, _)| lang.to_string())
             .unwrap_or_else(|| "Unknown".to_string())
+    }
+
+    fn count_lang_files_recursive(dir: &Path, depth: u32, counts: &mut std::collections::HashMap<&'static str, usize>) {
+        if depth > 4 {
+            return;
+        }
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name();
+                let s = name.to_string_lossy();
+                if s == ".git" || s == "target" || s == "node_modules" {
+                    continue;
+                }
+                if path.is_file() {
+                    if s == "Cargo.toml" {
+                        *counts.entry("Rust").or_insert(0) += 5;
+                    }
+                    if s == "go.mod" {
+                        *counts.entry("Go").or_insert(0) += 5;
+                    }
+                    if s == "package.json" {
+                        *counts.entry("Node.js").or_insert(0) += 5;
+                    }
+                    if s == "requirements.txt" || s == "pyproject.toml" {
+                        *counts.entry("Python").or_insert(0) += 5;
+                    }
+
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        match ext {
+                            "go" => *counts.entry("Go").or_insert(0) += 1,
+                            "py" => *counts.entry("Python").or_insert(0) += 1,
+                            "rs" => *counts.entry("Rust").or_insert(0) += 1,
+                            "js" | "ts" => *counts.entry("Node.js").or_insert(0) += 1,
+                            "c" | "cpp" => *counts.entry("C/C++").or_insert(0) += 1,
+                            _ => {}
+                        }
+                    }
+                } else if path.is_dir() {
+                    Self::count_lang_files_recursive(&path, depth + 1, counts);
+                }
+            }
+        }
     }
 
     pub fn save_result(results_dir: &str, result: &BenchmarkRunResult) -> Result<()> {
@@ -140,9 +171,10 @@ mod tests {
         assert_eq!(LeaderboardManager::detect_language(&temp), "Go");
         let _ = fs::remove_dir_all(&temp);
 
-        // Rust
-        fs::create_dir_all(&temp).unwrap();
-        fs::write(temp.join("main.rs"), "fn main() {}").unwrap();
+        // Rust nested
+        fs::create_dir_all(temp.join("rust-pkg/src")).unwrap();
+        fs::write(temp.join("rust-pkg/Cargo.toml"), "[package]").unwrap();
+        fs::write(temp.join("rust-pkg/src/main.rs"), "fn main() {}").unwrap();
         assert_eq!(LeaderboardManager::detect_language(&temp), "Rust");
         let _ = fs::remove_dir_all(&temp);
 

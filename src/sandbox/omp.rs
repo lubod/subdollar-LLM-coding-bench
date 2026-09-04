@@ -1,9 +1,15 @@
 use anyhow::{anyhow, Result};
-use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::collections::HashSet;
+use std::fs::File;
+use std::sync::Mutex;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Default)]
@@ -37,7 +43,7 @@ impl OmpRunner {
         prompt: &str,
         workdir: &Path,
         api_key: Option<&str>,
-        max_turns: u32,
+        _max_turns: u32,
         effort: Option<&str>,
         mut log_fn: F,
     ) -> Result<OmpSessionStats>
@@ -45,6 +51,8 @@ impl OmpRunner {
         F: FnMut(String) + Send + 'static,
     {
         info!("Launching OMP agent with model: {}, effort: {:?}", model, effort);
+
+        let start_time = SystemTime::now();
 
         let mut cmd = Command::new("omp");
         cmd.arg("--approval-mode=yolo")
@@ -66,14 +74,29 @@ impl OmpRunner {
             cmd.arg("--print-thoughts");
         }
 
-        if let Some(key) = api_key {
+        let effective_key = api_key
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("OPENROUTER_API_KEY").ok());
+        if let Some(ref key) = effective_key {
             cmd.env("OPENROUTER_API_KEY", key);
         }
+
+        let existing_files = Self::collect_all_session_files();
+        let active_file: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
 
         info!("Executing OMP command in: {}", workdir.display());
         let mut child = cmd.spawn().map_err(|e| anyhow!("Failed to spawn omp: {}", e))?;
 
         let (tx, rx) = mpsc::channel();
+        let running = Arc::new(AtomicBool::new(true));
+
+        // Spawn thread to tail the active session .jsonl file in real-time
+        let running_tailer = running.clone();
+        let tx_tailer = tx.clone();
+        let active_file_tailer = active_file.clone();
+        let tailer_handle = thread::spawn(move || {
+            Self::tail_session_file(start_time, existing_files, active_file_tailer, running_tailer, tx_tailer);
+        });
 
         // Spawn thread to read stdout
         if let Some(stdout) = child.stdout.take() {
@@ -81,7 +104,10 @@ impl OmpRunner {
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().flatten() {
-                    let _ = tx_out.send(line);
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        let _ = tx_out.send(trimmed.to_string());
+                    }
                 }
             });
         }
@@ -92,66 +118,352 @@ impl OmpRunner {
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().flatten() {
-                    let _ = tx_err.send(line);
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        let _ = tx_err.send(format!("[STDERR] {}", trimmed));
+                    }
                 }
             });
         }
         drop(tx);
 
-        for line in rx {
+        let status = loop {
+            match rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(line) => log_fn(line),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(s) = child.try_wait().map_err(|e| anyhow!("Failed to check omp status: {}", e))? {
+                        break s;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break child.wait().map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
+                }
+            }
+        };
+
+        running.store(false, Ordering::SeqCst);
+        let _ = tailer_handle.join();
+
+        while let Ok(line) = rx.recv_timeout(Duration::from_millis(50)) {
             log_fn(line);
         }
 
-        let status = child.wait().map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
         if !status.success() {
             warn!("OMP agent exited with non-zero status: {:?}", status.code());
+            return Err(anyhow!("OMP agent exited with non-zero status: {:?}", status.code()));
         }
 
-        let stats = Self::extract_latest_session_stats().unwrap_or_else(|e| {
-            warn!("Could not read session stats: {}, using estimation", e);
-            OmpSessionStats {
-                prompt_tokens: 15_000,
-                completion_tokens: 2_500,
-                cached_tokens: 10_000,
-                total_tokens: 17_500,
-                steps_taken: max_turns,
-            }
-        });
-
+        let final_path = active_file.lock().unwrap().clone();
+        let stats = Self::extract_latest_session_stats(final_path.as_deref()).unwrap_or_default();
         Ok(stats)
     }
 
-    fn extract_latest_session_stats() -> Result<OmpSessionStats> {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/ubuntu".to_string());
-        let sessions_dir = Path::new(&home).join(".omp/agent/sessions");
-        if !sessions_dir.exists() {
-            return Err(anyhow!("Sessions dir does not exist"));
+    fn get_sessions_dirs() -> Vec<PathBuf> {
+        let mut dirs = Vec::new();
+        if let Ok(home) = std::env::var("HOME") {
+            let p = PathBuf::from(home).join(".omp/agent/sessions");
+            if p.exists() { dirs.push(p); }
+        }
+        let u = PathBuf::from("/home/ubuntu/.omp/agent/sessions");
+        if u.exists() && !dirs.contains(&u) { dirs.push(u); }
+        let r = PathBuf::from("/root/.omp/agent/sessions");
+        if r.exists() && !dirs.contains(&r) { dirs.push(r); }
+        dirs
+    }
+
+    fn collect_all_session_files() -> HashSet<PathBuf> {
+        let mut set = HashSet::new();
+        for dir in Self::get_sessions_dirs() {
+            let mut candidates = Vec::new();
+            Self::collect_jsonl_files(&dir, &mut candidates);
+            for (_, p) in candidates {
+                set.insert(p);
+            }
+        }
+        set
+    }
+
+    fn tail_session_file(
+        start_time: SystemTime,
+        existing: HashSet<PathBuf>,
+        active_file: Arc<Mutex<Option<PathBuf>>>,
+        running: Arc<AtomicBool>,
+        tx: mpsc::Sender<String>,
+    ) {
+        let dirs = Self::get_sessions_dirs();
+
+        // Poll for the new session file to appear
+        let mut session_file: Option<PathBuf> = None;
+        for _ in 0..60 {
+            if !running.load(Ordering::SeqCst) {
+                break;
+            }
+            if let Some(f) = Self::find_new_session_file(&dirs, &existing, start_time) {
+                session_file = Some(f);
+                break;
+            }
+            thread::sleep(Duration::from_millis(200));
         }
 
-        let mut latest_file = None;
-        let mut latest_time = std::time::SystemTime::UNIX_EPOCH;
+        let session_path = match session_file {
+            Some(p) => p,
+            None => {
+                match Self::find_newest_session_file_across(&dirs) {
+                    Some(p) => p,
+                    None => return,
+                }
+            }
+        };
 
-        if let Ok(entries) = std::fs::read_dir(sessions_dir) {
+        if let Ok(mut lock) = active_file.lock() {
+            *lock = Some(session_path.clone());
+        }
+
+        let file = match File::open(&session_path) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+
+        let mut reader = BufReader::new(file);
+        let mut line_buf = String::new();
+
+        while running.load(Ordering::SeqCst) {
+            line_buf.clear();
+            match reader.read_line(&mut line_buf) {
+                Ok(0) => {
+                    thread::sleep(Duration::from_millis(200));
+                }
+                Ok(_) => {
+                    if line_buf.ends_with('\n') {
+                        if let Some(events) = Self::format_session_line(&line_buf) {
+                            for ev in events {
+                                let _ = tx.send(ev);
+                            }
+                        }
+                    } else {
+                        let len = line_buf.as_bytes().len() as i64;
+                        let _ = reader.seek(SeekFrom::Current(-len));
+                        thread::sleep(Duration::from_millis(150));
+                    }
+                }
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
+
+        // Process exit drain
+        loop {
+            line_buf.clear();
+            match reader.read_line(&mut line_buf) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if line_buf.ends_with('\n') {
+                        if let Some(events) = Self::format_session_line(&line_buf) {
+                            for ev in events {
+                                let _ = tx.send(ev);
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    fn find_new_session_file(
+        dirs: &[PathBuf],
+        existing: &HashSet<PathBuf>,
+        start_time: SystemTime,
+    ) -> Option<PathBuf> {
+        let mut candidates = Vec::new();
+        for dir in dirs {
+            Self::collect_jsonl_files(dir, &mut candidates);
+        }
+        candidates.sort_by_key(|(m, _)| *m);
+
+        // Priority 1: brand new file not present in existing snapshot
+        for (_, p) in candidates.iter().rev() {
+            if !existing.contains(p) {
+                return Some(p.clone());
+            }
+        }
+
+        // Priority 2: modified after start_time
+        for (m, p) in candidates.into_iter().rev() {
+            if m >= start_time {
+                return Some(p);
+            }
+        }
+        None
+    }
+
+    fn find_newest_session_file_across(dirs: &[PathBuf]) -> Option<PathBuf> {
+        let mut candidates = Vec::new();
+        for dir in dirs {
+            Self::collect_jsonl_files(dir, &mut candidates);
+        }
+        candidates.sort_by_key(|(m, _)| *m);
+        candidates.pop().map(|(_, p)| p)
+    }
+
+    fn collect_jsonl_files(dir: &Path, out: &mut Vec<(SystemTime, PathBuf)>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() {
-                    let session_jsonl = path.join("session.jsonl");
-                    if session_jsonl.exists() {
-                        if let Ok(meta) = session_jsonl.metadata() {
-                            if let Ok(modified) = meta.modified() {
-                                if modified > latest_time {
-                                    latest_time = modified;
-                                    latest_file = Some(session_jsonl);
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                    if let Ok(meta) = path.metadata() {
+                        if let Ok(m) = meta.modified() {
+                            out.push((m, path));
+                        }
+                    }
+                } else if path.is_dir() {
+                    Self::collect_jsonl_files(&path, out);
+                }
+            }
+        }
+    }
+
+    fn format_session_line(line: &str) -> Option<Vec<String>> {
+        let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let mut results = Vec::new();
+
+        let custom_type = v.get("customType").and_then(|s| s.as_str());
+        let role = v.get("message").and_then(|m| m.get("role")).and_then(|s| s.as_str());
+
+        if custom_type == Some("tool_execution_start") {
+            if let Some(d) = v.get("data") {
+                let tool = d.get("toolName").and_then(|s| s.as_str()).unwrap_or("tool");
+                let intent = d.get("intent").and_then(|s| s.as_str()).unwrap_or("");
+                let mut arg_str = String::new();
+                if let Some(args) = d.get("args") {
+                    if let Some(cmd) = args.get("command").and_then(|s| s.as_str()) {
+                        let clean_cmd = cmd.trim().replace('\n', " ");
+                        let truncated = if clean_cmd.len() > 80 {
+                            format!("{}...", &clean_cmd[..77])
+                        } else {
+                            clean_cmd
+                        };
+                        arg_str = format!(" [cmd: {}]", truncated);
+                    } else if let Some(p) = args.get("path").and_then(|s| s.as_str()) {
+                        arg_str = format!(" [path: {}]", p);
+                    } else if let Some(code) = args.get("code").and_then(|s| s.as_str()) {
+                        let clean_code = code.trim().replace('\n', " ");
+                        let truncated = if clean_code.len() > 80 {
+                            format!("{}...", &clean_code[..77])
+                        } else {
+                            clean_code
+                        };
+                        arg_str = format!(" [code: {}]", truncated);
+                    }
+                }
+                if intent.is_empty() {
+                    results.push(format!("[ACTION] {}{}", tool, arg_str));
+                } else {
+                    results.push(format!("[ACTION] {}: {}{}", tool, intent, arg_str));
+                }
+            }
+        } else if role == Some("assistant") {
+            if let Some(msg) = v.get("message") {
+                if let Some(usage) = msg.get("usage") {
+                    let tin = usage.get("input").or_else(|| usage.get("prompt_tokens")).and_then(|x| x.as_u64()).unwrap_or(0);
+                    let tout = usage.get("output").or_else(|| usage.get("completion_tokens")).and_then(|x| x.as_u64()).unwrap_or(0);
+                    let tcached = usage.get("cacheRead").or_else(|| usage.get("cache_read_input_tokens")).and_then(|x| x.as_u64()).unwrap_or(0);
+                    if tin > 0 || tout > 0 || tcached > 0 {
+                        results.push(format!("[TOKENS] Turn usage - input: {}, output: {}, cached: {}", tin, tout, tcached));
+                    }
+                }
+                if let Some(content) = msg.get("content").and_then(|c| c.as_array()) {
+                    for item in content {
+                        let item_type = item.get("type").and_then(|s| s.as_str());
+                        if item_type == Some("thinking") {
+                            if let Some(th) = item.get("thinking").and_then(|s| s.as_str()) {
+                                let lines: Vec<&str> = th.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                                if let Some(first) = lines.first() {
+                                    let clean = if first.len() > 140 {
+                                        format!("{}...", &first[..137])
+                                    } else {
+                                        first.to_string()
+                                    };
+                                    results.push(format!("[THOUGHT] {}", clean));
+                                }
+                            }
+                        } else if item_type == Some("text") {
+                            if let Some(txt) = item.get("text").and_then(|s| s.as_str()) {
+                                let lines: Vec<&str> = txt.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                                if let Some(first) = lines.first() {
+                                    let clean = if first.len() > 140 {
+                                        format!("{}...", &first[..137])
+                                    } else {
+                                        first.to_string()
+                                    };
+                                    results.push(format!("[RESPONSE] {}", clean));
                                 }
                             }
                         }
                     }
                 }
             }
+        } else if role == Some("toolResult") {
+            if let Some(msg) = v.get("message") {
+                let tool = msg.get("toolName").and_then(|s| s.as_str()).unwrap_or("tool");
+                let is_err = msg.get("isError").and_then(|b| b.as_bool()).unwrap_or(false);
+                let status = if is_err { "FAIL" } else { "OK" };
+
+                let mut text = String::new();
+                if let Some(c_arr) = msg.get("content").and_then(|c| c.as_array()) {
+                    for part in c_arr {
+                        if let Some(t) = part.get("text").and_then(|s| s.as_str()) {
+                            text.push_str(t);
+                        }
+                    }
+                } else if let Some(s) = msg.get("content").and_then(|c| c.as_str()) {
+                    text.push_str(s);
+                }
+
+                let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                let summary = if lines.is_empty() {
+                    "(empty output)".to_string()
+                } else if lines.len() == 1 {
+                    if lines[0].len() > 100 {
+                        format!("{}...", &lines[0][..97])
+                    } else {
+                        lines[0].to_string()
+                    }
+                } else {
+                    let first = if lines[0].len() > 80 {
+                        format!("{}...", &lines[0][..77])
+                    } else {
+                        lines[0].to_string()
+                    };
+                    format!("{} (+{} lines)", first, lines.len() - 1)
+                };
+
+                results.push(format!("[RESULT] {} ({}): {}", tool, status, summary));
+            }
         }
 
-        let session_file = latest_file.ok_or_else(|| anyhow!("No session file found"))?;
-        let content = std::fs::read_to_string(session_file)?;
+        if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        }
+    }
+
+    fn extract_latest_session_stats(preferred_file: Option<&Path>) -> Result<OmpSessionStats> {
+        let session_file = match preferred_file {
+            Some(p) if p.exists() => p.to_path_buf(),
+            _ => {
+                let dirs = Self::get_sessions_dirs();
+                match Self::find_newest_session_file_across(&dirs) {
+                    Some(f) => f,
+                    None => return Err(anyhow!("No session jsonl file found")),
+                }
+            }
+        };
+        let content = std::fs::read_to_string(&session_file)?;
 
         let mut prompt_tokens = 0u64;
         let mut completion_tokens = 0u64;
@@ -161,20 +473,23 @@ impl OmpRunner {
         for line in content.lines() {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                 steps += 1;
-                if let Some(usage) = v.get("usage") {
-                    if let Some(pt) = usage.get("prompt_tokens").and_then(|x| x.as_u64()) {
+                let usage_opt = v.get("usage")
+                    .or_else(|| v.get("message").and_then(|m| m.get("usage")));
+
+                if let Some(usage) = usage_opt {
+                    if let Some(pt) = usage.get("input").or_else(|| usage.get("prompt_tokens")).and_then(|x| x.as_u64()) {
                         prompt_tokens = prompt_tokens.max(pt);
                     }
-                    if let Some(ct) = usage.get("completion_tokens").and_then(|x| x.as_u64()) {
+                    if let Some(ct) = usage.get("output").or_else(|| usage.get("completion_tokens")).and_then(|x| x.as_u64()) {
                         completion_tokens += ct;
+                    }
+                    if let Some(cr) = usage.get("cacheRead").or_else(|| usage.get("cache_read_input_tokens")).and_then(|x| x.as_u64()) {
+                        cached_tokens = cached_tokens.max(cr);
                     }
                     if let Some(details) = usage.get("prompt_tokens_details") {
                         if let Some(c) = details.get("cached_tokens").and_then(|x| x.as_u64()) {
                             cached_tokens = cached_tokens.max(c);
                         }
-                    }
-                    if let Some(c) = usage.get("cache_read_input_tokens").and_then(|x| x.as_u64()) {
-                        cached_tokens = cached_tokens.max(c);
                     }
                 }
             }

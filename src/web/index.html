@@ -1012,6 +1012,63 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
       navigator.clipboard.writeText(log).then(() => alert('Full log copied to clipboard!'));
     }
 
+    let activeEventSource = null;
+
+    function attachLogStream() {
+      if (activeEventSource) {
+        try { activeEventSource.close(); } catch(e) {}
+      }
+      activeEventSource = new EventSource('/api/stream');
+      activeEventSource.onmessage = (event) => {
+        if (event.data === '[DONE]') {
+          appendLog('\n[COMPLETED] Benchmark run finished successfully.');
+          try { activeEventSource.close(); } catch(e) {}
+          activeEventSource = null;
+          resetStatus();
+          loadLeaderboard();
+          loadRuns();
+        } else {
+          appendLog(event.data);
+        }
+      };
+
+      activeEventSource.onerror = () => {
+        // If stream errors or drops, re-check status after short delay
+        setTimeout(checkActiveRun, 2500);
+      };
+    }
+
+    async function checkActiveRun() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.is_running) {
+          document.getElementById('startBtn').disabled = true;
+          document.getElementById('statusDot').className = 'status-dot running';
+          document.getElementById('statusText').textContent = 'Running';
+          if (data.current_run) {
+            const m = data.current_run;
+            if (m.model) {
+              const modelInput = document.getElementById('model');
+              if (modelInput && !modelInput.value) modelInput.value = m.model;
+            }
+            if (m.task) {
+              const taskSelect = document.getElementById('task');
+              if (taskSelect) taskSelect.value = m.task;
+            }
+            if (m.effort) setEffort(m.effort);
+          }
+          if (!activeEventSource) {
+            clearConsole();
+            attachLogStream();
+          }
+        }
+      } catch (e) {
+        console.warn('Status check failed:', e);
+      }
+    }
+
     async function startBenchmark() {
       const apiKey = document.getElementById('apiKey').value.trim();
       const model = document.getElementById('model').value.trim();
@@ -1035,6 +1092,9 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
       document.getElementById('statusDot').className = 'status-dot running';
       document.getElementById('statusText').textContent = 'Running';
 
+      // Connect log stream immediately so all replayed and live events are captured
+      attachLogStream();
+
       try {
         const res = await fetch('/api/run', {
           method: 'POST',
@@ -1052,30 +1112,20 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
 
         if (!res.ok) {
           appendLog(`[ERROR] Failed to start run: ${await res.text()}`);
+          if (activeEventSource) {
+            try { activeEventSource.close(); } catch(e) {}
+            activeEventSource = null;
+          }
           resetStatus();
           return;
         }
 
-        const eventSource = new EventSource('/api/stream');
-        eventSource.onmessage = (event) => {
-          if (event.data === '[DONE]') {
-            appendLog('\n[COMPLETED] Benchmark run finished successfully.');
-            eventSource.close();
-            resetStatus();
-            loadLeaderboard();
-            loadRuns();
-          } else {
-            appendLog(event.data);
-          }
-        };
-
-        eventSource.onerror = () => {
-          eventSource.close();
-          resetStatus();
-        };
-
       } catch (e) {
         appendLog(`[ERROR] Connection failure: ${e.message}`);
+        if (activeEventSource) {
+          try { activeEventSource.close(); } catch(e) {}
+          activeEventSource = null;
+        }
         resetStatus();
       }
     }
@@ -1086,9 +1136,11 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
       document.getElementById('statusText').textContent = 'Ready';
     }
 
-    // Initial load
+    // Initial load & persistent status sync
     fetchModels();
     loadPrompt();
+    checkActiveRun();
+    setInterval(checkActiveRun, 5000);
   </script>
 </body>
 </html>

@@ -14,7 +14,7 @@ use std::convert::Infallible;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::time::sleep;
@@ -28,10 +28,36 @@ use crate::report::{BenchmarkRunResult, FileInfo, LeaderboardManager, RunArchive
 use crate::sandbox::{OmpRunner, OmpSessionStats, SandboxManager};
 use crate::verifier::{HttpVerifier, RedisVerifier};
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActiveRunInfo {
+    pub run_id: String,
+    pub model: String,
+    pub task: String,
+    pub effort: String,
+    pub started_at: String,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub log_sender: broadcast::Sender<String>,
     pub is_running: Arc<AtomicBool>,
+    pub current_run: Arc<RwLock<Option<ActiveRunInfo>>>,
+    pub log_buffer: Arc<RwLock<Vec<String>>>,
+}
+
+#[derive(Serialize)]
+pub struct StatusResponse {
+    pub is_running: bool,
+    pub current_run: Option<ActiveRunInfo>,
+}
+
+async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
+    let is_running = state.is_running.load(Ordering::SeqCst);
+    let current_run = state.current_run.read().unwrap().clone();
+    Json(StatusResponse {
+        is_running,
+        current_run,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +137,8 @@ impl UiServer {
         let state = AppState {
             log_sender,
             is_running: Arc::new(AtomicBool::new(false)),
+            current_run: Arc::new(RwLock::new(None)),
+            log_buffer: Arc::new(RwLock::new(Vec::new())),
         };
 
         let app = Router::new()
@@ -118,6 +146,7 @@ impl UiServer {
             .route("/api/models", get(get_models))
             .route("/api/prompt/:task", get(get_prompt).post(save_prompt))
             .route("/api/leaderboard", get(get_leaderboard))
+            .route("/api/status", get(get_status))
             .route("/api/run", post(start_run))
             .route("/api/stream", get(stream_logs))
             .route("/api/runs", get(get_runs))
@@ -144,7 +173,10 @@ async fn serve_index() -> Html<&'static str> {
 }
 
 async fn get_models(Query(params): Query<HashMap<String, String>>) -> Json<Vec<SubDollarModel>> {
-    let api_key = params.get("key").cloned();
+    let api_key = params.get("key")
+        .filter(|k| !k.trim().is_empty())
+        .cloned()
+        .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|k| !k.trim().is_empty()));
     let client_builder = reqwest::Client::builder().timeout(Duration::from_secs(8));
     let client = client_builder.build().unwrap_or_default();
 
@@ -285,12 +317,25 @@ async fn start_run(
 
         let effort_setting = req.effort.clone().unwrap_or_else(|| "auto".to_string());
 
+        // Record active run & clear log buffer
+        *state_clone.current_run.write().unwrap() = Some(ActiveRunInfo {
+            run_id: run_id.clone(),
+            model: req.model.clone(),
+            task: req.task.clone(),
+            effort: effort_setting.clone(),
+            started_at: started_at.clone(),
+        });
+        state_clone.log_buffer.write().unwrap().clear();
+
+        let log_buf_arc = state_clone.log_buffer.clone();
+        let tx_log = tx.clone();
         let mut console_buffer: Vec<String> = Vec::new();
-        let log = |buf: &mut Vec<String>, msg: String| {
+        let log = move |buf: &mut Vec<String>, msg: String| {
             let ts = Utc::now().format("%H:%M:%S").to_string();
             let formatted = format!("[{}] {}", ts, msg);
             buf.push(formatted.clone());
-            let _ = tx.send(formatted);
+            log_buf_arc.write().unwrap().push(formatted.clone());
+            let _ = tx_log.send(formatted);
         };
 
         log(&mut console_buffer, format!("========================================================="));
@@ -301,8 +346,18 @@ async fn start_run(
         log(&mut console_buffer, format!("    Budget: ${:.2} USD | Max Turns: {}", req.budget_usd, req.max_turns));
         log(&mut console_buffer, format!("========================================================="));
 
+        let effective_api_key = req.api_key
+            .as_ref()
+            .filter(|k| !k.trim().is_empty())
+            .cloned()
+            .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|k| !k.trim().is_empty()));
+
+        if let Some(ref k) = effective_api_key {
+            std::env::set_var("OPENROUTER_API_KEY", k);
+        }
+
         // Initial OpenRouter spend checkpoint
-        let initial_spend = if let Some(key) = &req.api_key {
+        let initial_spend = if let Some(ref key) = effective_api_key {
             ModelPricing::query_openrouter_key_usage(key).await
         } else {
             None
@@ -313,6 +368,9 @@ async fn start_run(
 
         let task_type = if req.task == "http" { TaskType::Http } else { TaskType::Redis };
         let work_path = Path::new("./workspace");
+        if !req.eval_only {
+            let _ = fs::remove_dir_all(work_path);
+        }
         let _ = fs::create_dir_all(work_path);
 
         let sandbox = SandboxManager::new();
@@ -329,19 +387,23 @@ async fn start_run(
         let prompt_content = fs::read_to_string(&prompt_path).unwrap_or_default();
 
         // 3. Run OMP Agent
+        let mut agent_failed = false;
         let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !req.eval_only {
             log(&mut console_buffer, format!("[OMP] Spawning OMP agent with model '{}' (Effort: {})...", req.model, effort_setting));
             let tx_sub = tx.clone();
+            let log_buf_sub = state_clone.log_buffer.clone();
             match OmpRunner::run_agent_with_logger(
                 &req.model,
                 &prompt_content,
                 work_path,
-                req.api_key.as_deref(),
+                effective_api_key.as_deref(),
                 req.max_turns,
                 Some(&effort_setting),
                 move |line| {
                     let ts = Utc::now().format("%H:%M:%S").to_string();
-                    let _ = tx_sub.send(format!("[{}] [OMP] {}", ts, line));
+                    let formatted = format!("[{}] [OMP] {}", ts, line);
+                    log_buf_sub.write().unwrap().push(formatted.clone());
+                    let _ = tx_sub.send(formatted);
                 },
             ) {
                 Ok(stats) => {
@@ -355,15 +417,9 @@ async fn start_run(
                     (stats, p, c, comp)
                 }
                 Err(e) => {
-                    log(&mut console_buffer, format!("[OMP ERROR] {}", e));
-                    let s = OmpSessionStats {
-                        prompt_tokens: 15_000,
-                        cached_tokens: 10_000,
-                        completion_tokens: 2_500,
-                        total_tokens: 17_500,
-                        steps_taken: req.max_turns,
-                    };
-                    (s, 15_000, 10_000, 2_500)
+                    log(&mut console_buffer, format!("[OMP ERROR] Agent execution failed: {}", e));
+                    agent_failed = true;
+                    (OmpSessionStats::default(), 0, 0, 0)
                 }
             }
         } else {
@@ -371,71 +427,94 @@ async fn start_run(
             (OmpSessionStats::default(), 0, 0, 0)
         };
 
-        // 4. Start candidate container
-        let target_port = match task_type { TaskType::Redis => 6379, TaskType::Http => 8080 };
-        log(&mut console_buffer, "[SANDBOX] Launching candidate clone in isolated Docker container...".to_string());
-        let _ = sandbox.start_candidate_in_docker(work_path, target_port);
-        sleep(Duration::from_secs(3)).await;
-
-        // 5. Verification Test Suite
-        log(&mut console_buffer, "[TEST] Running Protocol Verification Test Suite...".to_string());
-        let (pass_rate, passed_stages, total_stages, stage_results) = match task_type {
-            TaskType::Redis => {
-                let verifier = RedisVerifier::new(6379, Some(6380));
-                let summary = verifier.run_all().await;
-                for s in &summary.stages {
-                    if s.passed {
-                        log(&mut console_buffer, format!("  [PASS] {}", s.name));
-                    } else {
-                        let err_msg = s.error.as_deref().unwrap_or("unknown error");
-                        log(&mut console_buffer, format!("  [FAIL] {} - Error: {}", s.name, err_msg));
-                    }
-                }
-                (summary.pass_rate, summary.passed_count, summary.total_stages, summary.stages)
-            }
-            TaskType::Http => {
-                let verifier = HttpVerifier::new(8080);
-                let summary = verifier.run_all().await;
-                for s in &summary.stages {
-                    if s.passed {
-                        log(&mut console_buffer, format!("  [PASS] {}", s.name));
-                    } else {
-                        let err_msg = s.error.as_deref().unwrap_or("unknown error");
-                        log(&mut console_buffer, format!("  [FAIL] {} - Error: {}", s.name, err_msg));
-                    }
-                }
-                (summary.pass_rate, summary.passed_count, summary.total_stages, summary.stages)
-            }
-        };
-
-        // Capture Docker candidate logs if tests failed
-        if pass_rate < 100.0 {
-            let container_logs = sandbox.get_candidate_logs();
-            log(&mut console_buffer, "[DIAGNOSTICS] Candidate container runtime output:".to_string());
-            for l in container_logs.lines() {
-                log(&mut console_buffer, format!("  | {}", l));
-            }
+        // Check if candidate produced start.sh or Dockerfile (root or nested)
+        let has_runnable = sandbox.ensure_runnable_candidate(work_path).unwrap_or(false);
+        if !agent_failed && !has_runnable {
+            log(&mut console_buffer, "[SANDBOX] Candidate did not create 'start.sh' or 'Dockerfile' in workspace. Skipping verification.".to_string());
+            agent_failed = true;
         }
 
-        // 6. Concurrency stress test in Docker
+        let target_port = match task_type { TaskType::Redis => 6379, TaskType::Http => 8080 };
         let mut throughput = None;
-        if pass_rate >= 75.0 {
-            log(&mut console_buffer, "[BENCH] Running Stress & Concurrency Benchmark in Docker...".to_string());
-            match task_type {
+
+        let (pass_rate, passed_stages, total_stages, stage_results) = if agent_failed {
+            log(&mut console_buffer, "[TEST] Skipped: agent did not produce an executable server.".to_string());
+            (0.0, 0, 4, Vec::new())
+        } else {
+            // 4. Start candidate container
+            log(&mut console_buffer, "[SANDBOX] Launching candidate clone in isolated Docker container...".to_string());
+            let _ = sandbox.start_candidate_in_docker(work_path, target_port);
+
+            // Active TCP Port Health Check
+            log(&mut console_buffer, format!("[SETUP] Polling port {} for candidate readiness (timeout: 30s)...", target_port));
+            let ready = sandbox.wait_for_port(target_port, 30).await;
+            if ready {
+                log(&mut console_buffer, format!("[SETUP] Candidate server is online and accepting connections on port {}!", target_port));
+            } else {
+                log(&mut console_buffer, format!("[WARN] Candidate port {} did not respond within 30s. Proceeding to tests...", target_port));
+            }
+
+            // 5. Verification Test Suite
+            log(&mut console_buffer, "[TEST] Running Protocol Verification Test Suite...".to_string());
+            let (pr, ps, ts, sr) = match task_type {
                 TaskType::Redis => {
-                    if let Ok(tp) = BenchmarkRunner::run_redis_benchmark(6379) {
-                        log(&mut console_buffer, format!("  Throughput: {:.0} req/sec", tp));
-                        throughput = Some(tp);
+                    let verifier = RedisVerifier::new(6379, Some(6380));
+                    let summary = verifier.run_all().await;
+                    for s in &summary.stages {
+                        if s.passed {
+                            log(&mut console_buffer, format!("  [PASS] {}", s.name));
+                        } else {
+                            let err_msg = s.error.as_deref().unwrap_or("unknown error");
+                            log(&mut console_buffer, format!("  [FAIL] {} - Error: {}", s.name, err_msg));
+                        }
                     }
+                    (summary.pass_rate, summary.passed_count, summary.total_stages, summary.stages)
                 }
                 TaskType::Http => {
-                    if let Ok(tp) = BenchmarkRunner::run_wrk_benchmark(8080) {
-                        log(&mut console_buffer, format!("  Throughput: {:.0} req/sec", tp));
-                        throughput = Some(tp);
+                    let verifier = HttpVerifier::new(8080);
+                    let summary = verifier.run_all().await;
+                    for s in &summary.stages {
+                        if s.passed {
+                            log(&mut console_buffer, format!("  [PASS] {}", s.name));
+                        } else {
+                            let err_msg = s.error.as_deref().unwrap_or("unknown error");
+                            log(&mut console_buffer, format!("  [FAIL] {} - Error: {}", s.name, err_msg));
+                        }
+                    }
+                    (summary.pass_rate, summary.passed_count, summary.total_stages, summary.stages)
+                }
+            };
+
+            // Capture Docker candidate logs if tests failed
+            if pr < 100.0 {
+                let container_logs = sandbox.get_candidate_logs();
+                log(&mut console_buffer, "[DIAGNOSTICS] Candidate container runtime output:".to_string());
+                for l in container_logs.lines() {
+                    log(&mut console_buffer, format!("  | {}", l));
+                }
+            }
+
+            // 6. Concurrency stress test in Docker
+            if pr >= 75.0 {
+                log(&mut console_buffer, "[BENCH] Running Stress & Concurrency Benchmark in Docker...".to_string());
+                match task_type {
+                    TaskType::Redis => {
+                        if let Ok(tp) = BenchmarkRunner::run_redis_benchmark(6379) {
+                            log(&mut console_buffer, format!("  Throughput: {:.0} req/sec", tp));
+                            throughput = Some(tp);
+                        }
+                    }
+                    TaskType::Http => {
+                        if let Ok(tp) = BenchmarkRunner::run_wrk_benchmark(8080) {
+                            log(&mut console_buffer, format!("  Throughput: {:.0} req/sec", tp));
+                            throughput = Some(tp);
+                        }
                     }
                 }
             }
-        }
+
+            (pr, ps, ts, sr)
+        };
 
         // 7. Cost & Metrics Accounting
         let pricing = ModelPricing::for_model(&req.model);
@@ -443,7 +522,7 @@ async fn start_run(
 
         // Check OpenRouter live spending delta if available
         let mut live_spend_delta = None;
-        if let (Some(key), Some(init)) = (&req.api_key, initial_spend) {
+        if let (Some(key), Some(init)) = (&effective_api_key, initial_spend) {
             sleep(Duration::from_millis(1500)).await;
             if let Some(fin) = ModelPricing::query_openrouter_key_usage(key).await {
                 if fin >= init {
@@ -474,7 +553,13 @@ async fn start_run(
             run_id: run_id.clone(),
             model: req.model.clone(),
             task: req.task.clone(),
-            status: if pass_rate == 100.0 { "completed".to_string() } else { "failed_tests".to_string() },
+            status: if pass_rate == 100.0 {
+                "completed".to_string()
+            } else if agent_failed {
+                "agent_failed".to_string()
+            } else {
+                "failed_tests".to_string()
+            },
             language: lang.clone(),
             effort: Some(effort_setting.clone()),
             started_at,
@@ -499,7 +584,7 @@ async fn start_run(
 
         // Archive complete run
         let runs_dir = RunArchiver::resolve_runs_dir();
-        let full_console_log = console_buffer.join("\n");
+        let full_console_log = state_clone.log_buffer.read().unwrap().join("\n");
         let _ = RunArchiver::archive_run(&runs_dir, &manifest, work_path, &full_console_log);
         log(&mut console_buffer, format!("[ARCHIVE] Run trace, workspace files & manifest archived to runs/{}/", run_id));
 
@@ -534,6 +619,7 @@ async fn start_run(
         log(&mut console_buffer, "=========================================================".to_string());
 
         sandbox.cleanup();
+        *state_clone.current_run.write().unwrap() = None;
         state_clone.is_running.store(false, Ordering::SeqCst);
         let _ = tx.send("[DONE]".to_string());
     });
@@ -545,9 +631,20 @@ async fn stream_logs(
     State(state): State<AppState>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let rx = state.log_sender.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
+
+    // 1. Snapshot historical logs from active/last run
+    let initial_events: Vec<Event> = {
+        let buf = state.log_buffer.read().unwrap();
+        buf.iter().map(|line: &String| Event::default().data(line.clone())).collect()
+    };
+    let initial_stream = tokio_stream::iter(initial_events.into_iter().map(Ok));
+
+    // 2. Stream live broadcast logs
+    let live_stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
         Ok(line) => Some(Ok(Event::default().data(line))),
         Err(_) => None,
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+
+    let combined = initial_stream.chain(live_stream);
+    Sse::new(combined).keep_alive(KeepAlive::default())
 }
