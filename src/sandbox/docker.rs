@@ -46,9 +46,35 @@ impl SandboxManager {
                 "--rm",
                 "--name",
                 "subdollar-ref-http",
+                "--memory=512m",
+                "--cpus=1.0",
                 "-p",
                 &format!("{}:80", port),
                 "nginx:alpine",
+            ])
+            .output();
+
+        Ok(())
+    }
+
+    pub fn start_reference_dns(&self, port: u16) -> Result<()> {
+        info!("Starting reference DNS server in Docker on UDP port {}", port);
+        let _ = Command::new("docker")
+            .args(["rm", "-f", "subdollar-ref-dns"])
+            .output();
+
+        let _ = Command::new("docker")
+            .args([
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                "subdollar-ref-dns",
+                "--memory=512m",
+                "--cpus=1.0",
+                "-p",
+                &format!("{}:53/udp", port),
+                "coredns/coredns",
             ])
             .output();
 
@@ -159,6 +185,9 @@ impl SandboxManager {
                             "-d",
                             "--name",
                             "subdollar-candidate",
+                            "--memory=2g",
+                            "--cpus=2.0",
+                            "--pids-limit=256",
                             "-p",
                             &port_arg,
                             "subdollar-candidate-custom",
@@ -191,6 +220,9 @@ impl SandboxManager {
                 "-d",
                 "--name",
                 "subdollar-candidate",
+                "--memory=2g",
+                "--cpus=2.0",
+                "--pids-limit=256",
                 "-v",
                 &mount_arg,
                 "-p",

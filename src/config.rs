@@ -48,6 +48,10 @@ pub enum Commands {
         /// Skip OMP agent run and evaluate existing server directly
         #[arg(long, default_value_t = false)]
         eval_only: bool,
+
+        /// Number of repeated trials for statistical variance (Pass@k)
+        #[arg(long, default_value_t = 1)]
+        trials: u32,
     },
 
     /// Directly run verification test suite against a running server
@@ -119,6 +123,7 @@ pub enum Commands {
 pub enum TaskType {
     Redis,
     Http,
+    Dns,
 }
 
 impl std::fmt::Display for TaskType {
@@ -126,6 +131,7 @@ impl std::fmt::Display for TaskType {
         match self {
             TaskType::Redis => write!(f, "redis"),
             TaskType::Http => write!(f, "http"),
+            TaskType::Dns => write!(f, "dns"),
         }
     }
 }
@@ -138,11 +144,17 @@ mod tests {
     fn test_task_type_display_and_serde() {
         assert_eq!(format!("{}", TaskType::Redis), "redis");
         assert_eq!(format!("{}", TaskType::Http), "http");
+        assert_eq!(format!("{}", TaskType::Dns), "dns");
 
         let json_redis = serde_json::to_string(&TaskType::Redis).unwrap();
         assert_eq!(json_redis, "\"redis\"");
         let de_redis: TaskType = serde_json::from_str(&json_redis).unwrap();
         assert_eq!(de_redis, TaskType::Redis);
+
+        let json_dns = serde_json::to_string(&TaskType::Dns).unwrap();
+        assert_eq!(json_dns, "\"dns\"");
+        let de_dns: TaskType = serde_json::from_str(&json_dns).unwrap();
+        assert_eq!(de_dns, TaskType::Dns);
 
         let json_http = serde_json::to_string(&TaskType::Http).unwrap();
         assert_eq!(json_http, "\"http\"");

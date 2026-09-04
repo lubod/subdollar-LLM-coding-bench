@@ -1,3 +1,5 @@
+pub mod compliance;
+pub mod dns;
 pub mod http;
 pub mod redis;
 
@@ -11,5 +13,7 @@ pub struct StageResult {
     pub error: Option<String>,
 }
 
+pub use compliance::ComplianceChecker;
+pub use dns::DnsVerifier;
 pub use http::HttpVerifier;
 pub use redis::RedisVerifier;

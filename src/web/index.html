@@ -212,6 +212,12 @@
       opacity: 0.6;
       cursor: not-allowed;
     }
+    .btn-danger {
+      background: #da3633;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: #f85149;
+    }
     .btn-secondary {
       background: #21262d;
       border: 1px solid var(--border);
@@ -225,6 +231,17 @@
       background: #30363d;
       color: #fff;
     }
+    .btn-primary {
+      background: #238636;
+      border: none;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: #2ea043;
+    }
 
     /* Right Panel Tabs */
     .tabs {
@@ -232,6 +249,7 @@
       gap: 8px;
       border-bottom: 1px solid var(--border);
       padding-bottom: 8px;
+      overflow-x: auto;
     }
     .tab {
       background: transparent;
@@ -242,6 +260,7 @@
       padding: 6px 12px;
       border-radius: 6px;
       cursor: pointer;
+      white-space: nowrap;
     }
     .tab.active {
       background: #21262d;
@@ -268,56 +287,6 @@
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-all;
-    }
-
-    /* Card */
-    .card {
-      min-width: 0;
-    }
-
-    /* Responsive Runs & Leaderboard Table */
-    .responsive-runs-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.825rem;
-      text-align: left;
-      table-layout: fixed;
-    }
-    .responsive-runs-table th, 
-    .responsive-runs-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: middle;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-    }
-    .responsive-runs-table th {
-      color: var(--text-muted);
-      font-weight: 600;
-      background: #0d1117;
-      font-size: 0.74rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .responsive-runs-table tr:hover {
-      background: #161b22;
-    }
-    .btn-toggle {
-      background: #161b22;
-      border: none;
-      color: var(--text-muted);
-      padding: 5px 12px;
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .btn-toggle:hover {
-      color: #fff;
-    }
-    .btn-toggle.active {
-      background: var(--primary);
-      color: #000;
-      font-weight: 700;
     }
 
     /* Table */
@@ -349,6 +318,39 @@
     .badge-info { background: rgba(88, 166, 255, 0.2); color: var(--primary); }
     .badge-effort { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
 
+    /* Trace Inspector Card */
+    .inspector-card {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .stat-box-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+    }
+    .stat-box {
+      background: #161b22;
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 6px;
+      text-align: center;
+    }
+    .stat-box .stat-val {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .stat-box .stat-lbl {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
     .code-viewer {
       background: #05070a;
       border: 1px solid var(--border);
@@ -362,447 +364,38 @@
       white-space: pre;
     }
 
-    /* ==========================================================================
-       GitHub-style Markdown Reader & Viewer (.markdown-body)
-       ========================================================================== */
-    .markdown-body {
-      background: #0d1117;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 24px 28px;
-      color: #e6edf3;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      font-size: 0.92rem;
-      line-height: 1.65;
-      overflow-y: auto;
-      max-height: 680px;
-    }
-    .markdown-body .md-h1,
-    .markdown-body .md-h2,
-    .markdown-body .md-h3,
-    .markdown-body .md-h4 {
-      color: #fff;
-      font-weight: 600;
-      margin-top: 24px;
-      margin-bottom: 12px;
-      line-height: 1.3;
-    }
-    .markdown-body .md-h1 {
-      font-size: 1.6rem;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 10px;
-    }
-    .markdown-body .md-h2 {
-      font-size: 1.35rem;
-      border-bottom: 1px solid rgba(48, 54, 61, 0.6);
-      padding-bottom: 8px;
-    }
-    .markdown-body .md-h3 {
-      font-size: 1.12rem;
-      color: var(--primary);
-    }
-    .markdown-body .md-h4 {
-      font-size: 0.98rem;
-    }
-    .markdown-body .md-p {
-      margin-top: 0;
-      margin-bottom: 12px;
-    }
-    .markdown-body .md-blockquote {
-      border-left: 4px solid var(--primary);
-      background: rgba(88, 166, 255, 0.08);
-      padding: 10px 16px;
-      border-radius: 0 6px 6px 0;
-      margin: 14px 0;
-      color: #c9d1d9;
-    }
-    .markdown-body .md-blockquote p {
-      margin: 0;
-    }
-    .markdown-body .md-ul,
-    .markdown-body .md-ol {
-      margin-top: 0;
-      margin-bottom: 14px;
-      padding-left: 24px;
-    }
-    .markdown-body li {
-      margin-bottom: 6px;
-    }
-    .markdown-body .md-hr {
-      height: 1px;
-      background: var(--border);
-      border: none;
-      margin: 20px 0;
-    }
-    .markdown-body .md-inline-code {
-      background: rgba(110, 118, 129, 0.25);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.84em;
-      color: #79c0ff;
-    }
-    .markdown-body .md-code-block {
-      background: #05070a;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      margin: 14px 0;
-      overflow: hidden;
-    }
-    .markdown-body .md-code-header {
-      background: #161b22;
-      border-bottom: 1px solid var(--border);
-      padding: 6px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .markdown-body .md-code-lang {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-    .markdown-body .md-code-copy-btn {
-      background: #21262d;
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.7rem;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .markdown-body .md-code-copy-btn:hover {
-      color: #fff;
-      background: #30363d;
-    }
-    .markdown-body pre {
-      margin: 0;
-      padding: 14px;
-      overflow-x: auto;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8rem;
-      line-height: 1.5;
-      color: #c9d1d9;
-    }
-    .markdown-body .md-table-wrap {
-      overflow-x: auto;
-      margin: 14px 0;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-    }
-    .markdown-body table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.84rem;
-    }
-    .markdown-body th,
-    .markdown-body td {
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      border-right: 1px solid rgba(48, 54, 61, 0.4);
-    }
-    .markdown-body th {
-      background: #161b22;
-      color: #fff;
-      font-weight: 600;
-    }
-    .markdown-body tr:hover td {
-      background: #161b22;
-    }
-    .markdown-body .md-link {
-      color: var(--primary);
-      text-decoration: none;
-    }
-    .markdown-body .md-link:hover {
-      text-decoration: underline;
-    }
-
-    /* ==========================================================================
-       Run Inspector Modal Dialog
-       ========================================================================== */
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(5, 8, 14, 0.85);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      z-index: 9999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .modal-dialog {
-      width: 100%;
-      max-width: 1320px;
-      height: 92vh;
-      max-height: 920px;
-      background: #0d1117;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9);
+    /* Diff Viewers */
+    .diff-container {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      animation: modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    @keyframes modalSlideIn {
-      from { opacity: 0; transform: scale(0.97) translateY(12px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
-    }
-    .modal-header {
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #161b22;
-      flex-shrink: 0;
-      gap: 16px;
-    }
-    .modal-title-area {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .modal-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-    }
-    .modal-kpi-bar {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 10px;
-      padding: 10px 20px;
-      background: #090d13;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .kpi-chip {
-      background: #161b22;
-      border: 1px solid var(--border);
-      padding: 8px 12px;
-      border-radius: 6px;
-      text-align: center;
-    }
-    .kpi-val {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: #fff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .kpi-lbl {
-      font-size: 0.68rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 2px;
-    }
-    .modal-tabs-bar {
-      display: flex;
-      gap: 4px;
-      padding: 8px 20px 0 20px;
-      background: #161b22;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .modal-tab-btn {
-      padding: 8px 16px;
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      color: var(--text-muted);
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
       gap: 8px;
-      transition: all 0.15s ease;
     }
-    .modal-tab-btn:hover {
-      color: #fff;
+    .side-by-side {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
-    .modal-tab-btn.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
-      background: rgba(88, 166, 255, 0.08);
-      border-top-left-radius: 6px;
-      border-top-right-radius: 6px;
-    }
-    .modal-body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #0d1117;
-      min-height: 0;
-      overflow: hidden;
-    }
-    .modal-pane {
-      display: none;
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-    }
-    .modal-pane.active {
-      display: flex;
-    }
-
-    /* Split Code Browser */
-    .code-browser-split {
-      display: flex;
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-    }
-    .code-sidebar {
-      width: 280px;
-      min-width: 230px;
-      max-width: 320px;
-      border-right: 1px solid var(--border);
-      background: #090d13;
-      display: flex;
-      flex-direction: column;
-    }
-    .code-sidebar-filter {
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .code-file-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 6px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      list-style: none;
-      margin: 0;
-    }
-    .code-file-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 7px 10px;
+    .diff-pane {
+      background: #05070a;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      cursor: pointer;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 0.76rem;
-      color: var(--text-muted);
-      transition: all 0.12s ease;
-      user-select: none;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .code-file-item:hover {
-      background: #161b22;
-      color: #fff;
-    }
-    .code-file-item.active {
-      background: rgba(88, 166, 255, 0.15);
-      color: var(--primary);
-      font-weight: 600;
-      border: 1px solid rgba(88, 166, 255, 0.3);
-    }
-    .code-main-view {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      height: 100%;
-      background: #05070a;
-    }
-    .code-main-header {
-      padding: 8px 16px;
-      background: #161b22;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-    }
-    .code-pre-viewer {
-      flex: 1;
-      margin: 0;
-      padding: 16px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8rem;
-      line-height: 1.5;
-      color: #c9d1d9;
-      background: #05070a;
-      overflow: auto;
+      max-height: 480px;
+      overflow-y: auto;
       white-space: pre;
     }
-
-    /* Trace Log Terminal */
-    .trace-container {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      background: #05070a;
-    }
-    .trace-header {
-      padding: 8px 16px;
-      background: #161b22;
+    .diff-pane-header {
+      font-weight: 600;
+      font-size: 0.8rem;
+      margin-bottom: 8px;
+      color: var(--text-muted);
       border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      flex-shrink: 0;
+      padding-bottom: 4px;
     }
-    .trace-terminal {
-      flex: 1;
-      margin: 0;
-      padding: 16px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      line-height: 1.45;
-      color: #7ee787;
-      background: #05070a;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-
-    /* Stages Breakdown */
-    .stages-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      background: #0d1117;
-    }
-    .stage-card {
-      background: #161b22;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    /* Specs & Manifest */
-    .manifest-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      background: #0d1117;
-    }
+    .diff-line-add { background: rgba(63, 185, 80, 0.15); color: #7ee787; display: block; }
+    .diff-line-del { background: rgba(248, 81, 73, 0.15); color: #ffa198; display: block; }
   </style>
 </head>
 <body>
@@ -812,12 +405,9 @@
         <h1>⚡ SubDollarBench</h1>
         <p>Autonomous Under-$1 Systems Benchmark for Budget LLMs (Docker + OMP)</p>
       </div>
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <button class="btn-secondary" id="toggleSidebarBtn" onclick="toggleSidebar()" style="padding: 6px 12px; font-size: 0.78rem; font-weight: 500;">◀ Hide Setup Panel</button>
-        <div class="status-badge">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="statusText">Ready</span>
-        </div>
+      <div class="status-badge">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Ready</span>
       </div>
     </header>
 
@@ -910,14 +500,15 @@
         <!-- Task Selection -->
         <div class="form-group">
           <label for="task">Benchmark Task</label>
-          <select id="task" onchange="onTaskChange(this.value)">
-            <option value="redis">Redis (RESP Key-Value Clone)</option>
-            <option value="http">HTTP/1.1 Web Server</option>
+          <select id="task" onchange="loadPrompt()">
+            <option value="redis">Task 1: Redis Clone (RESP Protocol)</option>
+            <option value="http">Task 2: HTTP/1.1 Web Server (RFC 2616)</option>
+            <option value="dns">Task 3: DNS Server (RFC 1035 UDP 5353)</option>
           </select>
         </div>
 
-        <!-- Budget, Turns & Timeout -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+        <!-- Budget, Turns, Timeout & Trials -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;">
           <div class="form-group">
             <label for="budget">Budget ($)</label>
             <input type="number" id="budget" value="0.20" step="0.05" min="0.01" />
@@ -927,8 +518,16 @@
             <input type="number" id="turns" value="15" min="1" max="100" />
           </div>
           <div class="form-group">
-            <label for="timeout_min">Timeout (min)</label>
+            <label for="timeout_min">Timeout (m)</label>
             <input type="number" id="timeout_min" value="15" min="1" max="120" />
+          </div>
+          <div class="form-group">
+            <label for="trials">Trials</label>
+            <select id="trials">
+              <option value="1" selected>1x</option>
+              <option value="3">3x (Pass@3)</option>
+              <option value="5">5x (Pass@5)</option>
+            </select>
           </div>
         </div>
 
@@ -937,19 +536,26 @@
           <label for="evalOnly" style="font-weight: normal; cursor: pointer;">Eval only (skip OMP agent)</label>
         </div>
 
-        <button class="btn" id="startBtn" onclick="startBenchmark()">
-          <span>🚀</span> Start Benchmark Run
-        </button>
+        <!-- Run & Stop Control Buttons -->
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+          <button class="btn" id="startBtn" onclick="startBenchmark()" style="flex: 1;">
+            <span>🚀</span> Start Benchmark Run
+          </button>
+          <button class="btn btn-danger" id="stopBtn" onclick="stopBenchmark()" style="display: none; flex: 1;">
+            <span>🛑</span> Stop Run
+          </button>
+        </div>
       </aside>
 
       <!-- Main Display Tabs -->
       <main class="card">
         <div class="tabs">
-          <button class="tab active" onclick="switchTab('console')">Live Console</button>
-          <button class="tab" onclick="switchTab('traceability')">Traceability & Runs</button>
-          <button class="tab" onclick="switchTab('prompt')">Prompt Specification</button>
-          <button class="tab" onclick="switchTab('leaderboard')">Leaderboard</button>
-          <button class="tab" onclick="switchTab('summary')">📊 SUMMARY.md & Git</button>
+          <button class="tab active" id="tabBtn-console" onclick="switchTab('console')">Live Console</button>
+          <button class="tab" id="tabBtn-traceability" onclick="switchTab('traceability')">Traceability & Runs</button>
+          <button class="tab" id="tabBtn-compare" onclick="switchTab('compare')">⚖️ Compare Runs (Diff)</button>
+          <button class="tab" id="tabBtn-prompt" onclick="switchTab('prompt')">Prompt Specification</button>
+          <button class="tab" id="tabBtn-leaderboard" onclick="switchTab('leaderboard')">Leaderboard</button>
+          <button class="tab" id="tabBtn-summary" onclick="switchTab('summary')">📊 SUMMARY.md & Git</button>
         </div>
 
         <!-- Tab 1: Terminal Console -->
@@ -980,111 +586,185 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
 
         <!-- Tab 2: Traceability & Runs History -->
         <div id="tab-traceability" style="display: none; flex-direction: column; gap: 16px;">
-          <!-- Controls Toolbar -->
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 520px;">
-              <input type="text" id="runsSearchInput" placeholder="🔍 Search runs by model, task, language, status..." oninput="filterRunsList(this.value)" style="flex: 1; padding: 6px 12px; font-size: 0.78rem; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; color: #fff;">
-              <span id="runsCountBadge" class="badge badge-info" style="font-size: 0.72rem; white-space: nowrap;">Loading runs...</span>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <div style="display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden;">
-                <button id="viewBtnTable" class="btn-toggle active" onclick="setRunsViewMode('table')" title="Table View">📑 Table</button>
-                <button id="viewBtnCards" class="btn-toggle" onclick="setRunsViewMode('cards')" title="Cards View">🗂️ Cards</button>
-              </div>
-              <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="loadRuns()">🔄 Refresh</button>
-            </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="hint">Complete run manifests, captured logs, and LLM generated code snapshots</span>
+            <button class="btn btn-secondary" onclick="loadRuns()">🔄 Refresh Runs</button>
           </div>
 
-          <!-- Runs List Table View (Zero horizontal scroll) -->
-          <div id="runsTableView" style="width: 100%;">
-            <table class="responsive-runs-table">
+          <!-- Runs List Table -->
+          <div style="overflow-x: auto;">
+            <table>
               <thead>
                 <tr>
-                  <th style="width: 38%;">Model & Benchmark Run</th>
-                  <th style="width: 18%;">Pass Rate & Effort</th>
-                  <th style="width: 14%;">Cost & Tokens</th>
-                  <th style="width: 14%;">Score & Throughput</th>
-                  <th style="width: 16%; text-align: right;">Actions</th>
+                  <th>Run ID</th>
+                  <th>Task</th>
+                  <th>Model</th>
+                  <th>Effort</th>
+                  <th>Lang</th>
+                  <th>Pass Rate</th>
+                  <th>Cost ($)</th>
+                  <th>Throughput</th>
+                  <th>Score / ¢</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="runsTableBody">
-                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading runs...</td></tr>
+                <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">Loading runs...</td></tr>
               </tbody>
             </table>
           </div>
 
-          <!-- Runs Cards View (Toggleable) -->
-          <div id="runsCardsView" style="display: none; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px;">
-          </div>
-        </div>
-
-        <!-- Tab 3: Prompt Specification -->
-        <div id="tab-prompt" style="display: none; flex-direction: column; gap: 12px;">
-          <!-- Prompt Toolbar -->
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <span class="hint" style="font-weight: 600; color: #fff;">Task Spec:</span>
-              <select id="promptTaskSelect" onchange="onTaskChange(this.value)" style="padding: 4px 10px; font-size: 0.78rem; font-weight: 600;">
-                <option value="redis">⚡ redis (In-Memory Redis Server)</option>
-                <option value="http">🌐 http (HTTP/1.1 Web Server)</option>
-              </select>
-              <span id="promptStatusIndicator" style="font-size: 0.72rem; color: var(--text-muted);"></span>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <!-- View mode toggle -->
-              <div style="display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden;">
-                <button id="promptViewBtnPreview" class="btn-toggle active" onclick="setPromptViewMode('preview')">👁️ Formatted</button>
-                <button id="promptViewBtnEdit" class="btn-toggle" onclick="setPromptViewMode('edit')">✏️ Edit Raw</button>
-                <button id="promptViewBtnSplit" class="btn-toggle" onclick="setPromptViewMode('split')">◫ Split</button>
+          <!-- Selected Run Detail Inspector -->
+          <div id="runInspector" class="inspector-card" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+              <h3 style="font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+                <span>🔍 Inspecting Run:</span>
+                <span id="inspectRunId" style="color: var(--primary); font-family: 'JetBrains Mono', monospace;"></span>
+                <span id="inspectGitBadge"></span>
+              </h3>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="btn-secondary" onclick="openCompareWith(currentInspectRun ? currentInspectRun.run_id : '')">⚖️ Compare</button>
+                <button id="inspectPublishBtn" class="btn-primary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="publishRunModal(currentInspectRun ? currentInspectRun.run_id : '')">🚀 Publish to Git</button>
+                <button class="btn-secondary" onclick="closeRunInspector()">✕ Close</button>
               </div>
-              <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.76rem;" onclick="copyPromptMarkdown()">📋 Copy Markdown</button>
-              <button id="promptSaveBtn" class="btn btn-primary" style="padding: 5px 12px; font-size: 0.76rem;" onclick="savePrompt()">💾 Save Changes</button>
+            </div>
+
+            <!-- Execution Environment & Hardware Specs -->
+            <div style="background: #161b22; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">🖥️ Execution Environment & Hardware Specs:</h4>
+                <span id="inspectGitCommit" style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent);"></span>
+              </div>
+              <div id="inspectEnvTable" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 0.75rem;"></div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stat-box-grid">
+              <div class="stat-box">
+                <div class="stat-val" id="inspectScore" style="color: var(--primary);">-</div>
+                <div class="stat-lbl">Score / ¢</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectEffort" style="color: var(--warning);">-</div>
+                <div class="stat-lbl">Effort</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectPass">-</div>
+                <div class="stat-lbl">Pass Rate</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectCost" style="color: var(--accent);">-</div>
+                <div class="stat-lbl">Cost ($)</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectTokens">-</div>
+                <div class="stat-lbl">Total Tokens</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectDuration">-</div>
+                <div class="stat-lbl">Duration</div>
+              </div>
+            </div>
+
+            <!-- Test Stages Breakdown -->
+            <div>
+              <h4 style="font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--text);">🧪 Verification Stages Breakdown:</h4>
+              <div id="inspectStagesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            </div>
+
+            <!-- Generated Code Explorer -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">💻 Candidate LLM Generated Code:</h4>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <select id="inspectFileSelect" onchange="onInspectFileChange()" style="padding: 4px 8px; font-size: 0.75rem;"></select>
+                  <button class="btn-secondary" onclick="copyInspectFile()">📋 Copy File</button>
+                </div>
+              </div>
+              <pre class="code-viewer" id="inspectCodeViewer">(Select a file above to inspect source code)</pre>
+            </div>
+
+            <!-- Console Log Viewer -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">📜 Captured Execution Trace (console.log):</h4>
+                <button class="btn-secondary" onclick="copyInspectLog()">📋 Copy Full Log</button>
+              </div>
+              <pre class="code-viewer" id="inspectLogViewer" style="color: #7ee787; max-height: 250px;">(Loading log...)</pre>
             </div>
           </div>
+        </div>
 
-          <!-- Formatted Preview Container -->
-          <div id="promptPreviewContainer" class="markdown-body" style="display: block;">
-            <div style="text-align: center; color: var(--text-muted); padding: 30px;">Loading prompt specification...</div>
+        <!-- Tab 3: Run Comparison & Code Diff -->
+        <div id="tab-compare" style="display: none; flex-direction: column; gap: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: #161b22; padding: 14px; border-radius: 6px; border: 1px solid var(--border);">
+            <div style="display: flex; gap: 12px; align-items: center; flex: 1; min-width: 320px;">
+              <div style="flex: 1;">
+                <label for="compareRunA" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Base Run (A)</label>
+                <select id="compareRunA" style="width: 100%;"></select>
+              </div>
+              <span style="font-size: 1.1rem; font-weight: bold; color: var(--text-muted); margin-top: 18px;">VS</span>
+              <div style="flex: 1;">
+                <label for="compareRunB" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Target Run (B)</label>
+                <select id="compareRunB" style="width: 100%;"></select>
+              </div>
+            </div>
+            <button class="btn" onclick="executeCompare()" style="margin-top: 14px; padding: 9px 18px; font-size: 0.85rem;">
+              ⚖️ Compare Runs
+            </button>
           </div>
 
-          <!-- Raw Editor Container -->
-          <div id="promptEditContainer" style="display: none; flex-direction: column; gap: 8px;">
-            <textarea id="promptEditor" oninput="onPromptEditorInput()" placeholder="Loading prompt specification..." style="min-height: 540px; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.5;"></textarea>
-          </div>
+          <div id="compareResultContainer" style="display: none; flex-direction: column; gap: 16px;">
+            <!-- Metric Deltas Cards -->
+            <div class="stat-box-grid" id="compareMetricGrid"></div>
 
-          <!-- Split View Container -->
-          <div id="promptSplitContainer" style="display: none; grid-template-columns: 1fr 1fr; gap: 14px;">
-            <textarea id="promptSplitEditor" oninput="onPromptSplitInput()" placeholder="Raw Markdown..." style="min-height: 540px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5;"></textarea>
-            <div id="promptSplitPreview" class="markdown-body" style="max-height: 560px;"></div>
+            <!-- Code Diff Explorer -->
+            <div class="inspector-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <h3 style="font-size: 0.95rem; color: #fff;">Workspace Code Diffs</h3>
+                <div style="display: flex; gap: 6px;">
+                  <button id="diffModeUnified" class="preset-btn active" onclick="setDiffMode('unified')">Unified Diff</button>
+                  <button id="diffModeSide" class="preset-btn" onclick="setDiffMode('side')">Side-by-Side</button>
+                </div>
+              </div>
+              <div id="diffFileTabs" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;"></div>
+              <div id="diffOutputContainer" style="margin-top: 8px;"></div>
+            </div>
           </div>
         </div>
 
-        <!-- Tab 4: Leaderboard -->
-        <div id="tab-leaderboard" style="display: none; flex-direction: column; gap: 14px;">
+        <!-- Tab 4: Prompt Editor -->
+        <div id="tab-prompt" style="display: none; flex-direction: column; gap: 10px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="hint">Global model rankings sorted by Under-$1 efficiency score (points per cent)</span>
-            <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="loadLeaderboard()">🔄 Refresh Leaderboard</button>
+            <span class="hint">System instructions fed into OMP for this task</span>
+            <button class="btn btn-secondary" onclick="savePrompt()">💾 Save Changes</button>
           </div>
-          <div style="width: 100%;">
-            <table class="responsive-runs-table">
-              <thead>
-                <tr>
-                  <th style="width: 8%; text-align: center;">Rank</th>
-                  <th style="width: 36%;">Model & Task</th>
-                  <th style="width: 16%;">Pass Rate & Effort</th>
-                  <th style="width: 14%;">Throughput</th>
-                  <th style="width: 12%;">Cost</th>
-                  <th style="width: 14%; text-align: right;">Score / ¢</th>
-                </tr>
-              </thead>
-              <tbody id="leaderboardBody">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No runs recorded yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
+          <textarea id="promptEditor" placeholder="Loading prompt specification..."></textarea>
         </div>
 
-        <!-- Tab 5: SUMMARY.md & Git Contributions -->
+        <!-- Tab 5: Leaderboard -->
+        <div id="tab-leaderboard" style="display: none; overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Effort</th>
+                <th>Task</th>
+                <th>Lang</th>
+                <th>Pass Rate</th>
+                <th>Throughput</th>
+                <th>Cost ($)</th>
+                <th>Score / ¢</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody">
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tab 6: SUMMARY.md & Git Contributions -->
         <div id="tab-summary" style="display: none; flex-direction: column; gap: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
@@ -1106,10 +786,10 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
               🚀 Clone & Reproduce Benchmarks on Your Machine:
             </h4>
             <pre style="background: #0d1117; padding: 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #c9d1d9; overflow-x: auto; margin: 0;"><code># 1. Clone repo & set key
-git clone https://github.com/username/subdollar-LLM-coding-bench.git && cd subdollar-LLM-coding-bench
+git clone https://github.com/lubod/subdollar-LLM-coding-bench.git && cd subdollar-LLM-coding-bench
 export OPENROUTER_API_KEY="sk-or-v1-..."
 
-# 2. Run Redis or HTTP benchmark
+# 2. Run Redis, HTTP or DNS benchmark
 cargo run --release -- run --task redis --model openrouter/meta/muse-spark-1.3-contributor --effort max
 
 # 3. Publish results to git & regenerate SUMMARY.md
@@ -1117,16 +797,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           </div>
 
           <!-- SUMMARY.md Content Box -->
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div style="display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden;">
-                <button id="summaryViewBtnPreview" class="btn-toggle active" onclick="setSummaryViewMode('preview')">👁️ Formatted Preview</button>
-                <button id="summaryViewBtnRaw" class="btn-toggle" onclick="setSummaryViewMode('raw')">📄 Raw Markdown</button>
-              </div>
-              <span id="summaryMetaBadge" style="font-size: 0.72rem; color: var(--text-muted);"></span>
-            </div>
-            <div id="summaryPreview" class="markdown-body" style="display: block; max-height: 580px;">Loading SUMMARY.md...</div>
-            <pre id="summaryViewer" style="display: none; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #e6edf3; max-height: 580px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; margin: 0;">Loading SUMMARY.md...</pre>
+          <div style="position: relative;">
+            <pre id="summaryViewer" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #e6edf3; max-height: 550px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;">Loading SUMMARY.md...</pre>
           </div>
         </div>
       </main>
@@ -1137,6 +809,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     let allModels = [];
     let activeFamily = 'all';
     let currentInspectRun = null;
+    let cachedRuns = [];
+    let currentCompareData = null;
+    let activeDiffMode = 'unified';
+    let activeDiffFileIdx = 0;
 
     // Load saved API key
     const savedKey = localStorage.getItem('openrouter_api_key');
@@ -1273,33 +949,23 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     }
 
     function switchTab(name) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.getElementById('tab-console').style.display = 'none';
-      document.getElementById('tab-traceability').style.display = 'none';
-      document.getElementById('tab-prompt').style.display = 'none';
-      document.getElementById('tab-leaderboard').style.display = 'none';
-      document.getElementById('tab-summary').style.display = 'none';
+      ['console', 'traceability', 'compare', 'prompt', 'leaderboard', 'summary'].forEach(t => {
+        const el = document.getElementById(`tab-${t}`);
+        if (el) el.style.display = 'none';
+        const b = document.getElementById(`tabBtn-${t}`);
+        if (b) b.classList.remove('active');
+      });
 
-      if (name === 'console') {
-        document.getElementById('tab-console').style.display = 'flex';
-        document.querySelectorAll('.tab')[0].classList.add('active');
-      } else if (name === 'traceability') {
-        document.getElementById('tab-traceability').style.display = 'flex';
-        document.querySelectorAll('.tab')[1].classList.add('active');
-        loadRuns();
-      } else if (name === 'prompt') {
-        document.getElementById('tab-prompt').style.display = 'flex';
-        document.querySelectorAll('.tab')[2].classList.add('active');
-        loadPrompt();
-      } else if (name === 'leaderboard') {
-        document.getElementById('tab-leaderboard').style.display = 'flex';
-        document.querySelectorAll('.tab')[3].classList.add('active');
-        loadLeaderboard();
-      } else if (name === 'summary') {
-        document.getElementById('tab-summary').style.display = 'flex';
-        document.querySelectorAll('.tab')[4].classList.add('active');
-        loadSummary();
-      }
+      const target = document.getElementById(`tab-${name}`);
+      if (target) target.style.display = (name === 'leaderboard' ? 'block' : 'flex');
+      const btn = document.getElementById(`tabBtn-${name}`);
+      if (btn) btn.classList.add('active');
+
+      if (name === 'traceability') loadRuns();
+      else if (name === 'compare') populateCompareDropdowns();
+      else if (name === 'prompt') loadPrompt();
+      else if (name === 'leaderboard') loadLeaderboard();
+      else if (name === 'summary') loadSummary();
     }
 
     function clearConsole() {
@@ -1315,500 +981,31 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
-    // Markdown Parser
-    function renderMarkdown(md) {
-      if (!md) return '';
-      let src = md.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-      const codeBlocks = [];
-      src = src.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
-        const placeholder = '§§CODEBLOCK_' + codeBlocks.length + '§§';
-        codeBlocks.push({ lang: lang || 'text', code: escapeHtml(code) });
-        return placeholder;
-      });
-
-      const inlineCodes = [];
-      src = src.replace(/`([^`\n]+)`/g, (match, code) => {
-        const placeholder = '§§INLINECODE_' + inlineCodes.length + '§§';
-        inlineCodes.push(escapeHtml(code));
-        return placeholder;
-      });
-
-      const lines = src.split('\n');
-      let out = [];
-      let inList = null;
-      let inTable = false;
-      let inBlockquote = false;
-
-      function closeList() { if (inList) { out.push('</' + inList + '>'); inList = null; } }
-      function closeTable() { if (inTable) { out.push('</tbody></table></div>'); inTable = false; } }
-      function closeBlockquote() { if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; } }
-
-      for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-        const cbMatch = line.match(/^§§CODEBLOCK_(\d+)§§$/);
-        if (cbMatch) {
-          closeList(); closeTable(); closeBlockquote();
-          const idx = parseInt(cbMatch[1]);
-          const cb = codeBlocks[idx];
-          out.push('<div class="md-code-block"><div class="md-code-header"><span class="md-code-lang">' + cb.lang + '</span><button class="md-code-copy-btn" onclick="copyCodeBlock(this)">📋 Copy</button></div><pre><code class="language-' + cb.lang + '">' + cb.code + '</code></pre></div>');
-          continue;
-        }
-
-        if (/^(?:---|\*\*\*|___)\s*$/.test(line)) {
-          closeList(); closeTable(); closeBlockquote();
-          out.push('<hr class="md-hr">');
-          continue;
-        }
-
-        const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
-        if (headingMatch) {
-          closeList(); closeTable(); closeBlockquote();
-          const level = headingMatch[1].length;
-          out.push('<h' + level + ' class="md-h' + level + '">' + inlineFormat(headingMatch[2]) + '</h' + level + '>');
-          continue;
-        }
-
-        if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-          closeList(); closeBlockquote();
-          const cells = line.trim().slice(1, -1).split('|').map(c => c.trim());
-          const isDivider = cells.every(c => /^:?-+:?$/.test(c));
-          if (isDivider) continue;
-
-          if (!inTable) {
-            inTable = true;
-            out.push('<div class="md-table-wrap"><table><thead><tr>');
-            cells.forEach(c => { out.push('<th>' + inlineFormat(c) + '</th>'); });
-            out.push('</tr></thead><tbody>');
-            continue;
-          } else {
-            out.push('<tr>');
-            cells.forEach(c => { out.push('<td>' + inlineFormat(c) + '</td>'); });
-            out.push('</tr>');
-            continue;
-          }
-        } else {
-          closeTable();
-        }
-
-        const bqMatch = line.match(/^>\s?(.*)$/);
-        if (bqMatch) {
-          closeList(); closeTable();
-          if (!inBlockquote) { out.push('<blockquote class="md-blockquote">'); inBlockquote = true; }
-          out.push('<p>' + inlineFormat(bqMatch[1]) + '</p>');
-          continue;
-        } else {
-          closeBlockquote();
-        }
-
-        const ulMatch = line.match(/^(\s*)([-*+])\s+(.+)$/);
-        if (ulMatch) {
-          closeTable(); closeBlockquote();
-          if (inList !== 'ul') { closeList(); out.push('<ul class="md-ul">'); inList = 'ul'; }
-          out.push('<li>' + inlineFormat(ulMatch[3]) + '</li>');
-          continue;
-        }
-
-        const olMatch = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
-        if (olMatch) {
-          closeTable(); closeBlockquote();
-          if (inList !== 'ol') { closeList(); out.push('<ol class="md-ol">'); inList = 'ol'; }
-          out.push('<li>' + inlineFormat(olMatch[3]) + '</li>');
-          continue;
-        }
-
-        if (!line.trim()) {
-          closeList(); closeTable(); closeBlockquote();
-          continue;
-        }
-
-        closeList(); closeTable(); closeBlockquote();
-        out.push('<p class="md-p">' + inlineFormat(line) + '</p>');
-      }
-
-      closeList(); closeTable(); closeBlockquote();
-      let result = out.join('\n');
-
-      result = result.replace(/§§INLINECODE_(\d+)§§/g, (match, idx) => {
-        return '<code class="md-inline-code">' + inlineCodes[parseInt(idx)] + '</code>';
-      });
-
-      return result;
-
-      function inlineFormat(str) {
-        let s = str.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="md-link">$1</a>');
-        s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-        s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-        s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
-        s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-        return s;
-      }
-
-      function escapeHtml(str) {
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-      }
-    }
-
-    let currentLoadedPromptText = '';
-    let currentPromptViewMode = localStorage.getItem('prompt_view_mode') || 'preview';
-
-    function onTaskChange(task) {
-      if (!task) return;
-      localStorage.setItem('selected_benchmark_task', task);
-      const mainSel = document.getElementById('task');
-      if (mainSel && mainSel.value !== task) mainSel.value = task;
-      const promptSel = document.getElementById('promptTaskSelect');
-      if (promptSel && promptSel.value !== task) promptSel.value = task;
-      loadPrompt(task);
-    }
-
-    async function loadPrompt(taskOverride) {
-      const mainSel = document.getElementById('task');
-      const savedTask = localStorage.getItem('selected_benchmark_task');
-      const task = taskOverride || (mainSel ? mainSel.value : null) || savedTask || 'redis';
-
-      if (mainSel && mainSel.value !== task) mainSel.value = task;
-      const promptSel = document.getElementById('promptTaskSelect');
-      if (promptSel && promptSel.value !== task) promptSel.value = task;
-      localStorage.setItem('selected_benchmark_task', task);
-
-      const indicator = document.getElementById('promptStatusIndicator');
-      if (indicator) indicator.textContent = 'Loading...';
-
+    async function loadPrompt() {
+      const task = document.getElementById('task').value;
       try {
         const res = await fetch(`/api/prompt/${task}`);
         if (res.ok) {
           const text = await res.text();
-          currentLoadedPromptText = text;
-
-          const editor = document.getElementById('promptEditor');
-          const splitEditor = document.getElementById('promptSplitEditor');
-          if (editor) editor.value = text;
-          if (splitEditor) splitEditor.value = text;
-
-          const html = renderMarkdown(text);
-          const preview = document.getElementById('promptPreviewContainer');
-          const splitPreview = document.getElementById('promptSplitPreview');
-          if (preview) preview.innerHTML = html;
-          if (splitPreview) splitPreview.innerHTML = html;
-
-          if (indicator) indicator.textContent = `(${text.split('\n').length} lines)`;
-        } else {
-          if (indicator) indicator.textContent = '(Failed to load)';
+          document.getElementById('promptEditor').value = text;
         }
       } catch (e) {
         console.error('Failed to load prompt', e);
-        if (indicator) indicator.textContent = `(Error: ${e.message})`;
       }
-    }
-
-    function setPromptViewMode(mode) {
-      currentPromptViewMode = mode;
-      localStorage.setItem('prompt_view_mode', mode);
-
-      const btnPrev = document.getElementById('promptViewBtnPreview');
-      const btnEdit = document.getElementById('promptViewBtnEdit');
-      const btnSplt = document.getElementById('promptViewBtnSplit');
-      if (btnPrev) btnPrev.classList.toggle('active', mode === 'preview');
-      if (btnEdit) btnEdit.classList.toggle('active', mode === 'edit');
-      if (btnSplt) btnSplt.classList.toggle('active', mode === 'split');
-
-      const prevBox = document.getElementById('promptPreviewContainer');
-      const editBox = document.getElementById('promptEditContainer');
-      const spltBox = document.getElementById('promptSplitContainer');
-
-      if (prevBox) prevBox.style.display = mode === 'preview' ? 'block' : 'none';
-      if (editBox) editBox.style.display = mode === 'edit' ? 'flex' : 'none';
-      if (spltBox) spltBox.style.display = mode === 'split' ? 'grid' : 'none';
-
-      if (mode === 'preview') {
-        const text = (document.getElementById('promptEditor') && document.getElementById('promptEditor').value) || currentLoadedPromptText;
-        if (prevBox) prevBox.innerHTML = renderMarkdown(text);
-      } else if (mode === 'split') {
-        const text = (document.getElementById('promptEditor') && document.getElementById('promptEditor').value) || currentLoadedPromptText;
-        const splitEditor = document.getElementById('promptSplitEditor');
-        const splitPreview = document.getElementById('promptSplitPreview');
-        if (splitEditor) splitEditor.value = text;
-        if (splitPreview) splitPreview.innerHTML = renderMarkdown(text);
-      }
-    }
-
-    function onPromptEditorInput() {
-      const editor = document.getElementById('promptEditor');
-      if (!editor) return;
-      currentLoadedPromptText = editor.value;
-      const splitEditor = document.getElementById('promptSplitEditor');
-      if (splitEditor) splitEditor.value = editor.value;
-    }
-
-    function onPromptSplitInput() {
-      const splitEditor = document.getElementById('promptSplitEditor');
-      if (!splitEditor) return;
-      currentLoadedPromptText = splitEditor.value;
-      const editor = document.getElementById('promptEditor');
-      if (editor) editor.value = splitEditor.value;
-      const splitPreview = document.getElementById('promptSplitPreview');
-      if (splitPreview) splitPreview.innerHTML = renderMarkdown(splitEditor.value);
     }
 
     async function savePrompt() {
-      const task = (document.getElementById('task') && document.getElementById('task').value) || (document.getElementById('promptTaskSelect') && document.getElementById('promptTaskSelect').value) || 'redis';
-      const content = (document.getElementById('promptEditor') && document.getElementById('promptEditor').value) || currentLoadedPromptText;
-      const saveBtn = document.getElementById('promptSaveBtn');
-      if (saveBtn) saveBtn.disabled = true;
-
+      const task = document.getElementById('task').value;
+      const content = document.getElementById('promptEditor').value;
       try {
         const res = await fetch(`/api/prompt/${task}`, {
           method: 'POST',
           body: content
         });
-        if (res.ok) {
-          alert(`✅ Prompt for '${task}' saved successfully!`);
-          loadPrompt(task);
-        } else {
-          const err = await res.text();
-          alert(`❌ Failed to save prompt: ${err}`);
-        }
+        if (res.ok) alert('Prompt saved successfully!');
       } catch (e) {
-        alert(`❌ Failed to save prompt: ${e.message}`);
-      } finally {
-        if (saveBtn) saveBtn.disabled = false;
+        alert('Failed to save prompt');
       }
-    }
-
-    function copyPromptMarkdown() {
-      const text = currentLoadedPromptText || (document.getElementById('promptEditor') ? document.getElementById('promptEditor').value : '');
-      navigator.clipboard.writeText(text).then(() => {
-        alert('📋 Prompt markdown copied to clipboard!');
-      });
-    }
-
-    function copyCodeBlock(btn) {
-      const block = btn.closest('.md-code-block');
-      const code = block ? block.querySelector('code').textContent : '';
-      navigator.clipboard.writeText(code).then(() => {
-        const orig = btn.textContent;
-        btn.textContent = '✔ Copied!';
-        setTimeout(() => { btn.textContent = orig; }, 1500);
-      });
-    }
-
-    let allRunsCache = [];
-    let currentRunsFilter = '';
-    let currentRunsView = localStorage.getItem('runs_view_mode') || 'table';
-
-    function toggleSidebar() {
-      const aside = document.querySelector('aside.card');
-      const grid = document.querySelector('.grid');
-      const btn = document.getElementById('toggleSidebarBtn');
-      if (!aside || !grid) return;
-      const isHidden = aside.style.display === 'none';
-      if (isHidden) {
-        aside.style.display = 'flex';
-        grid.style.gridTemplateColumns = '460px 1fr';
-        if (btn) btn.textContent = '◀ Hide Setup Panel';
-        localStorage.setItem('sidebar_hidden', 'false');
-      } else {
-        aside.style.display = 'none';
-        grid.style.gridTemplateColumns = '1fr';
-        if (btn) btn.textContent = '⚙️ Show Setup Panel';
-        localStorage.setItem('sidebar_hidden', 'true');
-      }
-    }
-
-    function formatTimestamp(ts) {
-      if (!ts) return '';
-      try {
-        const d = new Date(ts);
-        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } catch (e) {
-        return ts;
-      }
-    }
-
-    function formatDuration(sec) {
-      if (!sec && sec !== 0) return '';
-      const s = Math.round(sec);
-      if (s < 60) return `${s}s`;
-      const m = Math.floor(s / 60);
-      const rem = s % 60;
-      return `${m}m ${rem}s`;
-    }
-
-    function copySpecificText(text, el, feedbackText) {
-      navigator.clipboard.writeText(text).then(() => {
-        if (!el) return;
-        const orig = el.innerHTML;
-        el.innerHTML = `<span style="color:var(--success)">${feedbackText || 'Copied!'}</span>`;
-        setTimeout(() => { el.innerHTML = orig; }, 1500);
-      });
-    }
-
-    function setRunsViewMode(mode) {
-      currentRunsView = mode;
-      localStorage.setItem('runs_view_mode', mode);
-      const btnTbl = document.getElementById('viewBtnTable');
-      const btnCrd = document.getElementById('viewBtnCards');
-      if (btnTbl) btnTbl.classList.toggle('active', mode === 'table');
-      if (btnCrd) btnCrd.classList.toggle('active', mode === 'cards');
-      const tblView = document.getElementById('runsTableView');
-      const crdView = document.getElementById('runsCardsView');
-      if (tblView) tblView.style.display = mode === 'table' ? 'block' : 'none';
-      if (crdView) crdView.style.display = mode === 'cards' ? 'grid' : 'none';
-      renderRuns();
-    }
-
-    function filterRunsList(q) {
-      currentRunsFilter = (q || '').trim().toLowerCase();
-      renderRuns();
-    }
-
-    async function loadRuns() {
-      try {
-        const res = await fetch('/api/runs');
-        if (!res.ok) return;
-        allRunsCache = await res.json();
-        renderRuns();
-      } catch (e) {
-        console.error('Failed to load runs:', e);
-      }
-    }
-
-    function renderRuns() {
-      const q = currentRunsFilter;
-      const runs = q ? allRunsCache.filter(r => {
-        const text = `${r.run_id} ${r.model} ${r.task} ${r.language} ${r.status} ${r.effort || ''}`.toLowerCase();
-        return text.includes(q);
-      }) : allRunsCache;
-
-      const badge = document.getElementById('runsCountBadge');
-      if (badge) badge.textContent = `${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`;
-
-      const tbody = document.getElementById('runsTableBody');
-      const cardsContainer = document.getElementById('runsCardsView');
-
-      if (runs.length === 0) {
-        const emptyMsg = allRunsCache.length === 0 
-          ? 'No archived runs found in runs/.' 
-          : `No runs matched search query "${q}".`;
-        if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">${emptyMsg}</td></tr>`;
-        if (cardsContainer) cardsContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 24px;">${emptyMsg}</div>`;
-        return;
-      }
-
-      if (tbody) tbody.innerHTML = '';
-      if (cardsContainer) cardsContainer.innerHTML = '';
-
-      runs.forEach(r => {
-        const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
-        const passBadge = r.pass_rate === 100 
-          ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
-          : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
-        const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
-        const pubBadge = r.is_published 
-          ? `<span class="badge" style="background:#238636;color:#fff;font-size:0.72rem;padding:2px 8px;">✔ Git</span>` 
-          : `<button class="btn-primary" style="padding:3px 8px;font-size:0.72rem;" onclick="event.stopPropagation(); publishRunModal('${r.run_id}')">🚀 Publish</button>`;
-
-        const dateStr = formatTimestamp(r.started_at || r.completed_at);
-        const durationStr = formatDuration(r.duration_seconds);
-        const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : 'N/A';
-        const shortId = r.run_id.length > 14 ? r.run_id.slice(-8) : r.run_id;
-
-        // 1. Table row
-        if (tbody) {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.88rem;">${r.model}</span>
-                  <span class="badge badge-info">${r.task}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
-                  <span>${dateStr}</span>
-                  <span>·</span>
-                  <span title="${r.run_id}" style="cursor: pointer; text-decoration: underline dotted;" onclick="copySpecificText('${r.run_id}', this, 'Copied ID!')">
-                    id: ...${shortId} 📋
-                  </span>
-                  <span>·</span>
-                  <span>${durationStr}</span>
-                </div>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div>${passBadge}</div>
-                <div>${effBadge}</div>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 2px;">
-                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${r.cost_usd.toFixed(4)}</span>
-                <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 2px;">
-                <span style="font-weight: 700; color: var(--primary); font-size: 0.95rem;">${r.efficiency_score.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">pts/¢</span></span>
-                <span style="font-size: 0.72rem; color: var(--text-muted);">${tp}</span>
-              </div>
-            </td>
-            <td style="text-align: right;">
-              <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end;">
-                <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
-                ${pubBadge}
-              </div>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        }
-
-        // 2. Cards element
-        if (cardsContainer) {
-          const card = document.createElement('div');
-          card.style.cssText = 'background: #161b22; border: 1px solid var(--border); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px;';
-          card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
-              <div>
-                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${r.model}</span>
-                  <span class="badge badge-info">${r.task}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
-                </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 3px;">
-                  ${dateStr} · <span title="${r.run_id}" style="cursor: pointer;" onclick="copySpecificText('${r.run_id}', this, 'Copied!')">...${shortId} 📋</span> · ${durationStr}
-                </div>
-              </div>
-              <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #090d13; padding: 8px; border-radius: 6px; text-align: center;">
-              <div>
-                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Pass Rate</div>
-                <div style="font-weight: 600; font-size: 0.78rem; margin-top: 2px;">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</div>
-              </div>
-              <div>
-                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Score / ¢</div>
-                <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem; margin-top: 2px;">${r.efficiency_score.toFixed(1)}</div>
-              </div>
-              <div>
-                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Cost</div>
-                <div style="font-weight: 600; color: var(--accent); font-size: 0.78rem; margin-top: 2px;">$${r.cost_usd.toFixed(4)}</div>
-              </div>
-              <div>
-                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Throughput</div>
-                <div style="font-weight: 600; font-size: 0.78rem; margin-top: 2px;">${tp}</div>
-              </div>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>${effBadge}</div>
-              <div>${pubBadge}</div>
-            </div>
-          `;
-          cardsContainer.appendChild(card);
-        }
-      });
     }
 
     async function loadLeaderboard() {
@@ -1819,57 +1016,25 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const tbody = document.getElementById('leaderboardBody');
         tbody.innerHTML = '';
         if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No runs recorded yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>';
           return;
         }
-        data.forEach((r, idx) => {
-          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
+        data.forEach(r => {
+          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec)} req/s` : 'N/A';
           const passBadge = r.pass_rate === 100 
-            ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
-            : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
-          const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
-          const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : (r.completion_tokens ? `${((r.prompt_tokens + r.completion_tokens) / 1000).toFixed(1)}k tokens` : 'N/A');
-          
-          let rankBadge = `<span style="font-weight: 700; font-size: 0.95rem; color: var(--text-muted);">#${idx + 1}</span>`;
-          if (idx === 0) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #f1e05a;">🥇 #1</span>`;
-          else if (idx === 1) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #c0c0c0;">🥈 #2</span>`;
-          else if (idx === 2) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #cd7f32;">🥉 #3</span>`;
-
+            ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
+            : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
+          const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
           const row = `<tr>
-            <td style="text-align: center;">${rankBadge}</td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${r.model}</span>
-                  <span class="badge badge-info">${r.task}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
-                </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted);">
-                  ${formatTimestamp(r.timestamp)}
-                </div>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div>${passBadge}</div>
-                <div>${effBadge}</div>
-              </div>
-            </td>
-            <td>
-              <span style="font-weight: 600; color: #fff; font-size: 0.85rem;">${tp}</span>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 2px;">
-                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${r.total_cost_usd.toFixed(4)}</span>
-                <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
-              </div>
-            </td>
-            <td style="text-align: right;">
-              <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-                <span style="font-weight: 800; color: var(--primary); font-size: 1.05rem;">${r.efficiency_score.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">Score/¢</span></span>
-                <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.id}')">🔍 Inspect</button>
-              </div>
-            </td>
+            <td style="font-weight: 600; color: var(--primary);">${r.model}</td>
+            <td>${effBadge}</td>
+            <td>${r.task}</td>
+            <td style="color: var(--success);">${r.language}</td>
+            <td>${passBadge}</td>
+            <td>${tp}</td>
+            <td style="color: var(--accent);">$${r.total_cost_usd.toFixed(4)}</td>
+            <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
+            <td style="color: var(--text-muted); font-size: 0.75rem;">${new Date(r.timestamp).toLocaleTimeString()}</td>
           </tr>`;
           tbody.innerHTML += row;
         });
@@ -1878,76 +1043,56 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
-    let currentInspectLogRaw = '';
-    let currentInspectFiles = [];
-    let currentInspectActiveFile = null;
-
-    function openRunInspectorModal() {
-      const modal = document.getElementById('inspectModal');
-      modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeRunInspector() {
-      const modal = document.getElementById('inspectModal');
-      if (modal) modal.style.display = 'none';
-      document.body.style.overflow = '';
-      currentInspectRun = null;
-      currentInspectLogRaw = '';
-      currentInspectFiles = [];
-      currentInspectActiveFile = null;
-    }
-
-    function onModalBackdropClick(e) {
-      if (e.target && e.target.id === 'inspectModal') {
-        closeRunInspector();
-      }
-    }
-
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const modal = document.getElementById('inspectModal');
-        if (modal && modal.style.display === 'flex') {
-          closeRunInspector();
+    async function loadRuns() {
+      try {
+        const res = await fetch('/api/runs');
+        if (!res.ok) return;
+        const runs = await res.json();
+        cachedRuns = runs;
+        const tbody = document.getElementById('runsTableBody');
+        tbody.innerHTML = '';
+        if (runs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted);">No archived runs found in runs/.</td></tr>';
+          return;
         }
+
+        runs.forEach(r => {
+          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec)} req/s` : 'N/A';
+          const passBadge = r.pass_rate === 100 
+            ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
+            : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
+          const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
+          const pubBadge = r.is_published 
+            ? `<span class="badge" style="background:#238636;color:#fff;font-size:0.7rem;padding:2px 6px;">✔ Git</span>` 
+            : `<button class="btn-primary" style="padding:2px 6px;font-size:0.7rem;" onclick="event.stopPropagation(); publishRunModal('${r.run_id}')">🚀 Publish</button>`;
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text);">${r.run_id}</td>
+            <td><b>${r.task}</b></td>
+            <td style="color: var(--primary); font-weight: 600;">${r.model}</td>
+            <td>${effBadge}</td>
+            <td style="color: var(--success);">${r.language}</td>
+            <td>${passBadge}</td>
+            <td style="color: var(--accent);">$${r.cost_usd.toFixed(4)}</td>
+            <td>${tp}</td>
+            <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
+            <td style="display:flex; gap:6px; align-items:center;">
+              <button class="btn-secondary" style="padding:2px 6px;font-size:0.7rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
+              ${pubBadge}
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        console.error('Failed to load runs:', e);
       }
-    });
-
-    function switchModalTab(tabKey) {
-      const tabs = ['code', 'trace', 'stages', 'specs'];
-      tabs.forEach(k => {
-        const btn = document.getElementById(`modalTabBtn-${k}`);
-        const pane = document.getElementById(`modalPane-${k}`);
-        if (btn) btn.classList.toggle('active', k === tabKey);
-        if (pane) pane.classList.toggle('active', k === tabKey);
-      });
-    }
-
-    function getFileIcon(filename) {
-      const ext = filename.split('.').pop().toLowerCase();
-      if (ext === 'rs') return '🦀';
-      if (ext === 'go') return '🐹';
-      if (ext === 'py') return '🐍';
-      if (ext === 'sh' || ext === 'bash') return '🐚';
-      if (ext === 'toml' || ext === 'yaml' || ext === 'yml' || ext === 'json') return '⚙️';
-      if (ext === 'md' || ext === 'txt') return '📝';
-      if (ext === 'lock' || ext === 'mod') return '🔒';
-      return '📄';
-    }
-
-    function formatBytes(bytes) {
-      if (!bytes || bytes === 0) return '0 B';
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-      return (bytes / 1048576).toFixed(2) + ' MB';
     }
 
     async function inspectRun(runId) {
-      openRunInspectorModal();
-      document.getElementById('modalInspectRunId').textContent = runId;
-      document.getElementById('modalInspectCodeViewer').textContent = 'Loading manifest and files...';
-      document.getElementById('modalInspectLogViewer').textContent = 'Loading execution trace...';
-      switchModalTab('code');
+      const inspector = document.getElementById('runInspector');
+      inspector.style.display = 'flex';
+      document.getElementById('inspectRunId').textContent = runId;
 
       try {
         const res = await fetch(`/api/runs/${runId}`);
@@ -1955,356 +1100,333 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const m = await res.json();
         currentInspectRun = m;
 
-        // Populate Header & Badges
-        const gitBadge = document.getElementById('modalInspectGitBadge');
+        document.getElementById('inspectScore').textContent = m.efficiency_score.toFixed(1);
+        document.getElementById('inspectEffort').textContent = m.effort || 'auto';
+        document.getElementById('inspectPass').innerHTML = m.pass_rate === 100 
+          ? `<span style="color: var(--success);">${m.pass_rate}%</span>` 
+          : `<span style="color: var(--danger);">${m.pass_rate}%</span>`;
+        document.getElementById('inspectCost').textContent = `$${m.cost_usd.toFixed(4)}`;
+        document.getElementById('inspectTokens').textContent = m.tokens ? m.tokens.total_tokens.toLocaleString() : 'N/A';
+        document.getElementById('inspectDuration').textContent = `${Math.round(m.duration_seconds)}s`;
+
+        const envContainer = document.getElementById('inspectEnvTable');
+        if (m.env) {
+          document.getElementById('inspectGitCommit').textContent = `Git Baseline: ${m.git_commit || m.env.git_commit} (${m.env.git_branch})`;
+          envContainer.innerHTML = `
+            <div><span style="color:var(--text-muted)">OS:</span> ${m.env.os}</div>
+            <div><span style="color:var(--text-muted)">Kernel:</span> ${m.env.kernel}</div>
+            <div><span style="color:var(--text-muted)">CPU:</span> ${m.env.cpu_model} (${m.env.cpu_cores} vCPUs)</div>
+            <div><span style="color:var(--text-muted)">Memory:</span> ${m.env.total_memory}</div>
+            <div><span style="color:var(--text-muted)">Docker:</span> ${m.env.docker_version}</div>
+            <div><span style="color:var(--text-muted)">Rust:</span> ${m.env.rust_version}</div>
+          `;
+        } else {
+          document.getElementById('inspectGitCommit').textContent = '';
+          envContainer.innerHTML = '<div style="color:var(--text-muted)">No environment specs captured yet.</div>';
+        }
+
+        const gitBadge = document.getElementById('inspectGitBadge');
+        const pubBtn = document.getElementById('inspectPublishBtn');
         if (m.is_published) {
-          gitBadge.innerHTML = `<span class="badge" style="background:#238636;color:#fff;font-size:0.75rem;">✔ Git Published</span>`;
+          gitBadge.innerHTML = `<span class="badge" style="background:#238636;color:#fff;font-size:0.75rem;">✔ Committed to Git</span>`;
+          if (pubBtn) pubBtn.textContent = '🔄 Re-publish to Git';
         } else {
           gitBadge.innerHTML = `<span class="badge" style="background:#6e7681;color:#fff;font-size:0.75rem;">Local Only</span>`;
+          if (pubBtn) pubBtn.textContent = '🚀 Publish to Git';
         }
 
-        const statusBadge = document.getElementById('modalInspectStatusBadge');
-        const isCompleted = m.status === 'completed' || m.pass_rate === 100;
-        statusBadge.innerHTML = `<span class="badge ${isCompleted ? 'badge-pass' : 'badge-fail'}">${(m.status || 'unknown').toUpperCase()}</span>`;
-
-        const pubBtn = document.getElementById('modalInspectPublishBtn');
-        if (pubBtn) pubBtn.textContent = m.is_published ? '🔄 Re-publish to Git' : '🚀 Publish to Git';
-
-        // Populate KPI Strip
-        document.getElementById('modalInspectScore').textContent = (m.efficiency_score || 0).toFixed(1);
-        document.getElementById('modalInspectPass').innerHTML = m.pass_rate === 100 
-          ? `<span style="color: var(--success);">${m.pass_rate}% (${m.passed_stages || 0}/${m.total_stages || 0})</span>` 
-          : `<span style="color: var(--danger);">${(m.pass_rate || 0).toFixed(0)}% (${m.passed_stages || 0}/${m.total_stages || 0})</span>`;
-        document.getElementById('modalInspectCost').textContent = `$${(m.cost_usd || 0).toFixed(4)}`;
-        
-        let tokenStr = 'N/A';
-        if (m.tokens) {
-          const tot = m.tokens.total_tokens || 0;
-          const pr = m.tokens.prompt_tokens || 0;
-          const cp = m.tokens.completion_tokens || 0;
-          tokenStr = `${tot.toLocaleString()} <span style="font-size:0.68rem; color:var(--text-muted); font-weight:normal;">(${pr.toLocaleString()} / ${cp.toLocaleString()})</span>`;
+        const stagesList = document.getElementById('inspectStagesList');
+        stagesList.innerHTML = '';
+        if (m.stages && m.stages.length > 0) {
+          m.stages.forEach(s => {
+            const badge = s.passed 
+              ? `<span class="badge badge-pass">PASS</span>` 
+              : `<span class="badge badge-fail">FAIL</span>`;
+            const err = s.error ? `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--danger); margin-top: 2px;">Error: ${s.error}</div>` : '';
+            stagesList.innerHTML += `
+              <div style="background: #161b22; border: 1px solid var(--border); padding: 8px 12px; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 0.8rem; font-weight: 500;">${s.name}</span>
+                  ${badge}
+                </div>
+                ${err}
+              </div>
+            `;
+          });
         }
-        document.getElementById('modalInspectTokens').innerHTML = tokenStr;
 
-        document.getElementById('modalInspectThroughput').textContent = m.throughput_req_sec ? `${Math.round(m.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
-        document.getElementById('modalInspectDuration').textContent = `${Math.round(m.duration_seconds || 0)}s`;
-        document.getElementById('modalInspectEffort').innerHTML = `${m.effort || 'auto'} <span style="color:var(--text-muted); font-size:0.72rem;">· ${m.task}</span>`;
+        const fRes = await fetch(`/api/runs/${runId}/files`);
+        const fSelect = document.getElementById('inspectFileSelect');
+        fSelect.innerHTML = '';
+        if (fRes.ok) {
+          const files = await fRes.json();
+          if (files.length === 0) {
+            fSelect.innerHTML = '<option disabled>No workspace files captured</option>';
+            document.getElementById('inspectCodeViewer').textContent = '(No files in candidate workspace)';
+          } else {
+            files.forEach(f => {
+              const opt = document.createElement('option');
+              opt.value = f.name;
+              opt.textContent = `${f.name} (${f.size_bytes} bytes)`;
+              fSelect.appendChild(opt);
+            });
+            onInspectFileChange();
+          }
+        }
 
-        // Render Test Stages
-        renderInspectStages(m);
-
-        // Render Specs & Manifest
-        renderInspectSpecs(m);
-
-        // Render Workspace Files
-        currentInspectFiles = m.files || [];
-        document.getElementById('modalCodeCountBadge').textContent = currentInspectFiles.length;
-        renderInspectFileList(currentInspectFiles);
-
-        if (currentInspectFiles.length > 0) {
-          const preferred = currentInspectFiles.find(f => f.name === 'src/main.rs' || f.name === 'main.rs' || f.name === 'main.go' || f.name.endsWith('.rs') || f.name.endsWith('.go')) || currentInspectFiles[0];
-          selectInspectFile(preferred.name);
+        const lRes = await fetch(`/api/runs/${runId}/log`);
+        const lViewer = document.getElementById('inspectLogViewer');
+        if (lRes.ok) {
+          lViewer.textContent = await lRes.text();
         } else {
-          document.getElementById('modalActiveFileName').textContent = '(No files captured)';
-          document.getElementById('modalActiveFileMeta').textContent = '';
-          document.getElementById('modalInspectCodeViewer').textContent = '// No workspace files were generated or recorded during this run.';
+          lViewer.textContent = '(No captured console log found for this run)';
         }
-
-        // Fetch captured execution trace (console.log)
-        fetchInspectLog(runId);
 
       } catch (e) {
-        alert(`Failed to load run details: ${e.message}`);
-        closeRunInspector();
+        alert(`Error inspecting run: ${e.message}`);
       }
     }
 
-    async function fetchInspectLog(runId) {
+    async function onInspectFileChange() {
+      const runId = document.getElementById('inspectRunId').textContent;
+      const file = document.getElementById('inspectFileSelect').value;
+      if (!runId || !file) return;
+
+      const viewer = document.getElementById('inspectCodeViewer');
+      viewer.textContent = `Loading ${file}...`;
       try {
-        const res = await fetch(`/api/runs/${runId}/log`);
+        const res = await fetch(`/api/runs/${runId}/file?file=${encodeURIComponent(file)}`);
         if (res.ok) {
-          currentInspectLogRaw = await res.text();
+          viewer.textContent = await res.text();
         } else {
-          currentInspectLogRaw = '(Execution trace log was not found for this run)';
+          viewer.textContent = `Failed to load file content (${res.status})`;
         }
       } catch (e) {
-        currentInspectLogRaw = `(Error fetching log: ${e.message})`;
-      }
-      filterInspectLog(document.getElementById('modalTraceFilterInput') ? document.getElementById('modalTraceFilterInput').value : '');
-    }
-
-    function renderInspectFileList(files) {
-      const list = document.getElementById('modalInspectFileList');
-      list.innerHTML = '';
-      if (!files || files.length === 0) {
-        list.innerHTML = '<div style="padding:10px; color:var(--text-muted); font-size:0.75rem; text-align:center;">No files saved</div>';
-        return;
-      }
-      files.forEach(f => {
-        const item = document.createElement('div');
-        item.className = `code-file-item ${currentInspectActiveFile === f.name ? 'active' : ''}`;
-        item.id = `fileItem-${f.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-        item.onclick = () => selectInspectFile(f.name);
-        item.innerHTML = `
-          <div style="display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">
-            <span style="font-size:0.9rem;">${getFileIcon(f.name)}</span>
-            <span style="overflow:hidden; text-overflow:ellipsis;" title="${f.name}">${f.name}</span>
-          </div>
-          <span style="font-size:0.68rem; color:var(--text-muted); flex-shrink:0; margin-left:6px;">${formatBytes(f.size_bytes)}</span>
-        `;
-        list.appendChild(item);
-      });
-    }
-
-    function filterInspectFiles(query) {
-      const q = (query || '').toLowerCase().trim();
-      const filtered = q ? currentInspectFiles.filter(f => f.name.toLowerCase().includes(q)) : currentInspectFiles;
-      renderInspectFileList(filtered);
-    }
-
-    async function selectInspectFile(filename) {
-      currentInspectActiveFile = filename;
-      document.querySelectorAll('.code-file-item').forEach(el => el.classList.remove('active'));
-      const activeEl = document.getElementById(`fileItem-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
-      if (activeEl) activeEl.classList.add('active');
-
-      const fileObj = currentInspectFiles.find(f => f.name === filename);
-      document.getElementById('modalActiveFileIcon').textContent = getFileIcon(filename);
-      document.getElementById('modalActiveFileName').textContent = filename;
-      document.getElementById('modalActiveFileMeta').textContent = fileObj ? `(${formatBytes(fileObj.size_bytes)})` : '';
-
-      const viewer = document.getElementById('modalInspectCodeViewer');
-      viewer.textContent = `Loading ${filename}...`;
-
-      try {
-        const res = await fetch(`/api/runs/${currentInspectRun.run_id}/file?file=${encodeURIComponent(filename)}`);
-        if (res.ok) {
-          const content = await res.text();
-          viewer.textContent = content;
-          const lineCount = content.split('\n').length;
-          document.getElementById('modalActiveFileMeta').textContent = `${formatBytes(fileObj ? fileObj.size_bytes : content.length)} · ${lineCount.toLocaleString()} lines`;
-        } else {
-          viewer.textContent = `(Failed to load file: ${filename})`;
-        }
-      } catch (e) {
-        viewer.textContent = `(Error: ${e.message})`;
+        viewer.textContent = `Error loading file: ${e.message}`;
       }
     }
 
-    function filterInspectLog(query) {
-      const viewer = document.getElementById('modalInspectLogViewer');
-      const counter = document.getElementById('modalTraceLineCount');
-      if (!currentInspectLogRaw) {
-        viewer.textContent = '(No log available)';
-        if (counter) counter.textContent = '0 lines';
-        return;
-      }
-
-      const q = (query || '').trim().toLowerCase();
-      const allLines = currentInspectLogRaw.split('\n');
-      const totalCount = allLines.length;
-
-      if (!q) {
-        viewer.textContent = currentInspectLogRaw;
-        if (counter) counter.textContent = `${totalCount.toLocaleString()} lines`;
-        document.getElementById('modalLogLinesBadge').textContent = `${totalCount} lines`;
-        return;
-      }
-
-      const matchedLines = allLines.filter(line => line.toLowerCase().includes(q));
-      viewer.textContent = matchedLines.length > 0 ? matchedLines.join('\n') : `(No lines matched query "${query}")`;
-      if (counter) counter.textContent = `${matchedLines.length.toLocaleString()} / ${totalCount.toLocaleString()} lines`;
-    }
-
-    function scrollInspectLog(toBottom) {
-      const viewer = document.getElementById('modalInspectLogViewer');
-      if (viewer) {
-        viewer.scrollTop = toBottom ? viewer.scrollHeight : 0;
-      }
-    }
-
-    function renderInspectStages(m) {
-      const container = document.getElementById('modalStagesList');
-      const banner = document.getElementById('modalStagesSummaryBanner');
-      container.innerHTML = '';
-
-      const passed = m.passed_stages || 0;
-      const total = m.total_stages || (m.stages ? m.stages.length : 0);
-      const isFullPass = m.pass_rate === 100 && total > 0;
-
-      document.getElementById('modalStagesCountBadge').textContent = `${passed}/${total}`;
-      document.getElementById('modalStagesCountBadge').className = `badge ${isFullPass ? 'badge-pass' : 'badge-fail'}`;
-
-      banner.style.background = isFullPass ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)';
-      banner.style.border = `1px solid ${isFullPass ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`;
-      banner.innerHTML = `
-        <div style="font-weight: 600; font-size: 0.88rem; color: ${isFullPass ? 'var(--success)' : 'var(--danger)'};">
-          ${isFullPass ? '🎉 All Verification Stages Passed!' : `⚠️ Verification Incomplete: ${passed} of ${total} Passed (${(m.pass_rate || 0).toFixed(0)}%)`}
-        </div>
-        <div style="font-size: 0.78rem; color: var(--text-muted);">
-          Task: <b style="color:#fff;">${m.task}</b> | Status: <b style="color:#fff;">${m.status}</b>
-        </div>
-      `;
-
-      if (m.stages && m.stages.length > 0) {
-        m.stages.forEach(s => {
-          const card = document.createElement('div');
-          card.className = 'stage-card';
-          const badge = s.passed 
-            ? `<span class="badge badge-pass">✔ PASSED</span>` 
-            : `<span class="badge badge-fail">✕ FAILED</span>`;
-          const errBox = s.error ? `
-            <div style="background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.3); border-radius: 4px; padding: 8px 12px; margin-top: 4px;">
-              <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; margin-bottom: 2px;">FAILURE REASON:</div>
-              <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--danger); white-space: pre-wrap;">${s.error}</div>
-            </div>
-          ` : '';
-
-          card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-size: 0.86rem; font-weight: 600; color: #fff;">${s.name || `Stage ${s.stage}`}</span>
-              ${badge}
-            </div>
-            ${errBox}
-          `;
-          container.appendChild(card);
-        });
-      } else {
-        container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px;">No detailed stages were recorded for this run.</div>';
-      }
-
-      if (m.throughput_req_sec) {
-        const tpCard = document.createElement('div');
-        tpCard.className = 'stage-card';
-        tpCard.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.86rem; font-weight: 600; color: var(--primary);">⚡ High-Concurrency Throughput Benchmark:</span>
-            <span class="badge badge-pass">${Math.round(m.throughput_req_sec).toLocaleString()} req/s</span>
-          </div>
-          <div style="font-size: 0.76rem; color: var(--text-muted);">
-            Measured against official redis benchmark tool suite inside isolated sandbox environment.
-          </div>
-        `;
-        container.appendChild(tpCard);
-      }
-    }
-
-    function renderInspectSpecs(m) {
-      const grid = document.getElementById('modalInspectEnvGrid');
-      const gitCommitSpan = document.getElementById('modalInspectGitCommit');
-      grid.innerHTML = '';
-
-      if (m.env) {
-        gitCommitSpan.textContent = `Git Baseline: ${m.git_commit || m.env.git_commit} (${m.env.git_branch || 'master'})`;
-        grid.innerHTML = `
-          <div><span style="color:var(--text-muted)">OS:</span> <b>${m.env.os || 'Linux'}</b></div>
-          <div><span style="color:var(--text-muted)">Kernel:</span> <b>${m.env.kernel || 'N/A'}</b></div>
-          <div><span style="color:var(--text-muted)">Arch:</span> <b>${m.env.arch || 'x86_64'}</b></div>
-          <div><span style="color:var(--text-muted)">CPU:</span> <b>${m.env.cpu_model || 'Unknown'} (${m.env.cpu_cores || 0} vCPUs)</b></div>
-          <div><span style="color:var(--text-muted)">Memory:</span> <b>${m.env.total_memory || 'Unknown'}</b></div>
-          <div><span style="color:var(--text-muted)">Docker:</span> <b>${m.env.docker_version || 'N/A'}</b></div>
-          <div><span style="color:var(--text-muted)">Rust:</span> <b>${m.env.rust_version || 'N/A'}</b></div>
-          <div><span style="color:var(--text-muted)">Node / Python:</span> <b>${m.env.node_version || 'N/A'} / ${m.env.python_version || 'N/A'}</b></div>
-        `;
-      } else {
-        gitCommitSpan.textContent = '';
-        grid.innerHTML = '<div style="color:var(--text-muted)">No environment specs recorded.</div>';
-      }
-
-      document.getElementById('modalInspectManifestViewer').textContent = JSON.stringify(m, null, 2);
-    }
-
-    function copyButtonFeedback(btnId, defaultText) {
-      const btn = document.getElementById(btnId);
-      if (!btn) return;
-      btn.textContent = '✔ Copied!';
-      btn.style.color = 'var(--success)';
-      setTimeout(() => {
-        btn.textContent = defaultText;
-        btn.style.color = '';
-      }, 1500);
-    }
-
-    function copyRunId() {
-      if (!currentInspectRun) return;
-      navigator.clipboard.writeText(currentInspectRun.run_id).then(() => {
-        copyButtonFeedback('modalCopyRunIdBtn', '📋 Copy ID');
-      });
+    function closeRunInspector() {
+      document.getElementById('runInspector').style.display = 'none';
+      currentInspectRun = null;
     }
 
     function copyInspectFile() {
-      const code = document.getElementById('modalInspectCodeViewer').textContent;
-      navigator.clipboard.writeText(code).then(() => {
-        copyButtonFeedback('modalCopyCodeBtn', '📋 Copy File');
-      });
+      const text = document.getElementById('inspectCodeViewer').textContent;
+      navigator.clipboard.writeText(text).then(() => alert('📋 File content copied to clipboard!'));
     }
 
     function copyInspectLog() {
-      if (!currentInspectLogRaw) return;
-      navigator.clipboard.writeText(currentInspectLogRaw).then(() => {
-        copyButtonFeedback('modalCopyLogBtn', '📋 Copy Full Trace');
-      });
-    }
-
-    function copyInspectManifest() {
-      if (!currentInspectRun) return;
-      navigator.clipboard.writeText(JSON.stringify(currentInspectRun, null, 2)).then(() => {
-        copyButtonFeedback('modalCopyManifestBtn', '📋 Copy JSON');
-      });
-    }
-
-    function publishCurrentModalRun() {
-      if (currentInspectRun) {
-        publishRunModal(currentInspectRun.run_id);
-      }
+      const text = document.getElementById('inspectLogViewer').textContent;
+      navigator.clipboard.writeText(text).then(() => alert('📋 Full execution log copied to clipboard!'));
     }
 
     async function publishRunModal(runId) {
       if (!runId) return;
-      const customMsg = prompt(`Publish run "${runId}" to Git repository?\nEnter custom commit message (or leave blank for auto-generated message):`);
-      if (customMsg === null) return;
+      const msg = prompt(`Enter commit message for run ${runId} (or leave empty for auto-generated summary):`);
+      if (msg === null) return;
+
+      const pubBtn = document.getElementById('inspectPublishBtn');
+      if (pubBtn) pubBtn.disabled = true;
 
       try {
-        const pubBtn = document.getElementById('modalInspectPublishBtn') || document.getElementById('inspectPublishBtn');
-        if (pubBtn) pubBtn.disabled = true;
         const res = await fetch(`/api/runs/${runId}/publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: customMsg.trim() || undefined })
+          body: JSON.stringify({ message: msg.trim() || null })
         });
+
         if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(errText);
+          const err = await res.text();
+          throw new Error(err);
         }
-        const data = await res.json();
-        alert(`✅ Run successfully committed to Git!\n\nCommit: ${data.commit_hash}\nMessage: ${data.commit_message}\nUpdated: SUMMARY.md`);
-        loadRuns();
+
+        const result = await res.json();
+        alert(`✅ Successfully published run!\nCommit: ${result.commit_hash}\nFiles: ${result.files_committed.join(', ')}`);
         if (currentInspectRun && currentInspectRun.run_id === runId) {
           inspectRun(runId);
         }
+        loadRuns();
         loadSummary();
       } catch (e) {
         alert(`❌ Failed to publish: ${e.message}`);
       } finally {
-        const pubBtn = document.getElementById('modalInspectPublishBtn') || document.getElementById('inspectPublishBtn');
+        const pubBtn = document.getElementById('inspectPublishBtn');
         if (pubBtn) pubBtn.disabled = false;
       }
     }
 
-    let currentSummaryRaw = '';
-    let currentSummaryViewMode = localStorage.getItem('summary_view_mode') || 'preview';
+    // Compare Runs Engine
+    function openCompareWith(runId) {
+      switchTab('compare');
+      setTimeout(() => {
+        const selA = document.getElementById('compareRunA');
+        if (selA) selA.value = runId;
+      }, 100);
+    }
 
-    function setSummaryViewMode(mode) {
-      currentSummaryViewMode = mode;
-      localStorage.setItem('summary_view_mode', mode);
-      const btnPrev = document.getElementById('summaryViewBtnPreview');
-      const btnRaw = document.getElementById('summaryViewBtnRaw');
-      if (btnPrev) btnPrev.classList.toggle('active', mode === 'preview');
-      if (btnRaw) btnRaw.classList.toggle('active', mode === 'raw');
-      const prevBox = document.getElementById('summaryPreview');
-      const rawBox = document.getElementById('summaryViewer');
-      if (prevBox) prevBox.style.display = mode === 'preview' ? 'block' : 'none';
-      if (rawBox) rawBox.style.display = mode === 'raw' ? 'block' : 'none';
+    async function populateCompareDropdowns() {
+      if (cachedRuns.length === 0) {
+        const res = await fetch('/api/runs');
+        if (res.ok) cachedRuns = await res.json();
+      }
+      const selA = document.getElementById('compareRunA');
+      const selB = document.getElementById('compareRunB');
+      selA.innerHTML = '';
+      selB.innerHTML = '';
+
+      if (cachedRuns.length === 0) {
+        selA.innerHTML = '<option disabled>No runs available</option>';
+        selB.innerHTML = '<option disabled>No runs available</option>';
+        return;
+      }
+
+      cachedRuns.forEach((r, idx) => {
+        const label = `${r.run_id} [${r.model} | ${r.task} | ${r.pass_rate}%]`;
+        const optA = new Option(label, r.run_id);
+        const optB = new Option(label, r.run_id);
+        selA.add(optA);
+        selB.add(optB);
+      });
+
+      if (cachedRuns.length > 1) {
+        selB.selectedIndex = 1;
+      }
+    }
+
+    async function executeCompare() {
+      const runA = document.getElementById('compareRunA').value;
+      const runB = document.getElementById('compareRunB').value;
+      if (!runA || !runB) {
+        alert('Please select two runs to compare.');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/compare?run_a=${encodeURIComponent(runA)}&run_b=${encodeURIComponent(runB)}`);
+        if (!res.ok) {
+          alert(`Comparison failed: ${await res.text()}`);
+          return;
+        }
+        const data = await res.json();
+        currentCompareData = data;
+        renderCompareResults(data);
+      } catch (e) {
+        alert(`Compare error: ${e.message}`);
+      }
+    }
+
+    function renderCompareResults(data) {
+      const container = document.getElementById('compareResultContainer');
+      container.style.display = 'flex';
+
+      // 1. Metric Delta Grid
+      const mGrid = document.getElementById('compareMetricGrid');
+      const diff = data.metric_diff;
+      const passColor = diff.pass_rate_delta > 0 ? 'var(--success)' : (diff.pass_rate_delta < 0 ? 'var(--danger)' : '#fff');
+      const costColor = diff.cost_delta < 0 ? 'var(--success)' : (diff.cost_delta > 0 ? 'var(--danger)' : '#fff');
+      const tokenColor = diff.tokens_delta < 0 ? 'var(--success)' : (diff.tokens_delta > 0 ? 'var(--warning)' : '#fff');
+
+      mGrid.innerHTML = `
+        <div class="stat-box">
+          <div class="stat-val" style="color: ${passColor};">${diff.pass_rate_delta >= 0 ? '+' : ''}${diff.pass_rate_delta.toFixed(1)}%</div>
+          <div class="stat-lbl">Pass Rate Delta (B - A)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" style="color: ${costColor};">${diff.cost_delta >= 0 ? '+' : ''}$${diff.cost_delta.toFixed(4)}</div>
+          <div class="stat-lbl">Cost Delta ($)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" style="color: ${tokenColor};">${diff.tokens_delta >= 0 ? '+' : ''}${diff.tokens_delta.toLocaleString()}</div>
+          <div class="stat-lbl">Tokens Delta</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val">${diff.duration_delta >= 0 ? '+' : ''}${diff.duration_delta.toFixed(1)}s</div>
+          <div class="stat-lbl">Duration Delta</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" style="color: var(--primary);">${diff.throughput_delta !== null ? (diff.throughput_delta >= 0 ? '+' : '') + Math.round(diff.throughput_delta) + ' req/s' : 'N/A'}</div>
+          <div class="stat-lbl">Throughput Delta</div>
+        </div>
+      `;
+
+      // 2. File Tabs
+      const tabs = document.getElementById('diffFileTabs');
+      tabs.innerHTML = '';
+      if (!data.file_diffs || data.file_diffs.length === 0) {
+        tabs.innerHTML = '<span class="hint">No files found in workspace archives.</span>';
+        document.getElementById('diffOutputContainer').innerHTML = '';
+        return;
+      }
+
+      data.file_diffs.forEach((f, idx) => {
+        let badgeColor = '#6e7681';
+        if (f.status === 'modified') badgeColor = 'var(--warning)';
+        else if (f.status === 'added_in_b') badgeColor = 'var(--success)';
+        else if (f.status === 'removed_in_b') badgeColor = 'var(--danger)';
+
+        const btn = document.createElement('button');
+        btn.className = `preset-btn ${idx === 0 ? 'active' : ''}`;
+        btn.innerHTML = `<span>${f.path}</span> <span style="color:${badgeColor}; font-weight:bold;">[${f.status}]</span>`;
+        btn.onclick = () => {
+          document.querySelectorAll('#diffFileTabs .preset-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeDiffFileIdx = idx;
+          renderDiffContent();
+        };
+        tabs.appendChild(btn);
+      });
+
+      activeDiffFileIdx = 0;
+      renderDiffContent();
+    }
+
+    function setDiffMode(mode) {
+      activeDiffMode = mode;
+      document.getElementById('diffModeUnified').classList.toggle('active', mode === 'unified');
+      document.getElementById('diffModeSide').classList.toggle('active', mode === 'side');
+      renderDiffContent();
+    }
+
+    function renderDiffContent() {
+      if (!currentCompareData || !currentCompareData.file_diffs) return;
+      const file = currentCompareData.file_diffs[activeDiffFileIdx];
+      if (!file) return;
+
+      const container = document.getElementById('diffOutputContainer');
+
+      if (activeDiffMode === 'unified') {
+        if (!file.diff || file.status === 'identical') {
+          container.innerHTML = `<pre class="diff-pane" style="color:var(--text-muted);">(Files are identical - 0 differences)</pre>`;
+          return;
+        }
+        const lines = file.diff.split('\n').map(l => {
+          if (l.startsWith('+') && !l.startsWith('+++')) return `<span class="diff-line-add">${escapeHtml(l)}</span>`;
+          if (l.startsWith('-') && !l.startsWith('---')) return `<span class="diff-line-del">${escapeHtml(l)}</span>`;
+          return escapeHtml(l);
+        }).join('\n');
+        container.innerHTML = `<pre class="diff-pane">${lines}</pre>`;
+      } else {
+        // Side-by-side mode
+        const aContent = file.content_a || '(File does not exist in Run A)';
+        const bContent = file.content_b || '(File does not exist in Run B)';
+        container.innerHTML = `
+          <div class="side-by-side">
+            <div class="diff-container">
+              <div class="diff-pane-header">Run A: ${escapeHtml(currentCompareData.run_a.run_id)}</div>
+              <pre class="diff-pane">${escapeHtml(aContent)}</pre>
+            </div>
+            <div class="diff-container">
+              <div class="diff-pane-header">Run B: ${escapeHtml(currentCompareData.run_b.run_id)}</div>
+              <pre class="diff-pane">${escapeHtml(bContent)}</pre>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     async function loadSummary() {
@@ -2312,18 +1434,12 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const res = await fetch('/api/summary');
         if (res.ok) {
           const text = await res.text();
-          currentSummaryRaw = text;
-          const prevBox = document.getElementById('summaryPreview');
-          const rawBox = document.getElementById('summaryViewer');
-          if (prevBox) prevBox.innerHTML = renderMarkdown(text);
-          if (rawBox) rawBox.textContent = text;
-          const badge = document.getElementById('summaryMetaBadge');
-          if (badge) badge.textContent = `${text.split('\n').length} lines · ${Math.round(text.length / 1024)} KB`;
+          document.getElementById('summaryViewer').textContent = text;
         } else {
-          document.getElementById('summaryPreview').innerHTML = '<div style="color:var(--danger)">Failed to load SUMMARY.md</div>';
+          document.getElementById('summaryViewer').textContent = 'Failed to load SUMMARY.md';
         }
       } catch (e) {
-        document.getElementById('summaryPreview').innerHTML = `<div style="color:var(--danger)">Error: ${e.message}</div>`;
+        document.getElementById('summaryViewer').textContent = `Error loading SUMMARY.md: ${e.message}`;
       }
     }
 
@@ -2415,7 +1531,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
       activeEventSource.onmessage = (event) => {
         if (event.data === '[DONE]') {
-          appendLog('\n[COMPLETED] Benchmark run finished successfully.');
+          appendLog('\n[COMPLETED] Benchmark run finished.');
           try { activeEventSource.close(); } catch(e) {}
           activeEventSource = null;
           if (pText) pText.textContent = 'Completed';
@@ -2441,7 +1557,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         if (!res.ok) return;
         const data = await res.json();
         if (data.is_running) {
-          document.getElementById('startBtn').disabled = true;
+          document.getElementById('startBtn').style.display = 'none';
+          document.getElementById('stopBtn').style.display = 'inline-flex';
+          document.getElementById('stopBtn').disabled = false;
+          document.getElementById('stopBtn').innerHTML = '<span>🛑</span> Stop Run';
           document.getElementById('statusDot').className = 'status-dot running';
           document.getElementById('statusText').textContent = 'Running';
           if (data.current_run) {
@@ -2460,6 +1579,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           if (!activeEventSource) {
             attachLogStream();
           }
+        } else {
+          resetStatus();
         }
       } catch (e) {
         console.warn('Status check failed:', e);
@@ -2474,6 +1595,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const budget = parseFloat(document.getElementById('budget').value) || 0.20;
       const turns = parseInt(document.getElementById('turns').value, 10) || 15;
       const timeoutMin = parseInt(document.getElementById('timeout_min').value, 10) || 15;
+      const trials = parseInt(document.getElementById('trials').value, 10) || 1;
       const evalOnly = document.getElementById('evalOnly').checked;
 
       if (!evalOnly && !apiKey) {
@@ -2483,14 +1605,17 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
       switchTab('console');
       clearConsole();
-      appendLog(`[INIT] Starting benchmark for ${model} (Effort: ${effort}) on task '${task}'...`);
+      appendLog(`[INIT] Starting benchmark for ${model} (Effort: ${effort}, Trials: ${trials}x) on task '${task}'...`);
 
-      const startBtn = document.getElementById('startBtn');
-      startBtn.disabled = true;
+      document.getElementById('startBtn').style.display = 'none';
+      const stopBtn = document.getElementById('stopBtn');
+      stopBtn.style.display = 'inline-flex';
+      stopBtn.disabled = false;
+      stopBtn.innerHTML = '<span>🛑</span> Stop Run';
+
       document.getElementById('statusDot').className = 'status-dot running';
       document.getElementById('statusText').textContent = 'Running';
 
-      // Connect log stream immediately so all replayed and live events are captured
       attachLogStream();
 
       try {
@@ -2505,7 +1630,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             budget_usd: budget,
             max_turns: turns,
             timeout_min: timeoutMin,
-            eval_only: evalOnly
+            eval_only: evalOnly,
+            trials: trials
           })
         });
 
@@ -2529,175 +1655,42 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
+    async function stopBenchmark() {
+      const stopBtn = document.getElementById('stopBtn');
+      stopBtn.disabled = true;
+      stopBtn.textContent = 'Stopping...';
+
+      try {
+        const res = await fetch('/api/run/stop', { method: 'POST' });
+        if (res.ok) {
+          appendLog('\n[USER ACTION] Stop requested. Benchmark aborted.');
+          resetStatus();
+        } else {
+          alert(`Stop failed: ${await res.text()}`);
+          stopBtn.disabled = false;
+          stopBtn.innerHTML = '<span>🛑</span> Stop Run';
+        }
+      } catch (e) {
+        alert(`Stop error: ${e.message}`);
+        stopBtn.disabled = false;
+        stopBtn.innerHTML = '<span>🛑</span> Stop Run';
+      }
+    }
+
     function resetStatus() {
+      document.getElementById('startBtn').style.display = 'inline-flex';
       document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').style.display = 'none';
       document.getElementById('statusDot').className = 'status-dot';
       document.getElementById('statusText').textContent = 'Ready';
     }
 
     // Initial load & persistent status sync
     fetchModels();
-    const initialSavedTask = localStorage.getItem('selected_benchmark_task') || 'redis';
-    onTaskChange(initialSavedTask);
+    loadPrompt();
     toggleAutoRefresh(true);
-    if (localStorage.getItem('sidebar_hidden') === 'true') { toggleSidebar(); }
-    setRunsViewMode(currentRunsView);
-    setPromptViewMode(currentPromptViewMode);
-    setSummaryViewMode(currentSummaryViewMode);
     checkActiveRun();
     setInterval(checkActiveRun, 5000);
   </script>
-  <!-- =========================================================================
-       Run Inspector Modal Dialog
-       ========================================================================= -->
-  <div id="inspectModal" class="modal-overlay" onclick="onModalBackdropClick(event)">
-    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalInspectRunId">
-      <!-- Modal Header -->
-      <div class="modal-header">
-        <div class="modal-title-area">
-          <span style="font-size: 1.05rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
-            <span>🔍 Run Inspector:</span>
-            <span id="modalInspectRunId" style="color: var(--primary); font-family: 'JetBrains Mono', monospace; font-size: 0.95rem;"></span>
-          </span>
-          <button id="modalCopyRunIdBtn" class="btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" onclick="copyRunId()">📋 Copy ID</button>
-          <span id="modalInspectGitBadge"></span>
-          <span id="modalInspectStatusBadge"></span>
-        </div>
-        <div class="modal-actions">
-          <button id="modalInspectPublishBtn" class="btn-primary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="publishCurrentModalRun()">🚀 Publish to Git</button>
-          <button class="btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 600;" onclick="closeRunInspector()" title="Close (Escape)">✕ Close</button>
-        </div>
-      </div>
-
-      <!-- KPI Summary Bar -->
-      <div class="modal-kpi-bar">
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectScore" style="color: var(--primary);">-</div>
-          <div class="kpi-lbl">Score / ¢</div>
-        </div>
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectPass">-</div>
-          <div class="kpi-lbl">Pass Rate</div>
-        </div>
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectCost" style="color: var(--accent);">-</div>
-          <div class="kpi-lbl">Total Cost</div>
-        </div>
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectTokens">-</div>
-          <div class="kpi-lbl">Tokens (P / C)</div>
-        </div>
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectThroughput" style="color: var(--success);">-</div>
-          <div class="kpi-lbl">Throughput</div>
-        </div>
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectDuration">-</div>
-          <div class="kpi-lbl">Wall Duration</div>
-        </div>
-        <div class="kpi-chip">
-          <div class="kpi-val" id="modalInspectEffort" style="color: var(--warning);">-</div>
-          <div class="kpi-lbl">Effort / Task</div>
-        </div>
-      </div>
-
-      <!-- Modal Tabs Bar -->
-      <div class="modal-tabs-bar">
-        <button class="modal-tab-btn active" id="modalTabBtn-code" onclick="switchModalTab('code')">
-          💻 Source Code <span id="modalCodeCountBadge" class="badge badge-info" style="font-size: 0.68rem; margin-left: 4px;">0</span>
-        </button>
-        <button class="modal-tab-btn" id="modalTabBtn-trace" onclick="switchModalTab('trace')">
-          📜 Execution Trace <span id="modalLogLinesBadge" class="badge" style="background: rgba(255,255,255,0.1); color: #c9d1d9; font-size: 0.68rem; margin-left: 4px;">log</span>
-        </button>
-        <button class="modal-tab-btn" id="modalTabBtn-stages" onclick="switchModalTab('stages')">
-          🧪 Test Stages <span id="modalStagesCountBadge" class="badge badge-pass" style="font-size: 0.68rem; margin-left: 4px;">0/0</span>
-        </button>
-        <button class="modal-tab-btn" id="modalTabBtn-specs" onclick="switchModalTab('specs')">
-          🖥️ Environment & Manifest
-        </button>
-      </div>
-
-      <!-- Modal Body Tab Panes -->
-      <div class="modal-body">
-        <!-- Pane 1: Source Code Explorer -->
-        <div id="modalPane-code" class="modal-pane active">
-          <div class="code-browser-split">
-            <!-- Sidebar file tree -->
-            <div class="code-sidebar">
-              <div class="code-sidebar-filter">
-                <input type="text" id="modalFileSearchInput" placeholder="🔍 Filter workspace files..." oninput="filterInspectFiles(this.value)" style="width: 100%; padding: 4px 8px; font-size: 0.75rem; background: #05070a; border: 1px solid var(--border); border-radius: 4px; color: #fff;">
-              </div>
-              <div class="code-file-list" id="modalInspectFileList">
-                <!-- Dynamically populated files -->
-              </div>
-            </div>
-
-            <!-- Main code display -->
-            <div class="code-main-view">
-              <div class="code-main-header">
-                <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                  <span id="modalActiveFileIcon" style="font-size: 1rem;">📄</span>
-                  <span id="modalActiveFileName" style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">(No file selected)</span>
-                  <span id="modalActiveFileMeta" style="font-size: 0.72rem; color: var(--text-muted);"></span>
-                </div>
-                <button id="modalCopyCodeBtn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="copyInspectFile()">📋 Copy File</button>
-              </div>
-              <pre class="code-pre-viewer" id="modalInspectCodeViewer">(Select a file from the sidebar to view source code)</pre>
-            </div>
-          </div>
-        </div>
-
-        <!-- Pane 2: Execution Trace Log -->
-        <div id="modalPane-trace" class="modal-pane">
-          <div class="trace-container">
-            <div class="trace-header">
-              <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 600px;">
-                <input type="text" id="modalTraceFilterInput" placeholder="🔍 Filter trace lines (e.g. 'error', 'turn', 'cargo', 'PING')..." oninput="filterInspectLog(this.value)" style="flex: 1; padding: 5px 10px; font-size: 0.78rem; background: #05070a; border: 1px solid var(--border); border-radius: 4px; color: #fff;">
-                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="document.getElementById('modalTraceFilterInput').value=''; filterInspectLog('');">✕ Clear</button>
-              </div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span id="modalTraceLineCount" style="font-size: 0.74rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">0 lines</span>
-                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="scrollInspectLog(false)">⬆ Top</button>
-                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="scrollInspectLog(true)">⬇ Bottom</button>
-                <button id="modalCopyLogBtn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="copyInspectLog()">📋 Copy Full Trace</button>
-              </div>
-            </div>
-            <pre class="trace-terminal" id="modalInspectLogViewer">(Loading execution trace...)</pre>
-          </div>
-        </div>
-
-        <!-- Pane 3: Verification Stages Breakdown -->
-        <div id="modalPane-stages" class="modal-pane">
-          <div class="stages-container">
-            <div id="modalStagesSummaryBanner" style="padding: 12px 16px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;"></div>
-            <div id="modalStagesList" style="display: flex; flex-direction: column; gap: 10px;"></div>
-          </div>
-        </div>
-
-        <!-- Pane 4: Environment Specs & Raw Manifest -->
-        <div id="modalPane-specs" class="modal-pane">
-          <div class="manifest-container">
-            <!-- Hardware Specs Box -->
-            <div style="background: #161b22; border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
-                <h4 style="font-size: 0.85rem; font-weight: 600; color: #fff;">🖥️ Execution Environment & Hardware Baseline:</h4>
-                <span id="modalInspectGitCommit" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent);"></span>
-              </div>
-              <div id="modalInspectEnvGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 0.78rem;"></div>
-            </div>
-
-            <!-- Raw Manifest JSON -->
-            <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h4 style="font-size: 0.85rem; font-weight: 600; color: #fff;">📄 Raw Run Manifest (`manifest.json`):</h4>
-                <button id="modalCopyManifestBtn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="copyInspectManifest()">📋 Copy JSON</button>
-              </div>
-              <pre class="code-pre-viewer" id="modalInspectManifestViewer" style="max-height: 400px; color: #79c0ff;"></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
