@@ -1742,5 +1742,7 @@ mod tests {
         assert!(task_p.to_string_lossy().contains("redis"));
         let res_dir = resolve_results_dir();
         assert!(res_dir.contains("results"));
+        let ws_dir = resolve_workspace_dir();
+        assert!(ws_dir.is_absolute(), "resolve_workspace_dir must be absolute");
     }
 }

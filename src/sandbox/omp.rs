@@ -977,4 +977,32 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_run_agent_relative_path_resolution() {
+        let rel_dir = Path::new("test_rel_ws_omp");
+        let _ = std::fs::create_dir_all(rel_dir);
+
+        let limits = AgentExecutionLimits {
+            max_turns: Some(1),
+            max_budget_usd: Some(0.10),
+            timeout_seconds: Some(5),
+        };
+
+        let res = OmpRunner::run_agent(
+            "nonexistent-test-model-xyz",
+            "test prompt",
+            rel_dir,
+            None,
+            limits,
+            Some("auto"),
+        );
+
+        if let Err(e) = res {
+            let err_str = e.to_string();
+            assert!(!err_str.contains("invalid characters for a local volume name"));
+        }
+
+        let _ = std::fs::remove_dir_all(rel_dir);
+    }
 }
