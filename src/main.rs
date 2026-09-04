@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
         Commands::Run {
             model,
             task,
+            effort,
             max_turns,
             budget_usd,
             api_key,
@@ -36,8 +37,9 @@ async fn main() -> Result<()> {
 
             println!("{}", "=========================================================".bold().blue());
             println!("  {} - Autonomous Under-$1 LLM Coding Benchmark", "SubDollarBench".bold().cyan());
-            println!("  Model: {}", model.bold().yellow());
-            println!("  Task:  {}", task.to_string().bold().green());
+            println!("  Model:  {}", model.bold().yellow());
+            println!("  Effort: {}", effort.bold().cyan());
+            println!("  Task:   {}", task.to_string().bold().green());
             println!("  Budget: ${:.2}", budget_usd);
             println!("{}", "=========================================================".bold().blue());
 
@@ -74,7 +76,7 @@ async fn main() -> Result<()> {
             // 3. Run OMP Agent (unless eval_only)
             let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !eval_only {
                 println!("\n{}", ">>> Spawning OMP Agent in headless mode...".bold().magenta());
-                let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), max_turns)?;
+                let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), max_turns, Some(&effort))?;
                 let p = stats.prompt_tokens;
                 let c = stats.cached_tokens;
                 let comp = stats.completion_tokens;
@@ -185,6 +187,7 @@ async fn main() -> Result<()> {
                 task: task.to_string(),
                 status: if pass_rate == 100.0 { "completed".to_string() } else { "failed_tests".to_string() },
                 language: lang.clone(),
+                effort: Some(effort.clone()),
                 started_at,
                 completed_at: completed_at.clone(),
                 duration_seconds,
@@ -206,7 +209,7 @@ async fn main() -> Result<()> {
             };
 
             let runs_dir = RunArchiver::resolve_runs_dir();
-            let cli_log = format!("Run {} completed with pass_rate {:.1}%", run_id, pass_rate);
+            let cli_log = format!("Run {} (Effort: {}) completed with pass_rate {:.1}%", run_id, effort, pass_rate);
             let _ = RunArchiver::archive_run(&runs_dir, &manifest, work_path, &cli_log);
 
             let result = BenchmarkRunResult {
@@ -214,6 +217,7 @@ async fn main() -> Result<()> {
                 model: model.clone(),
                 task: task.to_string(),
                 language: lang,
+                effort: Some(effort),
                 pass_rate,
                 passed_stages,
                 total_stages,
@@ -232,6 +236,7 @@ async fn main() -> Result<()> {
             println!("\n{}", "=========================================================".bold().blue());
             println!("  Results Summary for {}:", model.bold());
             println!("  - Language Chosen: {}", result.language.bold().cyan());
+            println!("  - Effort Level:    {}", result.effort.as_deref().unwrap_or("auto").bold().yellow());
             println!("  - Pass Rate:       {:.1}% ({}/{})", pass_rate, passed_stages, total_stages);
             println!("  - Prompt Tokens:   {} (Cached: {})", prompt_tokens, cached_tokens);
             println!("  - Cache Savings:   {:.1}% (${:.4} saved)", breakdown.savings_percent, breakdown.savings_usd);

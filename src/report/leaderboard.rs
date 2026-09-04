@@ -12,6 +12,8 @@ pub struct BenchmarkRunResult {
     pub model: String,
     pub task: String,
     pub language: String,
+    #[serde(default)]
+    pub effort: Option<String>,
     pub pass_rate: f64,
     pub passed_stages: u32,
     pub total_stages: u32,
@@ -86,6 +88,7 @@ impl LeaderboardManager {
             .apply_modifier(UTF8_ROUND_CORNERS)
             .set_header(vec![
                 "Model",
+                "Effort",
                 "Task",
                 "Lang",
                 "Pass Rate",
@@ -103,9 +106,11 @@ impl LeaderboardManager {
 
             let pass_str = format!("{:.0}% ({}/{})", r.pass_rate, r.passed_stages, r.total_stages);
             let savings_str = format!("{:.0}%", r.savings_percent);
+            let eff_str = r.effort.clone().unwrap_or_else(|| "auto".to_string());
 
             table.add_row(Row::from(vec![
                 Cell::new(&r.model).fg(Color::Cyan),
+                Cell::new(eff_str).fg(Color::Yellow),
                 Cell::new(&r.task),
                 Cell::new(&r.language).fg(Color::Green),
                 Cell::new(pass_str).fg(if r.pass_rate == 100.0 { Color::Green } else { Color::Yellow }),
@@ -169,6 +174,7 @@ mod tests {
             model: "model_b".to_string(),
             task: "redis".to_string(),
             language: "Python".to_string(),
+            effort: Some("low".to_string()),
             pass_rate: 50.0,
             passed_stages: 2,
             total_stages: 4,
@@ -187,6 +193,7 @@ mod tests {
             model: "model_a".to_string(),
             task: "redis".to_string(),
             language: "Go".to_string(),
+            effort: Some("high".to_string()),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,

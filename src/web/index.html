@@ -297,6 +297,7 @@
     .badge-pass { background: rgba(63, 185, 80, 0.2); color: var(--success); }
     .badge-fail { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
     .badge-info { background: rgba(88, 166, 255, 0.2); color: var(--primary); }
+    .badge-effort { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
 
     /* Trace Inspector Card */
     .inspector-card {
@@ -310,7 +311,7 @@
     }
     .stat-box-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
       gap: 10px;
     }
     .stat-box {
@@ -321,7 +322,7 @@
       text-align: center;
     }
     .stat-box .stat-val {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 700;
       color: #fff;
     }
@@ -420,6 +421,30 @@
           <div id="selectedPricePill" class="price-pill" style="display: none; margin-top: 4px;"></div>
         </div>
 
+        <!-- Reasoning Effort / Thinking Level Selector -->
+        <div class="form-group">
+          <label for="effortSelect">
+            <span>Reasoning Effort / Thinking</span>
+            <span class="hint" id="effortHint">Thinking depth for reasoning models</span>
+          </label>
+          <div class="presets" id="effortPresets">
+            <button type="button" class="preset-btn active" onclick="setEffort('auto', this)">Auto</button>
+            <button type="button" class="preset-btn" onclick="setEffort('low', this)">Low</button>
+            <button type="button" class="preset-btn" onclick="setEffort('medium', this)">Medium</button>
+            <button type="button" class="preset-btn" onclick="setEffort('high', this)">High</button>
+            <button type="button" class="preset-btn" onclick="setEffort('max', this)">Max</button>
+            <button type="button" class="preset-btn" onclick="setEffort('off', this)">Off</button>
+          </div>
+          <select id="effortSelect" onchange="onEffortDropdownChanged()" style="margin-top: 4px;">
+            <option value="auto" selected>⚡ Auto (Default model reasoning level)</option>
+            <option value="low">🔹 Low (Fast reasoning, minimal token budget)</option>
+            <option value="medium">⚖️ Medium (Balanced reasoning & speed)</option>
+            <option value="high">🔥 High (Thorough analysis & chain-of-thought)</option>
+            <option value="max">🚀 Max (Maximum reasoning budget)</option>
+            <option value="off">🚫 Off (No thinking / Direct generation)</option>
+          </select>
+        </div>
+
         <!-- Task Selection -->
         <div class="form-group">
           <label for="task">Benchmark Task</label>
@@ -467,7 +492,7 @@
             <button class="btn btn-secondary" onclick="clearConsole()">Clear</button>
           </div>
           <div class="terminal" id="terminalOutput">SubDollarBench console initialized.
-Select a model under $1.00 and click "Start Benchmark Run" to begin.
+Select a model, choose reasoning effort, and click "Start Benchmark Run" to begin.
 </div>
         </div>
 
@@ -486,6 +511,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
                   <th>Run ID</th>
                   <th>Task</th>
                   <th>Model</th>
+                  <th>Effort</th>
                   <th>Lang</th>
                   <th>Pass Rate</th>
                   <th>Cost ($)</th>
@@ -495,7 +521,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
                 </tr>
               </thead>
               <tbody id="runsTableBody">
-                <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Loading runs...</td></tr>
+                <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">Loading runs...</td></tr>
               </tbody>
             </table>
           </div>
@@ -515,6 +541,10 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
               <div class="stat-box">
                 <div class="stat-val" id="inspectScore" style="color: var(--primary);">-</div>
                 <div class="stat-lbl">Score / ¢</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectEffort" style="color: var(--warning);">-</div>
+                <div class="stat-lbl">Effort</div>
               </div>
               <div class="stat-box">
                 <div class="stat-val" id="inspectPass">-</div>
@@ -578,6 +608,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
             <thead>
               <tr>
                 <th>Model</th>
+                <th>Effort</th>
                 <th>Task</th>
                 <th>Lang</th>
                 <th>Pass Rate</th>
@@ -588,7 +619,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
               </tr>
             </thead>
             <tbody id="leaderboardBody">
-              <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
             </tbody>
           </table>
         </div>
@@ -611,6 +642,21 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
       localStorage.setItem('openrouter_api_key', e.target.value.trim());
       fetchModels();
     });
+
+    function setEffort(val, btn) {
+      document.getElementById('effortSelect').value = val;
+      if (btn) {
+        document.querySelectorAll('#effortPresets .preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    }
+
+    function onEffortDropdownChanged() {
+      const val = document.getElementById('effortSelect').value;
+      document.querySelectorAll('#effortPresets .preset-btn').forEach(b => {
+        b.classList.toggle('active', b.textContent.toLowerCase() === val);
+      });
+    }
 
     async function fetchModels() {
       const apiKey = document.getElementById('apiKey').value.trim();
@@ -635,7 +681,11 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
 
     function filterByFamily(fam, btn) {
       activeFamily = fam;
-      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.presets .preset-btn').forEach(b => {
+        if (b.parentElement && b.parentElement.id !== 'effortPresets') {
+          b.classList.remove('active');
+        }
+      });
       btn.classList.add('active');
       filterModelsList();
     }
@@ -786,7 +836,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
         const tbody = document.getElementById('leaderboardBody');
         tbody.innerHTML = '';
         if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>';
           return;
         }
         data.forEach(r => {
@@ -794,8 +844,10 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
           const passBadge = r.pass_rate === 100 
             ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
             : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
+          const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
           const row = `<tr>
             <td style="font-weight: 600; color: var(--primary);">${r.model}</td>
+            <td>${effBadge}</td>
             <td>${r.task}</td>
             <td style="color: var(--success);">${r.language}</td>
             <td>${passBadge}</td>
@@ -819,7 +871,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
         const tbody = document.getElementById('runsTableBody');
         tbody.innerHTML = '';
         if (runs.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No archived runs found in runs/.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted);">No archived runs found in runs/.</td></tr>';
           return;
         }
 
@@ -828,12 +880,14 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
           const passBadge = r.pass_rate === 100 
             ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
             : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
-          
+          const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
+
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text);">${r.run_id}</td>
             <td><b>${r.task}</b></td>
             <td style="color: var(--primary); font-weight: 600;">${r.model}</td>
+            <td>${effBadge}</td>
             <td style="color: var(--success);">${r.language}</td>
             <td>${passBadge}</td>
             <td style="color: var(--accent);">$${r.cost_usd.toFixed(4)}</td>
@@ -860,6 +914,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
         currentInspectRun = m;
 
         document.getElementById('inspectScore').textContent = m.efficiency_score.toFixed(1);
+        document.getElementById('inspectEffort').textContent = m.effort || 'auto';
         document.getElementById('inspectPass').innerHTML = m.pass_rate === 100 
           ? `<span style="color: var(--success);">${m.pass_rate}%</span>` 
           : `<span style="color: var(--danger);">${m.pass_rate}%</span>`;
@@ -960,6 +1015,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
     async function startBenchmark() {
       const apiKey = document.getElementById('apiKey').value.trim();
       const model = document.getElementById('model').value.trim();
+      const effort = document.getElementById('effortSelect').value;
       const task = document.getElementById('task').value;
       const budget = parseFloat(document.getElementById('budget').value) || 0.20;
       const turns = parseInt(document.getElementById('turns').value) || 15;
@@ -972,7 +1028,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
 
       switchTab('console');
       clearConsole();
-      appendLog(`[INIT] Starting benchmark for ${model} on task '${task}'...`);
+      appendLog(`[INIT] Starting benchmark for ${model} (Effort: ${effort}) on task '${task}'...`);
 
       const startBtn = document.getElementById('startBtn');
       startBtn.disabled = true;
@@ -986,6 +1042,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
           body: JSON.stringify({
             model,
             task,
+            effort,
             api_key: apiKey || null,
             budget_usd: budget,
             max_turns: turns,

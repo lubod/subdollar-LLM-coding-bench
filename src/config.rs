@@ -21,6 +21,10 @@ pub enum Commands {
         #[arg(short, long, value_enum, default_value_t = TaskType::Redis)]
         task: TaskType,
 
+        /// Reasoning effort / thinking level (auto, off, low, medium, high, max)
+        #[arg(long, default_value = "auto")]
+        effort: String,
+
         /// Maximum turns/steps allowed for OMP
         #[arg(long, default_value_t = 15)]
         max_turns: u32,

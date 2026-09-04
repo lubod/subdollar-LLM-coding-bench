@@ -42,6 +42,8 @@ pub struct RunRequest {
     pub budget_usd: f64,
     pub max_turns: u32,
     pub eval_only: bool,
+    #[serde(default)]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -281,6 +283,8 @@ async fn start_run(
             Utc::now().format("%Y%m%d_%H%M%S")
         );
 
+        let effort_setting = req.effort.clone().unwrap_or_else(|| "auto".to_string());
+
         let mut console_buffer: Vec<String> = Vec::new();
         let log = |buf: &mut Vec<String>, msg: String| {
             let ts = Utc::now().format("%H:%M:%S").to_string();
@@ -292,6 +296,7 @@ async fn start_run(
         log(&mut console_buffer, format!("========================================================="));
         log(&mut console_buffer, format!(">>> Benchmark Run: {}", run_id));
         log(&mut console_buffer, format!("    Model:  {}", req.model));
+        log(&mut console_buffer, format!("    Effort: {}", effort_setting));
         log(&mut console_buffer, format!("    Task:   {}", req.task));
         log(&mut console_buffer, format!("    Budget: ${:.2} USD | Max Turns: {}", req.budget_usd, req.max_turns));
         log(&mut console_buffer, format!("========================================================="));
@@ -325,7 +330,7 @@ async fn start_run(
 
         // 3. Run OMP Agent
         let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !req.eval_only {
-            log(&mut console_buffer, format!("[OMP] Spawning OMP agent with model '{}'...", req.model));
+            log(&mut console_buffer, format!("[OMP] Spawning OMP agent with model '{}' (Effort: {})...", req.model, effort_setting));
             let tx_sub = tx.clone();
             match OmpRunner::run_agent_with_logger(
                 &req.model,
@@ -333,6 +338,7 @@ async fn start_run(
                 work_path,
                 req.api_key.as_deref(),
                 req.max_turns,
+                Some(&effort_setting),
                 move |line| {
                     let ts = Utc::now().format("%H:%M:%S").to_string();
                     let _ = tx_sub.send(format!("[{}] [OMP] {}", ts, line));
@@ -470,6 +476,7 @@ async fn start_run(
             task: req.task.clone(),
             status: if pass_rate == 100.0 { "completed".to_string() } else { "failed_tests".to_string() },
             language: lang.clone(),
+            effort: Some(effort_setting.clone()),
             started_at,
             completed_at: completed_at.clone(),
             duration_seconds,
@@ -502,6 +509,7 @@ async fn start_run(
             model: req.model.clone(),
             task: req.task.clone(),
             language: lang.clone(),
+            effort: Some(effort_setting.clone()),
             pass_rate,
             passed_stages,
             total_stages,
@@ -520,8 +528,8 @@ async fn start_run(
 
         log(&mut console_buffer, "=========================================================".to_string());
         log(&mut console_buffer, format!(
-            "Results: Lang={}, Pass Rate={:.1}%, Cost=${:.4}, Savings={:.1}%, Efficiency={:.1}",
-            lang, pass_rate, cost_usd, breakdown.savings_percent, efficiency_score
+            "Results: Lang={}, Effort={}, Pass Rate={:.1}%, Cost=${:.4}, Savings={:.1}%, Efficiency={:.1}",
+            lang, effort_setting, pass_rate, cost_usd, breakdown.savings_percent, efficiency_score
         ));
         log(&mut console_buffer, "=========================================================".to_string());
 

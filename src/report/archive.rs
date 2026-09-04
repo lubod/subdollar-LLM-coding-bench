@@ -26,6 +26,8 @@ pub struct RunManifest {
     pub task: String,
     pub status: String,
     pub language: String,
+    #[serde(default)]
+    pub effort: Option<String>,
     pub started_at: String,
     pub completed_at: String,
     pub duration_seconds: f64,
@@ -187,6 +189,7 @@ mod tests {
             task: "redis".to_string(),
             status: "completed".to_string(),
             language: "Go".to_string(),
+            effort: Some("high".to_string()),
             started_at: "2026-09-04T06:30:00Z".to_string(),
             completed_at: "2026-09-04T06:31:00Z".to_string(),
             duration_seconds: 60.0,
@@ -220,6 +223,7 @@ mod tests {
         let runs = RunArchiver::list_runs(&runs_dir);
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].run_id, "test_run_123");
+        assert_eq!(runs[0].effort.as_deref(), Some("high"));
 
         // Verify get_run
         let loaded = RunArchiver::get_run(&runs_dir, "test_run_123").unwrap();

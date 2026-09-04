@@ -25,8 +25,9 @@ impl OmpRunner {
         workdir: &Path,
         api_key: Option<&str>,
         max_turns: u32,
+        effort: Option<&str>,
     ) -> Result<OmpSessionStats> {
-        Self::run_agent_with_logger(model, prompt, workdir, api_key, max_turns, |line| {
+        Self::run_agent_with_logger(model, prompt, workdir, api_key, max_turns, effort, |line| {
             println!("{}", line);
         })
     }
@@ -37,12 +38,13 @@ impl OmpRunner {
         workdir: &Path,
         api_key: Option<&str>,
         max_turns: u32,
+        effort: Option<&str>,
         mut log_fn: F,
     ) -> Result<OmpSessionStats>
     where
         F: FnMut(String) + Send + 'static,
     {
-        info!("Launching OMP agent with model: {}", model);
+        info!("Launching OMP agent with model: {}, effort: {:?}", model, effort);
 
         let mut cmd = Command::new("omp");
         cmd.arg("--approval-mode=yolo")
@@ -53,6 +55,16 @@ impl OmpRunner {
             .env("PI_NO_PTY", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        if let Some(eff) = effort {
+            let eff_clean = eff.trim().to_lowercase();
+            if !eff_clean.is_empty() && eff_clean != "auto" && eff_clean != "default" {
+                cmd.arg(format!("--thinking={}", eff_clean));
+            }
+            cmd.arg("--print-thoughts");
+        } else {
+            cmd.arg("--print-thoughts");
+        }
 
         if let Some(key) = api_key {
             cmd.env("OPENROUTER_API_KEY", key);

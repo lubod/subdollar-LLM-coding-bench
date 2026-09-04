@@ -65,6 +65,7 @@ func main() {
         task: "redis".to_string(),
         status: "completed".to_string(),
         language: "Go".to_string(),
+        effort: Some("high".to_string()),
         started_at: "2026-09-04T12:00:00Z".to_string(),
         completed_at: "2026-09-04T12:01:15Z".to_string(),
         duration_seconds: 75.0,
@@ -115,6 +116,7 @@ func main() {
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].run_id, run_id);
     assert_eq!(runs[0].model, "google/gemini-2.5-flash");
+    assert_eq!(runs[0].effort.as_deref(), Some("high"));
     assert_eq!(runs[0].pass_rate, 100.0);
     assert_eq!(runs[0].files.len(), 3);
 
