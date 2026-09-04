@@ -1,2 +1,2 @@
 pub mod calculator;
-pub use calculator::ModelPricing;
+pub use calculator::{CostBreakdown, ModelPricing};

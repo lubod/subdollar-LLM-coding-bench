@@ -17,8 +17,10 @@ pub struct BenchmarkRunResult {
     pub total_stages: u32,
     pub throughput_req_sec: Option<f64>,
     pub prompt_tokens: u64,
+    pub cached_tokens: u64,
     pub completion_tokens: u64,
     pub total_cost_usd: f64,
+    pub savings_percent: f64,
     pub efficiency_score: f64,
     pub timestamp: String,
 }
@@ -89,6 +91,7 @@ impl LeaderboardManager {
                 "Pass Rate",
                 "Throughput",
                 "Cost ($)",
+                "Cache Savings",
                 "Score / ¢",
             ]);
 
@@ -99,6 +102,7 @@ impl LeaderboardManager {
                 .unwrap_or_else(|| "N/A".to_string());
 
             let pass_str = format!("{:.0}% ({}/{})", r.pass_rate, r.passed_stages, r.total_stages);
+            let savings_str = format!("{:.0}%", r.savings_percent);
 
             table.add_row(Row::from(vec![
                 Cell::new(&r.model).fg(Color::Cyan),
@@ -107,39 +111,11 @@ impl LeaderboardManager {
                 Cell::new(pass_str).fg(if r.pass_rate == 100.0 { Color::Green } else { Color::Yellow }),
                 Cell::new(tp),
                 Cell::new(format!("${:.4}", r.total_cost_usd)).fg(Color::Magenta),
+                Cell::new(savings_str).fg(Color::Green),
                 Cell::new(format!("{:.1}", r.efficiency_score)).fg(Color::Cyan),
             ]));
         }
 
         println!("\n{}", table);
-    }
-
-    pub fn generate_markdown(results: &[BenchmarkRunResult]) -> String {
-        let mut md = String::from(
-            "| Model | Task | Lang | Pass Rate | Throughput | Cost ($) | Efficiency (Score / ¢) |\n\
-             | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n",
-        );
-
-        for r in results {
-            let tp = r
-                .throughput_req_sec
-                .map(|t| format!("{:.0} req/s", t))
-                .unwrap_or_else(|| "N/A".to_string());
-
-            md.push_str(&format!(
-                "| `{}` | {} | {} | {:.0}% ({}/{}) | {} | ${:.4} | **{:.1}** |\n",
-                r.model,
-                r.task,
-                r.language,
-                r.pass_rate,
-                r.passed_stages,
-                r.total_stages,
-                tp,
-                r.total_cost_usd,
-                r.efficiency_score
-            ));
-        }
-
-        md
     }
 }

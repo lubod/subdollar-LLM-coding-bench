@@ -7,6 +7,7 @@ use tracing::{info, warn};
 pub struct OmpSessionStats {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
+    pub cached_tokens: u64,
     pub total_tokens: u64,
     pub steps_taken: u32,
 }
@@ -41,12 +42,12 @@ impl OmpRunner {
             warn!("OMP agent exited with non-zero status: {:?}", status.code());
         }
 
-        // Try to parse latest session stats from ~/.omp/agent/sessions
         let stats = Self::extract_latest_session_stats().unwrap_or_else(|e| {
             warn!("Could not read session stats: {}, using estimation", e);
             OmpSessionStats {
                 prompt_tokens: 15_000,
                 completion_tokens: 2_500,
+                cached_tokens: 10_000,
                 total_tokens: 17_500,
                 steps_taken: max_turns,
             }
@@ -62,7 +63,6 @@ impl OmpRunner {
             return Err(anyhow!("Sessions dir does not exist"));
         }
 
-        // Scan for most recently modified session.jsonl
         let mut latest_file = None;
         let mut latest_time = std::time::SystemTime::UNIX_EPOCH;
 
@@ -87,9 +87,10 @@ impl OmpRunner {
 
         let session_file = latest_file.ok_or_else(|| anyhow!("No session file found"))?;
         let content = std::fs::read_to_string(session_file)?;
-        
+
         let mut prompt_tokens = 0u64;
         let mut completion_tokens = 0u64;
+        let mut cached_tokens = 0u64;
         let mut steps = 0u32;
 
         for line in content.lines() {
@@ -102,6 +103,14 @@ impl OmpRunner {
                     if let Some(ct) = usage.get("completion_tokens").and_then(|x| x.as_u64()) {
                         completion_tokens += ct;
                     }
+                    if let Some(details) = usage.get("prompt_tokens_details") {
+                        if let Some(c) = details.get("cached_tokens").and_then(|x| x.as_u64()) {
+                            cached_tokens = cached_tokens.max(c);
+                        }
+                    }
+                    if let Some(c) = usage.get("cache_read_input_tokens").and_then(|x| x.as_u64()) {
+                        cached_tokens = cached_tokens.max(c);
+                    }
                 }
             }
         }
@@ -109,6 +118,7 @@ impl OmpRunner {
         Ok(OmpSessionStats {
             prompt_tokens,
             completion_tokens,
+            cached_tokens,
             total_tokens: prompt_tokens + completion_tokens,
             steps_taken: steps,
         })

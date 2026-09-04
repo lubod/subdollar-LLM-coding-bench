@@ -48,6 +48,16 @@ async fn main() -> Result<()> {
 
             let sandbox = SandboxManager::new();
 
+            // Initial OpenRouter spend checkpoint
+            let initial_spend = if let Some(key) = &api_key {
+                ModelPricing::query_openrouter_key_usage(key).await
+            } else {
+                None
+            };
+            if let Some(init) = initial_spend {
+                println!("  [Account] Initial OpenRouter key spend: ${:.4} USD", init);
+            }
+
             // 1. Start reference services in Docker
             match task {
                 TaskType::Redis => {
@@ -64,13 +74,13 @@ async fn main() -> Result<()> {
                 .map_err(|_| anyhow!("Could not read prompt file: {}", prompt_file))?;
 
             // 3. Run OMP Agent (unless eval_only)
-            let (prompt_tokens, completion_tokens) = if !eval_only {
+            let (prompt_tokens, cached_tokens, completion_tokens) = if !eval_only {
                 println!("\n{}", ">>> Spawning OMP Agent in headless mode...".bold().magenta());
                 let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), max_turns)?;
-                (stats.prompt_tokens, stats.completion_tokens)
+                (stats.prompt_tokens, stats.cached_tokens, stats.completion_tokens)
             } else {
                 println!("\n{}", ">>> Skipping OMP agent run (--eval-only set)".italic());
-                (0, 0)
+                (0, 0, 0)
             };
 
             // 4. Start candidate server inside Docker
@@ -118,7 +128,7 @@ async fn main() -> Result<()> {
                 }
             };
 
-            // 6. Concurrency / Load benchmark (if passed functional tests)
+            // 6. Concurrency / Load benchmark
             let mut throughput = None;
             if pass_rate >= 75.0 {
                 println!("\n{}", ">>> Running Stress & Concurrency Benchmark in Docker...".bold().cyan());
@@ -144,9 +154,21 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // 7. Cost & Token calculation
+            // 7. Cost & Token calculation (Cache-Aware + Live OpenRouter Delta)
             let pricing = ModelPricing::for_model(&model);
-            let cost_usd = pricing.compute_cost(prompt_tokens, completion_tokens);
+            let breakdown = pricing.compute_cost_with_cache(prompt_tokens, cached_tokens, completion_tokens);
+
+            let mut live_spend_delta = None;
+            if let (Some(key), Some(init)) = (&api_key, initial_spend) {
+                sleep(Duration::from_millis(1500)).await;
+                if let Some(fin) = ModelPricing::query_openrouter_key_usage(key).await {
+                    if fin >= init {
+                        live_spend_delta = Some(fin - init);
+                    }
+                }
+            }
+
+            let cost_usd = live_spend_delta.unwrap_or(breakdown.total_cost_usd);
             let cost_cents = (cost_usd * 100.0).max(0.01);
             let efficiency_score = pass_rate / cost_cents;
             let lang = LeaderboardManager::detect_language(work_path);
@@ -162,8 +184,10 @@ async fn main() -> Result<()> {
                 total_stages,
                 throughput_req_sec: throughput,
                 prompt_tokens,
+                cached_tokens,
                 completion_tokens,
                 total_cost_usd: cost_usd,
+                savings_percent: breakdown.savings_percent,
                 efficiency_score,
                 timestamp: Utc::now().to_rfc3339(),
             };
@@ -174,11 +198,15 @@ async fn main() -> Result<()> {
             println!("  Results Summary for {}:", model.bold());
             println!("  - Language Chosen: {}", result.language.bold().cyan());
             println!("  - Pass Rate:       {:.1}% ({}/{})", pass_rate, passed_stages, total_stages);
-            println!("  - Total Cost:      ${:.4} USD", cost_usd);
+            println!("  - Prompt Tokens:   {} (Cached: {})", prompt_tokens, cached_tokens);
+            println!("  - Cache Savings:   {:.1}% (${:.4} saved)", breakdown.savings_percent, breakdown.savings_usd);
+            if let Some(delta) = live_spend_delta {
+                println!("  - OpenRouter Live: ${:.4} USD (verified directly)", delta);
+            }
+            println!("  - Final Cost:      ${:.4} USD", cost_usd);
             println!("  - Efficiency:      {:.1} points / cent", efficiency_score);
             println!("{}", "=========================================================".bold().blue());
 
-            // Print full leaderboard
             let all = LeaderboardManager::load_all("./results");
             LeaderboardManager::print_table(&all);
 

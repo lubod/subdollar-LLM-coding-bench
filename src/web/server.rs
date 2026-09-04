@@ -59,8 +59,8 @@ struct OpenRouterModelItem {
     id: String,
     name: String,
     context_length: Option<u64>,
-    created: Option<i64>,
     pricing: Option<OpenRouterPricing>,
+    created: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,7 +158,7 @@ async fn get_models(
     let max_price = params
         .get("max_price")
         .and_then(|p| p.parse::<f64>().ok())
-        .unwrap_or(1.0); // Default $1.00 / 1M tokens
+        .unwrap_or(1.0);
 
     let mut filtered: Vec<SubDollarModel> = data
         .data
@@ -189,11 +189,7 @@ async fn get_models(
         })
         .collect();
 
-    filtered.sort_by(|a, b| {
-        let cost_a = a.prompt_price_per_m + a.completion_price_per_m;
-        let cost_b = b.prompt_price_per_m + b.completion_price_per_m;
-        cost_a.partial_cmp(&cost_b).unwrap()
-    });
+    filtered.sort_by(|a, b| (b.created).cmp(&a.created));
 
     Ok(Json(filtered))
 }
@@ -238,6 +234,16 @@ async fn start_run(
         let tx = state_clone.log_sender.clone();
         let _ = tx.send(format!("🚀 Starting run for {} on task '{}'", req.model, req.task));
 
+        // Initial OpenRouter spend checkpoint
+        let initial_spend = if let Some(key) = &req.api_key {
+            ModelPricing::query_openrouter_key_usage(key).await
+        } else {
+            None
+        };
+        if let Some(init) = initial_spend {
+            let _ = tx.send(format!("[ACCOUNT] OpenRouter initial key spend: ${:.4} USD", init));
+        }
+
         let task_type = if req.task == "http" { TaskType::Http } else { TaskType::Redis };
         let work_path = Path::new("./workspace");
         let _ = fs::create_dir_all(work_path);
@@ -256,21 +262,24 @@ async fn start_run(
         let prompt_content = fs::read_to_string(&prompt_path).unwrap_or_default();
 
         // 3. Run OMP Agent
-        let (prompt_tokens, completion_tokens) = if !req.eval_only {
+        let (prompt_tokens, cached_tokens, completion_tokens) = if !req.eval_only {
             let _ = tx.send(format!("[OMP] Spawning OMP agent with model '{}'...", req.model));
             match OmpRunner::run_agent(&req.model, &prompt_content, work_path, req.api_key.as_deref(), req.max_turns) {
                 Ok(stats) => {
-                    let _ = tx.send(format!("[OMP] Finished! Tokens: prompt={}, completion={}", stats.prompt_tokens, stats.completion_tokens));
-                    (stats.prompt_tokens, stats.completion_tokens)
+                    let _ = tx.send(format!(
+                        "[OMP] Finished! Tokens: prompt={}, cached={}, completion={}",
+                        stats.prompt_tokens, stats.cached_tokens, stats.completion_tokens
+                    ));
+                    (stats.prompt_tokens, stats.cached_tokens, stats.completion_tokens)
                 }
                 Err(e) => {
                     let _ = tx.send(format!("[OMP ERROR] {}", e));
-                    (15_000, 2_500)
+                    (15_000, 10_000, 2_500)
                 }
             }
         } else {
             let _ = tx.send("[OMP] Skipped (--eval-only)".to_string());
-            (0, 0)
+            (0, 0, 0)
         };
 
         // 4. Start candidate container
@@ -330,12 +339,34 @@ async fn start_run(
             }
         }
 
-        // 7. Cost & Metrics
+        // 7. Cost & Metrics Accounting
         let pricing = ModelPricing::for_model(&req.model);
-        let cost_usd = pricing.compute_cost(prompt_tokens, completion_tokens);
+        let breakdown = pricing.compute_cost_with_cache(prompt_tokens, cached_tokens, completion_tokens);
+
+        // Check OpenRouter live spending delta if available
+        let mut live_spend_delta = None;
+        if let (Some(key), Some(init)) = (&req.api_key, initial_spend) {
+            sleep(Duration::from_millis(1500)).await;
+            if let Some(fin) = ModelPricing::query_openrouter_key_usage(key).await {
+                if fin >= init {
+                    live_spend_delta = Some(fin - init);
+                }
+            }
+        }
+
+        let cost_usd = live_spend_delta.unwrap_or(breakdown.total_cost_usd);
         let cost_cents = (cost_usd * 100.0).max(0.01);
         let efficiency_score = pass_rate / cost_cents;
         let lang = LeaderboardManager::detect_language(work_path);
+
+        if let Some(delta) = live_spend_delta {
+            let _ = tx.send(format!("[BILLING] OpenRouter live verified cost: ${:.4} USD", delta));
+        } else {
+            let _ = tx.send(format!(
+                "[BILLING] Formula Cost: ${:.4} USD (Prompt Cache Savings: {:.1}%)",
+                breakdown.total_cost_usd, breakdown.savings_percent
+            ));
+        }
 
         let run_id = format!("{}_{}_{}", req.task, req.model.replace('/', "_"), Utc::now().format("%Y%m%d_%H%M%S"));
         let result = BenchmarkRunResult {
@@ -348,8 +379,10 @@ async fn start_run(
             total_stages,
             throughput_req_sec: throughput,
             prompt_tokens,
+            cached_tokens,
             completion_tokens,
             total_cost_usd: cost_usd,
+            savings_percent: breakdown.savings_percent,
             efficiency_score,
             timestamp: Utc::now().to_rfc3339(),
         };
@@ -358,7 +391,10 @@ async fn start_run(
         let _ = LeaderboardManager::save_result(&r_dir, &result);
 
         let _ = tx.send("=========================================================".to_string());
-        let _ = tx.send(format!("Results: Language={}, Pass Rate={:.1}%, Cost=${:.4}, Efficiency={:.1}", lang, pass_rate, cost_usd, efficiency_score));
+        let _ = tx.send(format!(
+            "Results: Lang={}, Pass Rate={:.1}%, Cost=${:.4}, Savings={:.1}%, Efficiency={:.1}",
+            lang, pass_rate, cost_usd, breakdown.savings_percent, efficiency_score
+        ));
         let _ = tx.send("=========================================================".to_string());
 
         sandbox.cleanup();
