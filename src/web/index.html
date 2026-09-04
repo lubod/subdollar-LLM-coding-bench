@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SubDollarBench — LLM Coding Benchmark</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --primary: #58a6ff;
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+      --accent: #bc8cff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #21262d;
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+    .status-dot.running { background: var(--warning); animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+    /* Layout Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    /* Card */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Form controls */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    input, select, textarea {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    textarea {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      resize: vertical;
+      min-height: 250px;
+    }
+
+    /* Model Presets */
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .preset-btn {
+      background: #21262d;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .preset-btn:hover {
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #238636;
+      color: #fff;
+      border: none;
+      padding: 12px 18px;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover:not(:disabled) {
+      background: #2ea043;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #21262d;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      font-size: 0.8rem;
+    }
+    .btn-secondary:hover {
+      background: #30363d;
+      color: #fff;
+    }
+
+    /* Right Panel Tabs */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .tab.active {
+      background: #21262d;
+      color: #fff;
+    }
+
+    /* Terminal Console */
+    .console-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      height: 100%;
+    }
+    .terminal {
+      background: #05070a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: #7ee787;
+      min-height: 480px;
+      max-height: 600px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .terminal .log-err { color: var(--danger); }
+    .terminal .log-pass { color: var(--success); font-weight: bold; }
+    .terminal .log-info { color: var(--primary); }
+    .terminal .log-warn { color: var(--warning); }
+    .terminal .log-dim { color: var(--text-muted); }
+
+    /* Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.825rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: #0d1117;
+    }
+    tr:hover { background: #21262d; }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .badge-pass { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+    .badge-fail { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>⚡ SubDollarBench</h1>
+        <p>Autonomous Under-$1 Systems Benchmark for Budget LLMs (Docker + OMP)</p>
+      </div>
+      <div class="status-badge">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Ready</span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Configuration Panel -->
+      <aside class="card">
+        <h2>⚙️ Run Configuration</h2>
+
+        <div class="form-group">
+          <label for="apiKey">OpenRouter API Key</label>
+          <input type="password" id="apiKey" placeholder="sk-or-v1-..." />
+          <span class="hint">Stored locally in your browser.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="model">Target Model</label>
+          <input type="text" id="model" value="openrouter/google/gemini-2.5-flash" />
+          <div class="presets">
+            <button class="preset-btn" onclick="selectModel('openrouter/google/gemini-2.5-flash')">Gemini Flash</button>
+            <button class="preset-btn" onclick="selectModel('openrouter/deepseek/deepseek-chat')">DeepSeek V3</button>
+            <button class="preset-btn" onclick="selectModel('openrouter/qwen/qwen-2.5-coder-32b-instruct')">Qwen Coder 32B</button>
+            <button class="preset-btn" onclick="selectModel('openrouter/meta-llama/llama-3.3-70b-instruct')">Llama 3.3 70B</button>
+            <button class="preset-btn" onclick="selectModel('openrouter/openai/gpt-4o-mini')">GPT-4o-mini</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="task">Benchmark Task</label>
+          <select id="task" onchange="loadPrompt()">
+            <option value="redis">Redis (RESP Key-Value Clone)</option>
+            <option value="http">HTTP/1.1 Web Server</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="form-group">
+            <label for="budget">Budget Cap ($)</label>
+            <input type="number" id="budget" value="0.20" step="0.05" min="0.01" />
+          </div>
+          <div class="form-group">
+            <label for="turns">Max Turns</label>
+            <input type="number" id="turns" value="15" min="1" max="50" />
+          </div>
+        </div>
+
+        <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px;">
+          <input type="checkbox" id="evalOnly" style="width: auto;" />
+          <label for="evalOnly" style="font-weight: normal; cursor: pointer;">Eval only (skip OMP agent)</label>
+        </div>
+
+        <button class="btn" id="startBtn" onclick="startBenchmark()">
+          <span>🚀</span> Start Benchmark
+        </button>
+      </aside>
+
+      <!-- Main Display Tabs -->
+      <main class="card">
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('console')">Live Console</button>
+          <button class="tab" onclick="switchTab('prompt')">Prompt Specification</button>
+          <button class="tab" onclick="switchTab('leaderboard')">Leaderboard</button>
+        </div>
+
+        <!-- Tab 1: Terminal Console -->
+        <div id="tab-console" class="console-container">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="hint">Real-time execution log from OMP, Docker, and Test Harness</span>
+            <button class="btn btn-secondary" onclick="clearConsole()">Clear</button>
+          </div>
+          <div class="terminal" id="terminalOutput">SubDollarBench console initialized.
+Configure your OpenRouter API key and click "Start Benchmark" to begin.
+</div>
+        </div>
+
+        <!-- Tab 2: Prompt Editor -->
+        <div id="tab-prompt" style="display: none; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="hint">System instructions fed into OMP for this task</span>
+            <button class="btn btn-secondary" onclick="savePrompt()">💾 Save Changes</button>
+          </div>
+          <textarea id="promptEditor"></textarea>
+        </div>
+
+        <!-- Tab 3: Leaderboard -->
+        <div id="tab-leaderboard" style="display: none; overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Task</th>
+                <th>Lang</th>
+                <th>Pass Rate</th>
+                <th>Throughput</th>
+                <th>Cost ($)</th>
+                <th>Score / ¢</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody">
+              <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // LocalStorage API key retention
+    const apiKeyInput = document.getElementById('apiKey');
+    apiKeyInput.value = localStorage.getItem('subdollar_openrouter_key') || '';
+    apiKeyInput.addEventListener('input', () => {
+      localStorage.setItem('subdollar_openrouter_key', apiKeyInput.value);
+    });
+
+    function selectModel(m) {
+      document.getElementById('model').value = m;
+    }
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-console').style.display = 'none';
+      document.getElementById('tab-prompt').style.display = 'none';
+      document.getElementById('tab-leaderboard').style.display = 'none';
+
+      if (name === 'console') {
+        document.getElementById('tab-console').style.display = 'flex';
+        document.querySelectorAll('.tab')[0].classList.add('active');
+      } else if (name === 'prompt') {
+        document.getElementById('tab-prompt').style.display = 'flex';
+        document.querySelectorAll('.tab')[1].classList.add('active');
+        loadPrompt();
+      } else if (name === 'leaderboard') {
+        document.getElementById('tab-leaderboard').style.display = 'block';
+        document.querySelectorAll('.tab')[2].classList.add('active');
+        loadLeaderboard();
+      }
+    }
+
+    function clearConsole() {
+      document.getElementById('terminalOutput').textContent = '';
+    }
+
+    function appendLog(line) {
+      const term = document.getElementById('terminalOutput');
+      term.textContent += line + '\n';
+      term.scrollTop = term.scrollHeight;
+    }
+
+    async function loadPrompt() {
+      const task = document.getElementById('task').value;
+      try {
+        const res = await fetch(`/api/prompt/${task}`);
+        if (res.ok) {
+          const text = await res.text();
+          document.getElementById('promptEditor').value = text;
+        }
+      } catch (e) {
+        console.error('Failed to load prompt', e);
+      }
+    }
+
+    async function savePrompt() {
+      const task = document.getElementById('task').value;
+      const content = document.getElementById('promptEditor').value;
+      try {
+        const res = await fetch(`/api/prompt/${task}`, {
+          method: 'POST',
+          body: content
+        });
+        if (res.ok) alert('Prompt saved successfully!');
+      } catch (e) {
+        alert('Failed to save prompt');
+      }
+    }
+
+    async function loadLeaderboard() {
+      try {
+        const res = await fetch('/api/leaderboard');
+        if (!res.ok) return;
+        const data = await res.json();
+        const tbody = document.getElementById('leaderboardBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>';
+          return;
+        }
+        data.forEach(r => {
+          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec)} req/s` : 'N/A';
+          const passBadge = r.pass_rate === 100 
+            ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
+            : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
+          const row = `<tr>
+            <td style="font-weight: 600; color: var(--primary);">${r.model}</td>
+            <td>${r.task}</td>
+            <td style="color: var(--success);">${r.language}</td>
+            <td>${passBadge}</td>
+            <td>${tp}</td>
+            <td style="color: var(--accent);">$${r.total_cost_usd.toFixed(4)}</td>
+            <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
+            <td style="color: var(--text-muted); font-size: 0.75rem;">${new Date(r.timestamp).toLocaleTimeString()}</td>
+          </tr>`;
+          tbody.innerHTML += row;
+        });
+      } catch (e) {
+        console.error('Failed to load leaderboard', e);
+      }
+    }
+
+    async function startBenchmark() {
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const model = document.getElementById('model').value.trim();
+      const task = document.getElementById('task').value;
+      const budget = parseFloat(document.getElementById('budget').value) || 0.20;
+      const turns = parseInt(document.getElementById('turns').value) || 15;
+      const evalOnly = document.getElementById('evalOnly').checked;
+
+      if (!evalOnly && !apiKey) {
+        alert('Please provide your OpenRouter API Key before starting the benchmark.');
+        return;
+      }
+
+      switchTab('console');
+      clearConsole();
+      appendLog(`[INIT] Starting benchmark for ${model} on task '${task}'...`);
+
+      const startBtn = document.getElementById('startBtn');
+      startBtn.disabled = true;
+      document.getElementById('statusDot').className = 'status-dot running';
+      document.getElementById('statusText').textContent = 'Running';
+
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            task,
+            api_key: apiKey || null,
+            budget_usd: budget,
+            max_turns: turns,
+            eval_only: evalOnly
+          })
+        });
+
+        if (!res.ok) {
+          appendLog(`[ERROR] Failed to start run: ${await res.text()}`);
+          resetStatus();
+          return;
+        }
+
+        // Start SSE stream
+        const eventSource = new EventSource('/api/stream');
+        eventSource.onmessage = (event) => {
+          if (event.data === '[DONE]') {
+            appendLog('\n[COMPLETED] Benchmark run finished successfully.');
+            eventSource.close();
+            resetStatus();
+            loadLeaderboard();
+          } else {
+            appendLog(event.data);
+          }
+        };
+
+        eventSource.onerror = () => {
+          eventSource.close();
+          resetStatus();
+        };
+
+      } catch (e) {
+        appendLog(`[ERROR] Connection failure: ${e.message}`);
+        resetStatus();
+      }
+    }
+
+    function resetStatus() {
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('statusDot').className = 'status-dot';
+      document.getElementById('statusText').textContent = 'Ready';
+    }
+
+    // Initial load
+    loadPrompt();
+  </script>
+</body>
+</html>

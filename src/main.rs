@@ -4,6 +4,7 @@ mod cost;
 mod report;
 mod sandbox;
 mod verifier;
+mod web;
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -211,6 +212,10 @@ async fn main() -> Result<()> {
             } else {
                 LeaderboardManager::print_table(&all);
             }
+        }
+
+        Commands::Ui { port, host } => {
+            web::UiServer::start(&host, port).await?;
         }
     }
 

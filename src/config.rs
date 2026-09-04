@@ -59,6 +59,17 @@ pub enum Commands {
         #[arg(short, long, default_value = "./results")]
         results_dir: String,
     },
+
+    /// Launch web-based GUI for configuring and running benchmarks
+    Ui {
+        /// Port to bind the web server
+        #[arg(short, long, default_value_t = 3000)]
+        port: u16,
+
+        /// Host address to bind
+        #[arg(long, default_value = "0.0.0.0")]
+        host: String,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
