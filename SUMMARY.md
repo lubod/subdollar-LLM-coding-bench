@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-04 10:50:31 UTC*
+*Last Updated: 2026-09-04 10:50:58 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -81,8 +81,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `8c3c92e` (branch `master`) |
-| **Benchmark Captured** | 2026-09-04T10:50:31.735024168+00:00 |
+| **Git Baseline** | Commit `5315ce2` (branch `master`) |
+| **Benchmark Captured** | 2026-09-04T10:50:58.250045974+00:00 |
 
 ---
 
