@@ -270,6 +270,56 @@
       word-break: break-all;
     }
 
+    /* Card */
+    .card {
+      min-width: 0;
+    }
+
+    /* Responsive Runs & Leaderboard Table */
+    .responsive-runs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.825rem;
+      text-align: left;
+      table-layout: fixed;
+    }
+    .responsive-runs-table th, 
+    .responsive-runs-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    .responsive-runs-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: #0d1117;
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .responsive-runs-table tr:hover {
+      background: #161b22;
+    }
+    .btn-toggle {
+      background: #161b22;
+      border: none;
+      color: var(--text-muted);
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-toggle:hover {
+      color: #fff;
+    }
+    .btn-toggle.active {
+      background: var(--primary);
+      color: #000;
+      font-weight: 700;
+    }
+
     /* Table */
     table {
       width: 100%;
@@ -604,9 +654,12 @@
         <h1>⚡ SubDollarBench</h1>
         <p>Autonomous Under-$1 Systems Benchmark for Budget LLMs (Docker + OMP)</p>
       </div>
-      <div class="status-badge">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Ready</span>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button class="btn-secondary" id="toggleSidebarBtn" onclick="toggleSidebar()" style="padding: 6px 12px; font-size: 0.78rem; font-weight: 500;">◀ Hide Setup Panel</button>
+        <div class="status-badge">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Ready</span>
+        </div>
       </div>
     </header>
 
@@ -769,35 +822,42 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
 
         <!-- Tab 2: Traceability & Runs History -->
         <div id="tab-traceability" style="display: none; flex-direction: column; gap: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="hint">Complete run manifests, captured logs, and LLM generated code snapshots</span>
-            <button class="btn btn-secondary" onclick="loadRuns()">🔄 Refresh Runs</button>
+          <!-- Controls Toolbar -->
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 520px;">
+              <input type="text" id="runsSearchInput" placeholder="🔍 Search runs by model, task, language, status..." oninput="filterRunsList(this.value)" style="flex: 1; padding: 6px 12px; font-size: 0.78rem; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; color: #fff;">
+              <span id="runsCountBadge" class="badge badge-info" style="font-size: 0.72rem; white-space: nowrap;">Loading runs...</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <div style="display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden;">
+                <button id="viewBtnTable" class="btn-toggle active" onclick="setRunsViewMode('table')" title="Table View">📑 Table</button>
+                <button id="viewBtnCards" class="btn-toggle" onclick="setRunsViewMode('cards')" title="Cards View">🗂️ Cards</button>
+              </div>
+              <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="loadRuns()">🔄 Refresh</button>
+            </div>
           </div>
 
-          <!-- Runs List Table -->
-          <div style="overflow-x: auto;">
-            <table>
+          <!-- Runs List Table View (Zero horizontal scroll) -->
+          <div id="runsTableView" style="width: 100%;">
+            <table class="responsive-runs-table">
               <thead>
                 <tr>
-                  <th>Run ID</th>
-                  <th>Task</th>
-                  <th>Model</th>
-                  <th>Effort</th>
-                  <th>Lang</th>
-                  <th>Pass Rate</th>
-                  <th>Cost ($)</th>
-                  <th>Throughput</th>
-                  <th>Score / ¢</th>
-                  <th>Action</th>
+                  <th style="width: 38%;">Model & Benchmark Run</th>
+                  <th style="width: 18%;">Pass Rate & Effort</th>
+                  <th style="width: 14%;">Cost & Tokens</th>
+                  <th style="width: 14%;">Score & Throughput</th>
+                  <th style="width: 16%; text-align: right;">Actions</th>
                 </tr>
               </thead>
               <tbody id="runsTableBody">
-                <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">Loading runs...</td></tr>
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading runs...</td></tr>
               </tbody>
             </table>
           </div>
 
-
+          <!-- Runs Cards View (Toggleable) -->
+          <div id="runsCardsView" style="display: none; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px;">
+          </div>
         </div>
 
         <!-- Tab 3: Prompt Editor -->
@@ -810,26 +870,28 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
         </div>
 
         <!-- Tab 4: Leaderboard -->
-        <div id="tab-leaderboard" style="display: none; overflow-x: auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Effort</th>
-                <th>Task</th>
-                <th>Lang</th>
-                <th>Pass Rate</th>
-                <th>Throughput</th>
-                <th>Cost ($)</th>
-                <th>Score / ¢</th>
-                <th>Time</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="leaderboardBody">
-              <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
-            </tbody>
-          </table>
+        <div id="tab-leaderboard" style="display: none; flex-direction: column; gap: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="hint">Global model rankings sorted by Under-$1 efficiency score (points per cent)</span>
+            <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="loadLeaderboard()">🔄 Refresh Leaderboard</button>
+          </div>
+          <div style="width: 100%;">
+            <table class="responsive-runs-table">
+              <thead>
+                <tr>
+                  <th style="width: 8%; text-align: center;">Rank</th>
+                  <th style="width: 36%;">Model & Task</th>
+                  <th style="width: 16%;">Pass Rate & Effort</th>
+                  <th style="width: 14%;">Throughput</th>
+                  <th style="width: 12%;">Cost</th>
+                  <th style="width: 14%; text-align: right;">Score / ¢</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboardBody">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No runs recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Tab 5: SUMMARY.md & Git Contributions -->
@@ -1032,7 +1094,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         document.querySelectorAll('.tab')[2].classList.add('active');
         loadPrompt();
       } else if (name === 'leaderboard') {
-        document.getElementById('tab-leaderboard').style.display = 'block';
+        document.getElementById('tab-leaderboard').style.display = 'flex';
         document.querySelectorAll('.tab')[3].classList.add('active');
         loadLeaderboard();
       } else if (name === 'summary') {
@@ -1082,6 +1144,223 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
+    let allRunsCache = [];
+    let currentRunsFilter = '';
+    let currentRunsView = localStorage.getItem('runs_view_mode') || 'table';
+
+    function toggleSidebar() {
+      const aside = document.querySelector('aside.card');
+      const grid = document.querySelector('.grid');
+      const btn = document.getElementById('toggleSidebarBtn');
+      if (!aside || !grid) return;
+      const isHidden = aside.style.display === 'none';
+      if (isHidden) {
+        aside.style.display = 'flex';
+        grid.style.gridTemplateColumns = '460px 1fr';
+        if (btn) btn.textContent = '◀ Hide Setup Panel';
+        localStorage.setItem('sidebar_hidden', 'false');
+      } else {
+        aside.style.display = 'none';
+        grid.style.gridTemplateColumns = '1fr';
+        if (btn) btn.textContent = '⚙️ Show Setup Panel';
+        localStorage.setItem('sidebar_hidden', 'true');
+      }
+    }
+
+    function formatTimestamp(ts) {
+      if (!ts) return '';
+      try {
+        const d = new Date(ts);
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return ts;
+      }
+    }
+
+    function formatDuration(sec) {
+      if (!sec && sec !== 0) return '';
+      const s = Math.round(sec);
+      if (s < 60) return `${s}s`;
+      const m = Math.floor(s / 60);
+      const rem = s % 60;
+      return `${m}m ${rem}s`;
+    }
+
+    function copySpecificText(text, el, feedbackText) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (!el) return;
+        const orig = el.innerHTML;
+        el.innerHTML = `<span style="color:var(--success)">${feedbackText || 'Copied!'}</span>`;
+        setTimeout(() => { el.innerHTML = orig; }, 1500);
+      });
+    }
+
+    function setRunsViewMode(mode) {
+      currentRunsView = mode;
+      localStorage.setItem('runs_view_mode', mode);
+      const btnTbl = document.getElementById('viewBtnTable');
+      const btnCrd = document.getElementById('viewBtnCards');
+      if (btnTbl) btnTbl.classList.toggle('active', mode === 'table');
+      if (btnCrd) btnCrd.classList.toggle('active', mode === 'cards');
+      const tblView = document.getElementById('runsTableView');
+      const crdView = document.getElementById('runsCardsView');
+      if (tblView) tblView.style.display = mode === 'table' ? 'block' : 'none';
+      if (crdView) crdView.style.display = mode === 'cards' ? 'grid' : 'none';
+      renderRuns();
+    }
+
+    function filterRunsList(q) {
+      currentRunsFilter = (q || '').trim().toLowerCase();
+      renderRuns();
+    }
+
+    async function loadRuns() {
+      try {
+        const res = await fetch('/api/runs');
+        if (!res.ok) return;
+        allRunsCache = await res.json();
+        renderRuns();
+      } catch (e) {
+        console.error('Failed to load runs:', e);
+      }
+    }
+
+    function renderRuns() {
+      const q = currentRunsFilter;
+      const runs = q ? allRunsCache.filter(r => {
+        const text = `${r.run_id} ${r.model} ${r.task} ${r.language} ${r.status} ${r.effort || ''}`.toLowerCase();
+        return text.includes(q);
+      }) : allRunsCache;
+
+      const badge = document.getElementById('runsCountBadge');
+      if (badge) badge.textContent = `${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`;
+
+      const tbody = document.getElementById('runsTableBody');
+      const cardsContainer = document.getElementById('runsCardsView');
+
+      if (runs.length === 0) {
+        const emptyMsg = allRunsCache.length === 0 
+          ? 'No archived runs found in runs/.' 
+          : `No runs matched search query "${q}".`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">${emptyMsg}</td></tr>`;
+        if (cardsContainer) cardsContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 24px;">${emptyMsg}</div>`;
+        return;
+      }
+
+      if (tbody) tbody.innerHTML = '';
+      if (cardsContainer) cardsContainer.innerHTML = '';
+
+      runs.forEach(r => {
+        const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
+        const passBadge = r.pass_rate === 100 
+          ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
+          : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
+        const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
+        const pubBadge = r.is_published 
+          ? `<span class="badge" style="background:#238636;color:#fff;font-size:0.72rem;padding:2px 8px;">✔ Git</span>` 
+          : `<button class="btn-primary" style="padding:3px 8px;font-size:0.72rem;" onclick="event.stopPropagation(); publishRunModal('${r.run_id}')">🚀 Publish</button>`;
+
+        const dateStr = formatTimestamp(r.started_at || r.completed_at);
+        const durationStr = formatDuration(r.duration_seconds);
+        const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : 'N/A';
+        const shortId = r.run_id.length > 14 ? r.run_id.slice(-8) : r.run_id;
+
+        // 1. Table row
+        if (tbody) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; color: var(--primary); font-size: 0.88rem;">${r.model}</span>
+                  <span class="badge badge-info">${r.task}</span>
+                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+                  <span>${dateStr}</span>
+                  <span>·</span>
+                  <span title="${r.run_id}" style="cursor: pointer; text-decoration: underline dotted;" onclick="copySpecificText('${r.run_id}', this, 'Copied ID!')">
+                    id: ...${shortId} 📋
+                  </span>
+                  <span>·</span>
+                  <span>${durationStr}</span>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div>${passBadge}</div>
+                <div>${effBadge}</div>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${r.cost_usd.toFixed(4)}</span>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-weight: 700; color: var(--primary); font-size: 0.95rem;">${r.efficiency_score.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">pts/¢</span></span>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">${tp}</span>
+              </div>
+            </td>
+            <td style="text-align: right;">
+              <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end;">
+                <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
+                ${pubBadge}
+              </div>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        // 2. Cards element
+        if (cardsContainer) {
+          const card = document.createElement('div');
+          card.style.cssText = 'background: #161b22; border: 1px solid var(--border); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px;';
+          card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${r.model}</span>
+                  <span class="badge badge-info">${r.task}</span>
+                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 3px;">
+                  ${dateStr} · <span title="${r.run_id}" style="cursor: pointer;" onclick="copySpecificText('${r.run_id}', this, 'Copied!')">...${shortId} 📋</span> · ${durationStr}
+                </div>
+              </div>
+              <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #090d13; padding: 8px; border-radius: 6px; text-align: center;">
+              <div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Pass Rate</div>
+                <div style="font-weight: 600; font-size: 0.78rem; margin-top: 2px;">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</div>
+              </div>
+              <div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Score / ¢</div>
+                <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem; margin-top: 2px;">${r.efficiency_score.toFixed(1)}</div>
+              </div>
+              <div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Cost</div>
+                <div style="font-weight: 600; color: var(--accent); font-size: 0.78rem; margin-top: 2px;">$${r.cost_usd.toFixed(4)}</div>
+              </div>
+              <div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Throughput</div>
+                <div style="font-weight: 600; font-size: 0.78rem; margin-top: 2px;">${tp}</div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>${effBadge}</div>
+              <div>${pubBadge}</div>
+            </div>
+          `;
+          cardsContainer.appendChild(card);
+        }
+      });
+    }
+
     async function loadLeaderboard() {
       try {
         const res = await fetch('/api/leaderboard');
@@ -1090,78 +1369,62 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const tbody = document.getElementById('leaderboardBody');
         tbody.innerHTML = '';
         if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No runs recorded yet.</td></tr>';
           return;
         }
-        data.forEach(r => {
-          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec)} req/s` : 'N/A';
+        data.forEach((r, idx) => {
+          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
           const passBadge = r.pass_rate === 100 
-            ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
-            : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
-          const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
+            ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
+            : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
+          const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
+          const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : (r.completion_tokens ? `${((r.prompt_tokens + r.completion_tokens) / 1000).toFixed(1)}k tokens` : 'N/A');
+          
+          let rankBadge = `<span style="font-weight: 700; font-size: 0.95rem; color: var(--text-muted);">#${idx + 1}</span>`;
+          if (idx === 0) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #f1e05a;">🥇 #1</span>`;
+          else if (idx === 1) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #c0c0c0;">🥈 #2</span>`;
+          else if (idx === 2) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #cd7f32;">🥉 #3</span>`;
+
           const row = `<tr>
-            <td style="font-weight: 600; color: var(--primary);">${r.model}</td>
-            <td>${effBadge}</td>
-            <td>${r.task}</td>
-            <td style="color: var(--success);">${r.language}</td>
-            <td>${passBadge}</td>
-            <td>${tp}</td>
-            <td style="color: var(--accent);">$${r.total_cost_usd.toFixed(4)}</td>
-            <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
-            <td style="color: var(--text-muted); font-size: 0.75rem;">${new Date(r.timestamp).toLocaleTimeString()}</td>
-            <td style="text-align:center;">
-              <button class="btn-secondary" style="padding:2px 8px;font-size:0.72rem;" onclick="inspectRun('${r.id}')">🔍 Inspect</button>
+            <td style="text-align: center;">${rankBadge}</td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${r.model}</span>
+                  <span class="badge badge-info">${r.task}</span>
+                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">
+                  ${formatTimestamp(r.timestamp)}
+                </div>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div>${passBadge}</div>
+                <div>${effBadge}</div>
+              </div>
+            </td>
+            <td>
+              <span style="font-weight: 600; color: #fff; font-size: 0.85rem;">${tp}</span>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${r.total_cost_usd.toFixed(4)}</span>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
+              </div>
+            </td>
+            <td style="text-align: right;">
+              <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                <span style="font-weight: 800; color: var(--primary); font-size: 1.05rem;">${r.efficiency_score.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">Score/¢</span></span>
+                <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.id}')">🔍 Inspect</button>
+              </div>
             </td>
           </tr>`;
           tbody.innerHTML += row;
         });
       } catch (e) {
         console.error('Failed to load leaderboard', e);
-      }
-    }
-
-    async function loadRuns() {
-      try {
-        const res = await fetch('/api/runs');
-        if (!res.ok) return;
-        const runs = await res.json();
-        const tbody = document.getElementById('runsTableBody');
-        tbody.innerHTML = '';
-        if (runs.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted);">No archived runs found in runs/.</td></tr>';
-          return;
-        }
-
-        runs.forEach(r => {
-          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec)} req/s` : 'N/A';
-          const passBadge = r.pass_rate === 100 
-            ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
-            : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
-          const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
-          const pubBadge = r.is_published 
-            ? `<span class="badge" style="background:#238636;color:#fff;font-size:0.7rem;padding:2px 6px;">✔ Git</span>` 
-            : `<button class="btn-primary" style="padding:2px 6px;font-size:0.7rem;" onclick="event.stopPropagation(); publishRunModal('${r.run_id}')">🚀 Publish</button>`;
-
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text);">${r.run_id}</td>
-            <td><b>${r.task}</b></td>
-            <td style="color: var(--primary); font-weight: 600;">${r.model}</td>
-            <td>${effBadge}</td>
-            <td style="color: var(--success);">${r.language}</td>
-            <td>${passBadge}</td>
-            <td style="color: var(--accent);">$${r.cost_usd.toFixed(4)}</td>
-            <td>${tp}</td>
-            <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
-            <td style="display:flex; gap:6px; align-items:center;">
-              <button class="btn-secondary" style="padding:2px 6px;font-size:0.7rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
-              ${pubBadge}
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-      } catch (e) {
-        console.error('Failed to load runs:', e);
       }
     }
 
@@ -1804,6 +2067,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     fetchModels();
     loadPrompt();
     toggleAutoRefresh(true);
+    if (localStorage.getItem('sidebar_hidden') === 'true') { toggleSidebar(); }
+    setRunsViewMode(currentRunsView);
     checkActiveRun();
     setInterval(checkActiveRun, 5000);
   </script>
