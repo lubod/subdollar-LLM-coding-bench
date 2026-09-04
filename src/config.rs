@@ -64,6 +64,40 @@ pub enum Commands {
         results_dir: String,
     },
 
+    /// Publish a completed run to Git repository and update SUMMARY.md
+    Publish {
+        /// ID of the run to publish (e.g. redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848)
+        #[arg(short, long)]
+        run_id: String,
+
+        /// Optional custom git commit message
+        #[arg(short, long)]
+        message: Option<String>,
+
+        /// Path to runs directory
+        #[arg(long, default_value = "./runs")]
+        runs_dir: String,
+
+        /// Path to results directory
+        #[arg(long, default_value = "./results")]
+        results_dir: String,
+
+        /// Path to repository root
+        #[arg(long, default_value = ".")]
+        repo_root: String,
+    },
+
+    /// Regenerate SUMMARY.md from recorded runs
+    Summary {
+        /// Path to runs directory
+        #[arg(long, default_value = "./runs")]
+        runs_dir: String,
+
+        /// Path to repository root
+        #[arg(long, default_value = ".")]
+        repo_root: String,
+    },
+
     /// Launch web-based GUI for configuring and running benchmarks
     Ui {
         /// Port to bind the web server

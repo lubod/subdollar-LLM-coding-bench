@@ -11,7 +11,10 @@ use tracing::warn;
 use subdollar_bench::bench;
 use subdollar_bench::config::{Cli, Commands, TaskType};
 use subdollar_bench::cost::ModelPricing;
-use subdollar_bench::report::{BenchmarkRunResult, LeaderboardManager, RunArchiver, RunManifest, RunTokenUsage};
+use subdollar_bench::report::{
+    BenchmarkRunResult, LeaderboardManager, RunArchiver, RunManifest, RunPublisher, RunTokenUsage,
+    SummaryGenerator,
+};
 use subdollar_bench::sandbox::{OmpRunner, SandboxManager};
 use subdollar_bench::verifier::{HttpVerifier, RedisVerifier};
 use subdollar_bench::web;
@@ -220,6 +223,9 @@ async fn main() -> Result<()> {
                 savings_percent: breakdown.savings_percent,
                 efficiency_score,
                 files: scanned_files,
+                env: None,
+                git_commit: None,
+                is_published: None,
             };
 
             let runs_dir = RunArchiver::resolve_runs_dir();
@@ -295,6 +301,40 @@ async fn main() -> Result<()> {
             } else {
                 LeaderboardManager::print_table(&all);
             }
+        }
+
+        Commands::Publish {
+            run_id,
+            message,
+            runs_dir,
+            results_dir,
+            repo_root,
+        } => {
+            println!("{}", format!("Publishing run {} to Git...", run_id).bold().cyan());
+            let res = RunPublisher::publish_run(
+                Path::new(&repo_root),
+                Path::new(&runs_dir),
+                Path::new(&results_dir),
+                &run_id,
+                message.as_deref(),
+            )?;
+            println!("{}", "✅ Successfully published run to Git!".bold().green());
+            println!("  Commit:  {}", res.commit_hash.yellow());
+            println!("  Message: {}", res.commit_message);
+            println!("  Summary: {}", res.summary_path);
+            println!("  Files committed:");
+            for f in &res.files_committed {
+                println!("   - {}", f);
+            }
+        }
+
+        Commands::Summary { runs_dir, repo_root } => {
+            println!("{}", "Regenerating SUMMARY.md from recorded runs...".bold().cyan());
+            let summary_path = SummaryGenerator::update_summary_file(
+                Path::new(&repo_root),
+                Path::new(&runs_dir),
+            )?;
+            println!("✅ Successfully updated {}", summary_path.display().to_string().bold().green());
         }
 
         Commands::Ui { port, host } => {

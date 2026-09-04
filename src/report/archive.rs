@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::report::environment::EnvironmentInfo;
 use crate::verifier::StageResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +42,12 @@ pub struct RunManifest {
     pub savings_percent: f64,
     pub efficiency_score: f64,
     pub files: Vec<FileInfo>,
+    #[serde(default)]
+    pub env: Option<EnvironmentInfo>,
+    #[serde(default)]
+    pub git_commit: Option<String>,
+    #[serde(default)]
+    pub is_published: Option<bool>,
 }
 
 pub struct RunArchiver;
@@ -65,14 +72,28 @@ impl RunArchiver {
         let run_dir = runs_dir.join(&manifest.run_id);
         fs::create_dir_all(&run_dir)?;
 
+        let mut manifest_to_save = manifest.clone();
+        if manifest_to_save.env.is_none() {
+            let env = EnvironmentInfo::detect();
+            manifest_to_save.git_commit = Some(env.git_commit.clone());
+            manifest_to_save.env = Some(env);
+        }
+
         // 1. Write manifest.json
-        let manifest_json = serde_json::to_string_pretty(manifest)?;
+        let manifest_json = serde_json::to_string_pretty(&manifest_to_save)?;
         fs::write(run_dir.join("manifest.json"), manifest_json)?;
 
         // 2. Write console.log
         fs::write(run_dir.join("console.log"), console_log)?;
 
-        // 3. Snapshot candidate workspace files
+        // 3. Write env.json if available
+        if let Some(ref env) = manifest_to_save.env {
+            if let Ok(env_json) = serde_json::to_string_pretty(env) {
+                let _ = fs::write(run_dir.join("env.json"), env_json);
+            }
+        }
+
+        // 4. Snapshot candidate workspace files
         let ws_dest = run_dir.join("workspace");
         fs::create_dir_all(&ws_dest)?;
         if workspace_dir.exists() {
@@ -232,6 +253,9 @@ mod tests {
             savings_percent: 65.0,
             efficiency_score: 400.0,
             files: scanned,
+            env: None,
+            git_commit: None,
+            is_published: None,
         };
 
         let console_log = "[06:30:00] [INIT] Starting test run\n[06:31:00] [DONE] Finished!\n";
@@ -248,6 +272,7 @@ mod tests {
         let loaded = RunArchiver::get_run(&runs_dir, "test_run_123").unwrap();
         assert_eq!(loaded.model, "google/gemini-2.5-flash");
         assert_eq!(loaded.pass_rate, 100.0);
+        assert!(loaded.env.is_some());
 
         // Verify get_console_log
         let log = RunArchiver::get_console_log(&runs_dir, "test_run_123").unwrap();

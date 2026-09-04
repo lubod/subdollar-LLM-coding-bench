@@ -84,6 +84,9 @@ func main() {
         savings_percent: 63.5,
         efficiency_score: 322.6,
         files: scanned,
+        env: None,
+        git_commit: None,
+        is_published: None,
     };
 
     let console_log = r#"[12:00:00] [INIT] Starting benchmark for google/gemini-2.5-flash on task 'redis'...

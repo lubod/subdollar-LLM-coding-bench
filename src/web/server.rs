@@ -24,7 +24,10 @@ use tokio_stream::StreamExt;
 use crate::bench::BenchmarkRunner;
 use crate::config::TaskType;
 use crate::cost::ModelPricing;
-use crate::report::{BenchmarkRunResult, FileInfo, LeaderboardManager, RunArchiver, RunManifest, RunTokenUsage};
+use crate::report::{
+    BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, PublishResult, RunArchiver,
+    RunManifest, RunPublisher, RunTokenUsage, SummaryGenerator,
+};
 use crate::sandbox::{OmpRunner, OmpSessionStats, SandboxManager};
 use crate::verifier::{HttpVerifier, RedisVerifier};
 
@@ -107,6 +110,11 @@ pub struct FileQuery {
     pub file: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PublishRequest {
+    pub message: Option<String>,
+}
+
 fn resolve_task_path(task: &str) -> PathBuf {
     let local = format!("tasks/{}/prompt.md", task);
     if Path::new(&local).exists() {
@@ -154,6 +162,9 @@ impl UiServer {
             .route("/api/runs/:id/log", get(get_run_log))
             .route("/api/runs/:id/files", get(get_run_files))
             .route("/api/runs/:id/file", get(get_run_file))
+            .route("/api/runs/:id/publish", post(publish_run))
+            .route("/api/summary", get(get_summary).post(regenerate_summary))
+            .route("/api/env", get(get_env))
             .with_state(state);
 
         let addr = format!("{}:{}", host, port);
@@ -292,6 +303,70 @@ async fn get_run_file(
         Some(content) => content.into_response(),
         None => (axum::http::StatusCode::NOT_FOUND, "File not found").into_response(),
     }
+}
+
+async fn publish_run(
+    AxumPath(run_id): AxumPath<String>,
+    payload: Option<Json<PublishRequest>>,
+) -> Result<Json<PublishResult>, Response> {
+    let repo_root = Path::new(".");
+    let runs_dir = RunArchiver::resolve_runs_dir();
+    let results_dir = PathBuf::from(resolve_results_dir());
+    let custom_msg = payload.and_then(|Json(p)| p.message);
+
+    match RunPublisher::publish_run(
+        repo_root,
+        &runs_dir,
+        &results_dir,
+        &run_id,
+        custom_msg.as_deref(),
+    ) {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to publish run: {}", e),
+        ).into_response()),
+    }
+}
+
+async fn get_summary() -> Response {
+    let summary_path = Path::new("SUMMARY.md");
+    let fallback = Path::new("/home/ubuntu/subdollar-LLM-coding-bench/SUMMARY.md");
+    let target = if summary_path.exists() {
+        summary_path
+    } else if fallback.exists() {
+        fallback
+    } else {
+        let repo_root = Path::new(".");
+        let runs_dir = RunArchiver::resolve_runs_dir();
+        let _ = SummaryGenerator::update_summary_file(repo_root, &runs_dir);
+        if summary_path.exists() {
+            summary_path
+        } else {
+            fallback
+        }
+    };
+
+    match fs::read_to_string(target) {
+        Ok(content) => content.into_response(),
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "SUMMARY.md not found").into_response(),
+    }
+}
+
+async fn regenerate_summary() -> Response {
+    let repo_root = Path::new(".");
+    let runs_dir = RunArchiver::resolve_runs_dir();
+    match SummaryGenerator::update_summary_file(repo_root, &runs_dir) {
+        Ok(p) => match fs::read_to_string(p) {
+            Ok(content) => content.into_response(),
+            Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Read error: {}", e)).into_response(),
+        },
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate summary: {}", e)).into_response(),
+    }
+}
+
+async fn get_env() -> Json<EnvironmentInfo> {
+    Json(EnvironmentInfo::detect())
 }
 
 async fn start_run(
@@ -580,6 +655,9 @@ async fn start_run(
             savings_percent: breakdown.savings_percent,
             efficiency_score,
             files: scanned_files,
+            env: None,
+            git_commit: None,
+            is_published: None,
         };
 
         // Archive complete run

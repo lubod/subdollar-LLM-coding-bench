@@ -483,6 +483,7 @@
           <button class="tab" onclick="switchTab('traceability')">Traceability & Runs</button>
           <button class="tab" onclick="switchTab('prompt')">Prompt Specification</button>
           <button class="tab" onclick="switchTab('leaderboard')">Leaderboard</button>
+          <button class="tab" onclick="switchTab('summary')">📊 SUMMARY.md & Git</button>
         </div>
 
         <!-- Tab 1: Terminal Console -->
@@ -532,8 +533,21 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
               <h3 style="font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 8px;">
                 <span>🔍 Inspecting Run:</span>
                 <span id="inspectRunId" style="color: var(--primary); font-family: 'JetBrains Mono', monospace;"></span>
+                <span id="inspectGitBadge"></span>
               </h3>
-              <button class="btn-secondary" onclick="closeRunInspector()">✕ Close</button>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="inspectPublishBtn" class="btn-primary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="publishRunModal(currentInspectRun ? currentInspectRun.run_id : '')">🚀 Publish to Git</button>
+                <button class="btn-secondary" onclick="closeRunInspector()">✕ Close</button>
+              </div>
+            </div>
+
+            <!-- Execution Environment & Hardware Specs -->
+            <div style="background: #161b22; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">🖥️ Execution Environment & Hardware Specs:</h4>
+                <span id="inspectGitCommit" style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent);"></span>
+              </div>
+              <div id="inspectEnvTable" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 0.75rem;"></div>
             </div>
 
             <!-- Stats Grid -->
@@ -622,6 +636,44 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
               <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Tab 5: SUMMARY.md & Git Contributions -->
+        <div id="tab-summary" style="display: none; flex-direction: column; gap: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span class="hint" style="font-weight: 600; color: #fff; font-size: 0.9rem;">Repository SUMMARY.md & Git Leaderboard</span>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                Public summary, rankings, hardware specs, and reproduction guide committed to git.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary" onclick="loadSummary()">🔄 Refresh</button>
+              <button class="btn btn-secondary" onclick="regenerateSummary()">⚡ Regenerate</button>
+              <button class="btn btn-secondary" onclick="copySummaryText()">📋 Copy Markdown</button>
+            </div>
+          </div>
+
+          <!-- Quick Reproduction Card -->
+          <div style="background: #161b22; border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px;">
+            <h4 style="font-size: 0.82rem; font-weight: 600; color: var(--primary); margin-bottom: 6px;">
+              🚀 Clone & Reproduce Benchmarks on Your Machine:
+            </h4>
+            <pre style="background: #0d1117; padding: 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #c9d1d9; overflow-x: auto; margin: 0;"><code># 1. Clone repo & set key
+git clone https://github.com/username/subdollar-LLM-coding-bench.git && cd subdollar-LLM-coding-bench
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# 2. Run Redis or HTTP benchmark
+cargo run --release -- run --task redis --model openrouter/meta/muse-spark-1.3-contributor --effort max
+
+# 3. Publish results to git & regenerate SUMMARY.md
+cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
+          </div>
+
+          <!-- SUMMARY.md Content Box -->
+          <div style="position: relative;">
+            <pre id="summaryViewer" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #e6edf3; max-height: 550px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;">Loading SUMMARY.md...</pre>
+          </div>
         </div>
       </main>
     </div>
@@ -772,6 +824,7 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
       document.getElementById('tab-traceability').style.display = 'none';
       document.getElementById('tab-prompt').style.display = 'none';
       document.getElementById('tab-leaderboard').style.display = 'none';
+      document.getElementById('tab-summary').style.display = 'none';
 
       if (name === 'console') {
         document.getElementById('tab-console').style.display = 'flex';
@@ -788,6 +841,10 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
         document.getElementById('tab-leaderboard').style.display = 'block';
         document.querySelectorAll('.tab')[3].classList.add('active');
         loadLeaderboard();
+      } else if (name === 'summary') {
+        document.getElementById('tab-summary').style.display = 'flex';
+        document.querySelectorAll('.tab')[4].classList.add('active');
+        loadSummary();
       }
     }
 
@@ -881,6 +938,9 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
             ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
             : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
           const effBadge = `<span class="badge badge-effort">${r.effort || 'auto'}</span>`;
+          const pubBadge = r.is_published 
+            ? `<span class="badge" style="background:#238636;color:#fff;font-size:0.7rem;padding:2px 6px;">✔ Git</span>` 
+            : `<button class="btn-primary" style="padding:2px 6px;font-size:0.7rem;" onclick="event.stopPropagation(); publishRunModal('${r.run_id}')">🚀 Publish</button>`;
 
           const tr = document.createElement('tr');
           tr.innerHTML = `
@@ -893,7 +953,10 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
             <td style="color: var(--accent);">$${r.cost_usd.toFixed(4)}</td>
             <td>${tp}</td>
             <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
-            <td><button class="btn-secondary" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button></td>
+            <td style="display:flex; gap:6px; align-items:center;">
+              <button class="btn-secondary" style="padding:2px 6px;font-size:0.7rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
+              ${pubBadge}
+            </td>
           `;
           tbody.appendChild(tr);
         });
@@ -921,6 +984,33 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
         document.getElementById('inspectCost').textContent = `$${m.cost_usd.toFixed(4)}`;
         document.getElementById('inspectTokens').textContent = m.tokens ? m.tokens.total_tokens.toLocaleString() : 'N/A';
         document.getElementById('inspectDuration').textContent = `${Math.round(m.duration_seconds)}s`;
+
+        // Execution Environment & Git Status
+        const envContainer = document.getElementById('inspectEnvTable');
+        if (m.env) {
+          document.getElementById('inspectGitCommit').textContent = `Git Baseline: ${m.git_commit || m.env.git_commit} (${m.env.git_branch})`;
+          envContainer.innerHTML = `
+            <div><span style="color:var(--text-muted)">OS:</span> ${m.env.os}</div>
+            <div><span style="color:var(--text-muted)">Kernel:</span> ${m.env.kernel}</div>
+            <div><span style="color:var(--text-muted)">CPU:</span> ${m.env.cpu_model} (${m.env.cpu_cores} vCPUs)</div>
+            <div><span style="color:var(--text-muted)">Memory:</span> ${m.env.total_memory}</div>
+            <div><span style="color:var(--text-muted)">Docker:</span> ${m.env.docker_version}</div>
+            <div><span style="color:var(--text-muted)">Rust:</span> ${m.env.rust_version}</div>
+          `;
+        } else {
+          document.getElementById('inspectGitCommit').textContent = '';
+          envContainer.innerHTML = '<div style="color:var(--text-muted)">No environment specs captured yet.</div>';
+        }
+
+        const gitBadge = document.getElementById('inspectGitBadge');
+        const pubBtn = document.getElementById('inspectPublishBtn');
+        if (m.is_published) {
+          gitBadge.innerHTML = `<span class="badge" style="background:#238636;color:#fff;font-size:0.75rem;">✔ Committed to Git</span>`;
+          if (pubBtn) pubBtn.textContent = '🔄 Re-publish to Git';
+        } else {
+          gitBadge.innerHTML = `<span class="badge" style="background:#6e7681;color:#fff;font-size:0.75rem;">Local Only</span>`;
+          if (pubBtn) pubBtn.textContent = '🚀 Publish to Git';
+        }
 
         // Stages list
         const stagesList = document.getElementById('inspectStagesList');
@@ -1010,6 +1100,76 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
     function copyInspectLog() {
       const log = document.getElementById('inspectLogViewer').textContent;
       navigator.clipboard.writeText(log).then(() => alert('Full log copied to clipboard!'));
+    }
+
+    async function publishRunModal(runId) {
+      if (!runId) return;
+      const customMsg = prompt(`Publish run "${runId}" to Git repository?\nEnter custom commit message (or leave blank for auto-generated message):`);
+      if (customMsg === null) return;
+
+      try {
+        const pubBtn = document.getElementById('inspectPublishBtn');
+        if (pubBtn) pubBtn.disabled = true;
+        const res = await fetch(`/api/runs/${runId}/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: customMsg.trim() || undefined })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText);
+        }
+        const data = await res.json();
+        alert(`✅ Run successfully committed to Git!\n\nCommit: ${data.commit_hash}\nMessage: ${data.commit_message}\nUpdated: SUMMARY.md`);
+        loadRuns();
+        if (currentInspectRun && currentInspectRun.run_id === runId) {
+          inspectRun(runId);
+        }
+        loadSummary();
+      } catch (e) {
+        alert(`❌ Failed to publish: ${e.message}`);
+      } finally {
+        const pubBtn = document.getElementById('inspectPublishBtn');
+        if (pubBtn) pubBtn.disabled = false;
+      }
+    }
+
+    async function loadSummary() {
+      try {
+        const res = await fetch('/api/summary');
+        if (res.ok) {
+          const text = await res.text();
+          document.getElementById('summaryViewer').textContent = text;
+        } else {
+          document.getElementById('summaryViewer').textContent = 'Failed to load SUMMARY.md';
+        }
+      } catch (e) {
+        document.getElementById('summaryViewer').textContent = `Error loading SUMMARY.md: ${e.message}`;
+      }
+    }
+
+    async function regenerateSummary() {
+      try {
+        document.getElementById('summaryViewer').textContent = 'Regenerating SUMMARY.md...';
+        const res = await fetch('/api/summary', { method: 'POST' });
+        if (res.ok) {
+          const text = await res.text();
+          document.getElementById('summaryViewer').textContent = text;
+          alert('✅ SUMMARY.md successfully regenerated from recorded runs!');
+        } else {
+          const errText = await res.text();
+          alert(`Failed to regenerate: ${errText}`);
+          loadSummary();
+        }
+      } catch (e) {
+        alert(`Error regenerating summary: ${e.message}`);
+        loadSummary();
+      }
+    }
+
+    function copySummaryText() {
+      const text = document.getElementById('summaryViewer').textContent;
+      navigator.clipboard.writeText(text).then(() => alert('📋 SUMMARY.md copied to clipboard!'));
     }
 
     let activeEventSource = null;
