@@ -3,7 +3,7 @@ use chrono::Utc;
 use clap::Parser;
 use colored::*;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::warn;
@@ -80,7 +80,14 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                         .blue()
                 );
 
-                let work_path = Path::new(&workdir);
+                let work_path_buf = if Path::new(&workdir).is_absolute() {
+                    PathBuf::from(&workdir)
+                } else {
+                    std::env::current_dir()
+                        .map(|c| c.join(&workdir))
+                        .unwrap_or_else(|_| PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench").join(&workdir))
+                };
+                let work_path = work_path_buf.as_path();
                 if !eval_only {
                     let _ = fs::remove_dir_all(work_path);
                 }

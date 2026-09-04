@@ -77,7 +77,15 @@ impl OmpRunner {
             .args(["rm", "-f", container_name])
             .output();
 
-        let canonical_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
+        let canonical_workdir = if workdir.is_absolute() {
+            workdir.to_path_buf()
+        } else {
+            workdir.canonicalize().unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .map(|c| c.join(workdir))
+                    .unwrap_or_else(|_| PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench").join(workdir))
+            })
+        };
         let mount_workdir = format!("{}:/workspace", canonical_workdir.display());
 
         let host_omp_dir = std::env::var("HOME")

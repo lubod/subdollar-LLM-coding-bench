@@ -248,6 +248,19 @@ fn resolve_results_dir() -> String {
     }
 }
 
+fn resolve_workspace_dir() -> PathBuf {
+    if let Ok(cur) = std::env::current_dir() {
+        if cur.join("Cargo.toml").exists() {
+            return cur.join("workspace");
+        }
+    }
+    let system = Path::new("/home/ubuntu/subdollar-LLM-coding-bench/workspace");
+    if system.parent().map(|p| p.exists()).unwrap_or(false) {
+        return system.to_path_buf();
+    }
+    PathBuf::from("./workspace")
+}
+
 pub struct UiServer;
 
 impl UiServer {
@@ -275,6 +288,12 @@ impl UiServer {
     }
 
     pub async fn start(host: &str, port: u16) -> anyhow::Result<()> {
+        if !Path::new("Cargo.toml").exists() {
+            let repo = Path::new("/home/ubuntu/subdollar-LLM-coding-bench");
+            if repo.exists() {
+                let _ = std::env::set_current_dir(repo);
+            }
+        }
         let (log_sender, _) = broadcast::channel(500);
         let state = AppState {
             log_sender,
@@ -791,7 +810,8 @@ async fn start_run(
                 _ => TaskType::Redis,
             };
 
-            let work_path = Path::new("./workspace");
+            let work_path_buf = resolve_workspace_dir();
+            let work_path = work_path_buf.as_path();
             if !req.eval_only {
                 let _ = fs::remove_dir_all(work_path);
             }
