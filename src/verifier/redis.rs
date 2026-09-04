@@ -293,4 +293,72 @@ mod tests {
         assert!(!res.passed);
         assert!(res.error.is_some());
     }
+
+    #[tokio::test]
+    async fn test_mock_redis_run_all_stages() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 2048];
+                    let mut stage2_deleted = false;
+                    let mut stage3_count = 0;
+                    let mut counter = 0i64;
+
+                    while let Ok(n) = socket.read(&mut buf).await {
+                        if n == 0 { break; }
+                        let req = String::from_utf8_lossy(&buf[..n]);
+                        let upper = req.to_uppercase();
+
+                        if upper.contains("PING") {
+                            let _ = socket.write_all(b"+PONG\r\n").await;
+                        } else if upper.contains("ECHO") {
+                            let _ = socket.write_all(b"$14\r\nsubdollar_test\r\n").await;
+                        } else if upper.contains("SET") && upper.contains("PX") {
+                            let _ = socket.write_all(b"+OK\r\n").await;
+                        } else if upper.contains("SET") {
+                            let _ = socket.write_all(b"+OK\r\n").await;
+                        } else if upper.contains("GET") && upper.contains("TTL_KEY") {
+                            stage3_count += 1;
+                            if stage3_count == 1 {
+                                let _ = socket.write_all(b"$7\r\nttl_val\r\n").await;
+                            } else {
+                                let _ = socket.write_all(b"$-1\r\n").await;
+                            }
+                        } else if upper.contains("GET") && upper.contains("BENCH_KEY") {
+                            if !stage2_deleted {
+                                let _ = socket.write_all(b"$11\r\nbench_value\r\n").await;
+                            } else {
+                                let _ = socket.write_all(b"$-1\r\n").await;
+                            }
+                        } else if upper.contains("EXISTS") && upper.contains("BENCH_KEY") {
+                            if !stage2_deleted {
+                                let _ = socket.write_all(b":1\r\n").await;
+                            } else {
+                                let _ = socket.write_all(b":0\r\n").await;
+                            }
+                        } else if upper.contains("DEL") && upper.contains("BENCH_KEY") {
+                            stage2_deleted = true;
+                            let _ = socket.write_all(b":1\r\n").await;
+                        } else if upper.contains("INCR") && upper.contains("NUM_COUNTER") {
+                            counter += 1;
+                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                        } else if upper.contains("DECR") && upper.contains("NUM_COUNTER") {
+                            counter -= 1;
+                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                        } else {
+                            let _ = socket.write_all(b"+OK\r\n").await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let verifier = RedisVerifier::new(port, None);
+        let summary = verifier.run_all().await;
+        assert_eq!(summary.passed_count, 4, "Summary failed: {:?}", summary.stages);
+        assert_eq!(summary.pass_rate, 100.0);
+    }
 }

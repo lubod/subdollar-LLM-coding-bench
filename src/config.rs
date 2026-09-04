@@ -129,3 +129,134 @@ impl std::fmt::Display for TaskType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_task_type_display_and_serde() {
+        assert_eq!(format!("{}", TaskType::Redis), "redis");
+        assert_eq!(format!("{}", TaskType::Http), "http");
+
+        let json_redis = serde_json::to_string(&TaskType::Redis).unwrap();
+        assert_eq!(json_redis, "\"redis\"");
+        let de_redis: TaskType = serde_json::from_str(&json_redis).unwrap();
+        assert_eq!(de_redis, TaskType::Redis);
+
+        let json_http = serde_json::to_string(&TaskType::Http).unwrap();
+        assert_eq!(json_http, "\"http\"");
+        let de_http: TaskType = serde_json::from_str(&json_http).unwrap();
+        assert_eq!(de_http, TaskType::Http);
+    }
+
+    #[test]
+    fn test_cli_parsing_run() {
+        let args = ["subdollar-bench", "run", "--model", "test-model", "--task", "redis"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Run { model, task, effort, budget_usd, max_turns, timeout_min, eval_only, .. } => {
+                assert_eq!(model, "test-model");
+                assert_eq!(task, TaskType::Redis);
+                assert_eq!(effort, "auto");
+                assert_eq!(budget_usd, 0.50);
+                assert_eq!(max_turns, 15);
+                assert_eq!(timeout_min, 15);
+                assert!(!eval_only);
+            }
+            _ => panic!("Expected Run command"),
+        }
+
+        let args_http = ["subdollar-bench", "run", "--model", "test-model-2", "--task", "http", "--effort", "max", "--budget-usd", "0.20", "--max-turns", "10", "--timeout-min", "5", "--eval-only"];
+        let cli_http = Cli::try_parse_from(args_http).unwrap();
+        match cli_http.command {
+            Commands::Run { model, task, effort, budget_usd, max_turns, timeout_min, eval_only, .. } => {
+                assert_eq!(model, "test-model-2");
+                assert_eq!(task, TaskType::Http);
+                assert_eq!(effort, "max");
+                assert_eq!(budget_usd, 0.20);
+                assert_eq!(max_turns, 10);
+                assert_eq!(timeout_min, 5);
+                assert!(eval_only);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_eval() {
+        let args = ["subdollar-bench", "eval", "--task", "redis", "--port", "6379"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Eval { task, port } => {
+                assert_eq!(task, TaskType::Redis);
+                assert_eq!(port, Some(6379));
+            }
+            _ => panic!("Expected Eval command"),
+        }
+
+        let args2 = ["subdollar-bench", "eval", "--task", "http"];
+        let cli2 = Cli::try_parse_from(args2).unwrap();
+        match cli2.command {
+            Commands::Eval { task, port } => {
+                assert_eq!(task, TaskType::Http);
+                assert_eq!(port, None);
+            }
+            _ => panic!("Expected Eval command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_leaderboard() {
+        let args = ["subdollar-bench", "leaderboard", "--results-dir", "./custom_results"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Leaderboard { results_dir } => {
+                assert_eq!(results_dir, "./custom_results");
+            }
+            _ => panic!("Expected Leaderboard command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_publish() {
+        let args = ["subdollar-bench", "publish", "--run-id", "test_run_123", "--message", "custom commit msg"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Publish { run_id, message, runs_dir, results_dir, repo_root } => {
+                assert_eq!(run_id, "test_run_123");
+                assert_eq!(message, Some("custom commit msg".to_string()));
+                assert_eq!(runs_dir, "./runs");
+                assert_eq!(results_dir, "./results");
+                assert_eq!(repo_root, ".");
+            }
+            _ => panic!("Expected Publish command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_summary() {
+        let args = ["subdollar-bench", "summary", "--runs-dir", "./test_runs", "--repo-root", "./test_repo"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Summary { runs_dir, repo_root } => {
+                assert_eq!(runs_dir, "./test_runs");
+                assert_eq!(repo_root, "./test_repo");
+            }
+            _ => panic!("Expected Summary command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_ui() {
+        let args = ["subdollar-bench", "ui", "--port", "8080", "--host", "127.0.0.1"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Ui { port, host } => {
+                assert_eq!(port, 8080);
+                assert_eq!(host, "127.0.0.1");
+            }
+            _ => panic!("Expected Ui command"),
+        }
+    }
+}

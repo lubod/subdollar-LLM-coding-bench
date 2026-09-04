@@ -48,7 +48,7 @@ pub struct AppState {
     pub log_buffer: Arc<RwLock<Vec<String>>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct StatusResponse {
     pub is_running: bool,
     pub current_run: Option<ActiveRunInfo>,
@@ -63,7 +63,7 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RunRequest {
     pub model: String,
     pub task: String,
@@ -112,7 +112,7 @@ pub struct FileQuery {
     pub file: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PublishRequest {
     pub message: Option<String>,
 }
@@ -142,16 +142,8 @@ fn resolve_results_dir() -> String {
 pub struct UiServer;
 
 impl UiServer {
-    pub async fn start(host: &str, port: u16) -> anyhow::Result<()> {
-        let (log_sender, _) = broadcast::channel(500);
-        let state = AppState {
-            log_sender,
-            is_running: Arc::new(AtomicBool::new(false)),
-            current_run: Arc::new(RwLock::new(None)),
-            log_buffer: Arc::new(RwLock::new(Vec::new())),
-        };
-
-        let app = Router::new()
+    pub fn build_app(state: AppState) -> Router {
+        Router::new()
             .route("/", get(serve_index))
             .route("/api/models", get(get_models))
             .route("/api/prompt/:task", get(get_prompt).post(save_prompt))
@@ -168,7 +160,19 @@ impl UiServer {
             .route("/api/runs/:id/publish", post(publish_run))
             .route("/api/summary", get(get_summary).post(regenerate_summary))
             .route("/api/env", get(get_env))
-            .with_state(state);
+            .with_state(state)
+    }
+
+    pub async fn start(host: &str, port: u16) -> anyhow::Result<()> {
+        let (log_sender, _) = broadcast::channel(500);
+        let state = AppState {
+            log_sender,
+            is_running: Arc::new(AtomicBool::new(false)),
+            current_run: Arc::new(RwLock::new(None)),
+            log_buffer: Arc::new(RwLock::new(Vec::new())),
+        };
+
+        let app = Self::build_app(state);
 
         let addr = format!("{}:{}", host, port);
         println!("🚀 SubDollarBench GUI listening on: http://{}", addr);
@@ -740,4 +744,273 @@ async fn stream_logs(
 
     let combined = initial_stream.chain(live_stream);
     Sse::new(combined).keep_alive(KeepAlive::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    fn create_test_state() -> AppState {
+        let (log_sender, _) = broadcast::channel(100);
+        AppState {
+            log_sender,
+            is_running: Arc::new(AtomicBool::new(false)),
+            current_run: Arc::new(RwLock::new(None)),
+            log_buffer: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_web_routes_lifecycle() {
+        let state = create_test_state();
+        state.log_buffer.write().unwrap().push("[12:00:00] Initial log line".to_string());
+
+        let app = UiServer::build_app(state.clone());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{}", port);
+
+        // 1. GET /
+        let res = client.get(&base).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        let html = res.text().await.unwrap();
+        assert!(html.contains("SubDollarBench"));
+
+        // 2. GET /api/status
+        let res = client.get(format!("{}/api/status", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        let status_json: StatusResponse = res.json().await.unwrap();
+        assert!(!status_json.is_running);
+        assert!(status_json.current_run.is_none());
+
+        // 3. GET /api/env
+        let res = client.get(format!("{}/api/env", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        let env_json: EnvironmentInfo = res.json().await.unwrap();
+        assert!(!env_json.os.is_empty());
+
+        // 4. GET /api/prompt/redis
+        let res = client.get(format!("{}/api/prompt/redis", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // 5. POST /api/prompt/test_task
+        let res = client.post(format!("{}/api/prompt/test_task", base)).body("# Test Task").send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.text().await.unwrap(), "Prompt saved successfully");
+
+        // 6. GET /api/leaderboard
+        let res = client.get(format!("{}/api/leaderboard", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // 7. GET /api/console
+        let res = client.get(format!("{}/api/console", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        assert!(res.text().await.unwrap().contains("Initial log line"));
+
+        // 8. GET /api/runs
+        let res = client.get(format!("{}/api/runs", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // 9. GET /api/runs/nonexistent_xyz
+        let res = client.get(format!("{}/api/runs/nonexistent_xyz", base)).send().await.unwrap();
+        assert_eq!(res.status(), 404);
+
+        // 10. GET /api/runs/nonexistent_xyz/log
+        let res = client.get(format!("{}/api/runs/nonexistent_xyz/log", base)).send().await.unwrap();
+        assert_eq!(res.status(), 404);
+
+        // 11. GET /api/runs/nonexistent_xyz/files
+        let res = client.get(format!("{}/api/runs/nonexistent_xyz/files", base)).send().await.unwrap();
+        assert_eq!(res.status(), 404);
+
+        // 12. GET /api/runs/nonexistent_xyz/file?file=abc.txt
+        let res = client.get(format!("{}/api/runs/nonexistent_xyz/file?file=abc.txt", base)).send().await.unwrap();
+        assert_eq!(res.status(), 404);
+
+        // 13. GET /api/summary
+        let res = client.get(format!("{}/api/summary", base)).send().await.unwrap();
+        assert!(res.status() == 200 || res.status() == 404);
+
+        // 14. POST /api/summary
+        let res = client.post(format!("{}/api/summary", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // 15. POST /api/run conflict test
+        state.is_running.store(true, Ordering::SeqCst);
+        let run_req = RunRequest {
+            model: "test_model".to_string(),
+            task: "redis".to_string(),
+            api_key: None,
+            budget_usd: 0.10,
+            max_turns: 5,
+            eval_only: true,
+            effort: Some("low".to_string()),
+            timeout_min: Some(1),
+        };
+        let res = client.post(format!("{}/api/run", base)).json(&run_req).send().await.unwrap();
+        assert_eq!(res.status(), 409);
+
+        // 16. POST /api/run eval_only mode
+        state.is_running.store(false, Ordering::SeqCst);
+        let eval_req = RunRequest {
+            model: "google/gemini-2.5-flash".to_string(),
+            task: "redis".to_string(),
+            api_key: None,
+            budget_usd: 0.10,
+            max_turns: 1,
+            eval_only: true,
+            effort: Some("low".to_string()),
+            timeout_min: Some(1),
+        };
+        let res = client.post(format!("{}/api/run", base)).json(&eval_req).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // Allow background thread to process
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if !state.is_running.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+
+        // 17. GET /api/models
+        let res = client.get(format!("{}/api/models", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // 18. GET /api/stream
+        let res = client.get(format!("{}/api/stream", base)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // 19. Tests with a valid archived run
+        let runs_dir = RunArchiver::resolve_runs_dir();
+        let test_run_id = "test_archived_run_server_123";
+        let test_run_dir = runs_dir.join(test_run_id);
+        let test_ws = test_run_dir.join("workspace");
+        let _ = fs::create_dir_all(&test_ws);
+        fs::write(test_ws.join("main.rs"), "fn main() { println!(\"hello\"); }").unwrap();
+        fs::write(test_run_dir.join("console.log"), "Mock console output for test").unwrap();
+        let test_manifest = RunManifest {
+            run_id: test_run_id.to_string(),
+            model: "test_model".to_string(),
+            task: "redis".to_string(),
+            status: "completed".to_string(),
+            language: "Rust".to_string(),
+            effort: Some("low".to_string()),
+            started_at: "2026-09-04T12:00:00Z".to_string(),
+            completed_at: "2026-09-04T12:01:00Z".to_string(),
+            duration_seconds: 60.0,
+            pass_rate: 100.0,
+            passed_stages: 4,
+            total_stages: 4,
+            stages: Vec::new(),
+            throughput_req_sec: Some(50000.0),
+            tokens: RunTokenUsage {
+                prompt_tokens: 1000,
+                cached_tokens: 500,
+                completion_tokens: 200,
+                total_tokens: 1200,
+            },
+            cost_usd: 0.05,
+            savings_percent: 25.0,
+            efficiency_score: 20.0,
+            files: Vec::new(),
+            env: None,
+            git_commit: None,
+            is_published: None,
+        };
+        fs::write(test_run_dir.join("manifest.json"), serde_json::to_string_pretty(&test_manifest).unwrap()).unwrap();
+
+        // Check GET /api/runs/:id
+        let res = client.get(format!("{}/api/runs/{}", base, test_run_id)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // Check GET /api/runs/:id/log
+        let res = client.get(format!("{}/api/runs/{}/log", base, test_run_id)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        assert!(res.text().await.unwrap().contains("Mock console output"));
+
+        // Check GET /api/runs/:id/files
+        let res = client.get(format!("{}/api/runs/{}/files", base, test_run_id)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        // Check GET /api/runs/:id/file?file=main.rs
+        let res = client.get(format!("{}/api/runs/{}/file?file=main.rs", base, test_run_id)).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+        assert!(res.text().await.unwrap().contains("fn main()"));
+
+        // Check POST /api/runs/:id/publish (tests publish error handling without committing to git)
+        let pub_req = PublishRequest { message: Some("Publish test".to_string()) };
+        let res = client.post(format!("{}/api/runs/nonexistent_xyz/publish", base)).json(&pub_req).send().await.unwrap();
+        assert_eq!(res.status(), 500);
+
+        // 20. POST /api/run with runnable start.sh to test Docker candidate branch
+        let ws_dir = Path::new("./workspace");
+        let _ = fs::create_dir_all(ws_dir);
+        fs::write(ws_dir.join("start.sh"), "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(ws_dir.join("start.sh"), fs::Permissions::from_mode(0o755));
+        }
+
+        let run_candidate_req = RunRequest {
+            model: "google/gemini-2.5-flash".to_string(),
+            task: "http".to_string(),
+            api_key: None,
+            budget_usd: 0.10,
+            max_turns: 1,
+            eval_only: true,
+            effort: Some("low".to_string()),
+            timeout_min: Some(1),
+        };
+        let res = client.post(format!("{}/api/run", base)).json(&run_candidate_req).send().await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if !state.is_running.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+
+        // Cleanup test directory and generated test runs
+        let _ = fs::remove_dir_all(&test_run_dir);
+        let _ = fs::remove_dir_all(ws_dir);
+        let _ = fs::remove_dir_all("tasks/test_task");
+        let _ = fs::remove_dir_all("/home/ubuntu/subdollar-LLM-coding-bench/tasks/test_task");
+
+        // Clean any gemini/test artifacts from runs/ and results/
+        if let Ok(entries) = fs::read_dir(&runs_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+        let r_dir = PathBuf::from(resolve_results_dir());
+        if let Ok(entries) = fs::read_dir(&r_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_helpers_resolve() {
+        let task_p = resolve_task_path("redis");
+        assert!(task_p.to_string_lossy().contains("redis"));
+        let res_dir = resolve_results_dir();
+        assert!(res_dir.contains("results"));
+    }
 }

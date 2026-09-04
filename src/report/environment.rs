@@ -101,43 +101,38 @@ impl EnvironmentInfo {
     fn detect_rust() -> String {
         let direct = Self::cmd_output("rustc", &["--version"]);
         if direct != "N/A" && !direct.is_empty() {
-            return direct;
+            direct
+        } else {
+            Self::cmd_output_su("rustc --version")
         }
-        if let Ok(output) = Command::new("su").args(["-", "ubuntu", "-c", "rustc --version"]).output() {
+    }
+
+    fn detect_git_commit() -> String {
+        let out = Self::cmd_output("git", &["rev-parse", "--short", "HEAD"]);
+        if out != "N/A" && !out.is_empty() {
+            out
+        } else {
+            Self::cmd_output_su("cd /home/ubuntu/subdollar-LLM-coding-bench && git rev-parse --short HEAD")
+        }
+    }
+
+    fn detect_git_branch() -> String {
+        let out = Self::cmd_output("git", &["rev-parse", "--abbrev-ref", "HEAD"]);
+        if out != "N/A" && !out.is_empty() {
+            out
+        } else {
+            Self::cmd_output_su("cd /home/ubuntu/subdollar-LLM-coding-bench && git rev-parse --abbrev-ref HEAD")
+        }
+    }
+
+    fn cmd_output_su(cmd: &str) -> String {
+        if let Ok(output) = Command::new("su").args(["-", "ubuntu", "-c", cmd]).output() {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {
                 return s;
             }
         }
         "N/A".to_string()
-    }
-
-    fn detect_git_commit() -> String {
-        let out = Self::cmd_output("git", &["rev-parse", "--short", "HEAD"]);
-        if out != "N/A" && !out.is_empty() {
-            return out;
-        }
-        if let Ok(output) = Command::new("su").args(["-", "ubuntu", "-c", "cd /home/ubuntu/subdollar-LLM-coding-bench && git rev-parse --short HEAD"]).output() {
-            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !s.is_empty() {
-                return s;
-            }
-        }
-        "unknown".to_string()
-    }
-
-    fn detect_git_branch() -> String {
-        let out = Self::cmd_output("git", &["rev-parse", "--abbrev-ref", "HEAD"]);
-        if out != "N/A" && !out.is_empty() {
-            return out;
-        }
-        if let Ok(output) = Command::new("su").args(["-", "ubuntu", "-c", "cd /home/ubuntu/subdollar-LLM-coding-bench && git rev-parse --abbrev-ref HEAD"]).output() {
-            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !s.is_empty() {
-                return s;
-            }
-        }
-        "master".to_string()
     }
 
     fn cmd_output(cmd: &str, args: &[&str]) -> String {
@@ -177,5 +172,62 @@ impl EnvironmentInfo {
             self.git_branch,
             self.timestamp
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_environment() {
+        let env = EnvironmentInfo::detect();
+        assert!(!env.os.is_empty());
+        assert!(!env.kernel.is_empty());
+        assert!(!env.arch.is_empty());
+        assert!(env.cpu_cores > 0);
+        assert!(!env.total_memory.is_empty());
+        assert!(!env.timestamp.is_empty());
+
+        let md = env.to_markdown_table();
+        assert!(md.contains("Operating System"));
+        assert!(md.contains("Kernel & Architecture"));
+        assert!(md.contains("CPU Model"));
+        assert!(md.contains("System Memory"));
+        assert!(md.contains("Git Baseline"));
+
+        let serialized = serde_json::to_string(&env).unwrap();
+        let deserialized: EnvironmentInfo = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.os, env.os);
+        assert_eq!(deserialized.cpu_cores, env.cpu_cores);
+    }
+
+    #[test]
+    fn test_cmd_output_success_and_failure() {
+        let out = EnvironmentInfo::cmd_output("echo", &["hello_subdollar"]);
+        assert_eq!(out, "hello_subdollar");
+
+        let err = EnvironmentInfo::cmd_output("nonexistent_command_xyz_123", &[]);
+        assert_eq!(err, "N/A");
+    }
+
+    #[test]
+    fn test_internal_detect_helpers() {
+        assert!(!EnvironmentInfo::detect_os().is_empty());
+        let (cpu, cores) = EnvironmentInfo::detect_cpu();
+        assert!(!cpu.is_empty());
+        assert!(cores > 0);
+        assert!(!EnvironmentInfo::detect_memory().is_empty());
+        assert!(!EnvironmentInfo::detect_rust().is_empty());
+        assert!(!EnvironmentInfo::detect_git_commit().is_empty());
+        assert!(!EnvironmentInfo::detect_git_branch().is_empty());
+    }
+
+    #[test]
+    fn test_cmd_output_su() {
+        let out = EnvironmentInfo::cmd_output_su("echo hello_su");
+        assert!(out == "hello_su" || out == "N/A");
+        let empty = EnvironmentInfo::cmd_output_su("true");
+        assert!(empty == "" || empty == "N/A");
     }
 }

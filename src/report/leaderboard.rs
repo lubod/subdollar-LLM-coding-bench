@@ -197,6 +197,60 @@ mod tests {
     }
 
     #[test]
+    fn test_language_detection_c_and_more() {
+        let temp = std::env::temp_dir().join(format!("test_c_lang_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+
+        // C/C++
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("main.c"), "int main() {}").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "C/C++");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Go with go.mod
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("go.mod"), "module test").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Go");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Python with requirements.txt
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("requirements.txt"), "flask").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Python");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Rust with Cargo.toml
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("Cargo.toml"), "[package]").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Rust");
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_print_table_runs_without_panic() {
+        let r = BenchmarkRunResult {
+            id: "run_test".to_string(),
+            model: "model_test".to_string(),
+            task: "redis".to_string(),
+            language: "Rust".to_string(),
+            effort: Some("auto".to_string()),
+            pass_rate: 100.0,
+            passed_stages: 4,
+            total_stages: 4,
+            throughput_req_sec: Some(60000.0),
+            prompt_tokens: 1000,
+            cached_tokens: 500,
+            completion_tokens: 100,
+            total_cost_usd: 0.005,
+            savings_percent: 50.0,
+            efficiency_score: 200.0,
+            timestamp: "2026-09-04T12:00:00Z".to_string(),
+        };
+        LeaderboardManager::print_table(&[r]);
+        LeaderboardManager::print_table(&[]);
+    }
+
+    #[test]
     fn test_leaderboard_sorting_and_persistence() {
         let temp = std::env::temp_dir().join(format!("test_lb_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp);

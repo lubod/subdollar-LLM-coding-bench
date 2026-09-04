@@ -250,3 +250,108 @@ impl SandboxManager {
             .output();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[test]
+    fn test_ensure_runnable_candidate_scenarios() {
+        let temp_dir = std::env::temp_dir().join(format!("test_docker_sb_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let sm = SandboxManager::new();
+
+        // 1. Empty dir
+        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), false);
+
+        // 2. Root Dockerfile
+        fs::write(temp_dir.join("Dockerfile"), "FROM alpine").unwrap();
+        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 3. Nested Dockerfile
+        let nested = temp_dir.join("subdir/nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("Dockerfile"), "FROM alpine").unwrap();
+        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        assert!(temp_dir.join("Dockerfile").exists());
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+        let _ = fs::remove_dir_all(&nested);
+
+        // 4. Root start.sh
+        fs::write(temp_dir.join("start.sh"), "#!/bin/bash\necho ok").unwrap();
+        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        let _ = fs::remove_file(temp_dir.join("start.sh"));
+
+        // 5. Nested start.sh
+        let nested_sh = temp_dir.join("project");
+        fs::create_dir_all(&nested_sh).unwrap();
+        fs::write(nested_sh.join("start.sh"), "#!/bin/bash\necho nested").unwrap();
+        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        assert!(temp_dir.join("start.sh").exists());
+        let root_content = fs::read_to_string(temp_dir.join("start.sh")).unwrap();
+        assert!(root_content.contains("/workspace/project"));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_port() {
+        let sm = SandboxManager::new();
+
+        // 1. Unbound port should return false
+        let ok = sm.wait_for_port(59995, 1).await;
+        assert!(!ok);
+
+        // 2. Active port should return true
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let ok2 = sm.wait_for_port(port, 2).await;
+        assert!(ok2);
+    }
+
+    #[test]
+    fn test_docker_cleanup_and_logs() {
+        let sm = SandboxManager::new();
+        sm.cleanup();
+        let logs = sm.get_candidate_logs();
+        assert!(!logs.is_empty());
+    }
+
+    #[test]
+    fn test_start_and_cleanup_reference_containers() {
+        let sm = SandboxManager::new();
+        let res_redis = sm.start_reference_redis(59994);
+        assert!(res_redis.is_ok());
+        let res_http = sm.start_reference_http(59993);
+        assert!(res_http.is_ok());
+        sm.cleanup();
+    }
+
+    #[test]
+    fn test_start_candidate_in_docker_start_sh_and_dockerfile() {
+        let temp_dir = std::env::temp_dir().join(format!("test_docker_run_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let sm = SandboxManager::new();
+
+        // 1. start.sh case
+        fs::write(temp_dir.join("start.sh"), "#!/bin/bash\necho candidate running\n").unwrap();
+        let res_sh = sm.start_candidate_in_docker(&temp_dir, 59990);
+        assert!(res_sh.is_ok());
+        sm.cleanup();
+
+        // 2. Dockerfile case
+        let _ = fs::remove_file(temp_dir.join("start.sh"));
+        fs::write(temp_dir.join("Dockerfile"), "FROM alpine\nCMD [\"echo\", \"done\"]\n").unwrap();
+        let res_df = sm.start_candidate_in_docker(&temp_dir, 59989);
+        assert!(res_df.is_ok());
+        sm.cleanup();
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+}

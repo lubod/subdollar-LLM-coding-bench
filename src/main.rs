@@ -21,9 +21,12 @@ use subdollar_bench::web;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    let _ = tracing_subscriber::fmt::try_init();
     let cli = Cli::parse();
+    run_cli(cli).await
+}
 
+pub async fn run_cli(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Run {
             model,
@@ -351,4 +354,262 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_main_cli_leaderboard() {
+        let temp_dir = std::env::temp_dir().join(format!("test_main_lb_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        // 1. Empty leaderboard
+        let cli_empty = Cli {
+            command: Commands::Leaderboard {
+                results_dir: temp_dir.to_string_lossy().to_string(),
+            },
+        };
+        assert!(run_cli(cli_empty).await.is_ok());
+
+        // 2. Leaderboard with a result
+        let result = BenchmarkRunResult {
+            id: "test_run_main_1".to_string(),
+            model: "test_model".to_string(),
+            task: "redis".to_string(),
+            language: "Rust".to_string(),
+            effort: Some("low".to_string()),
+            pass_rate: 100.0,
+            passed_stages: 4,
+            total_stages: 4,
+            throughput_req_sec: Some(1000.0),
+            prompt_tokens: 100,
+            cached_tokens: 50,
+            completion_tokens: 20,
+            total_cost_usd: 0.01,
+            savings_percent: 10.0,
+            efficiency_score: 100.0,
+            timestamp: "2026-09-04T12:00:00Z".to_string(),
+        };
+        let _ = LeaderboardManager::save_result(&temp_dir.to_string_lossy(), &result);
+
+        let cli_with_res = Cli {
+            command: Commands::Leaderboard {
+                results_dir: temp_dir.to_string_lossy().to_string(),
+            },
+        };
+        assert!(run_cli(cli_with_res).await.is_ok());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_summary() {
+        let temp_dir = std::env::temp_dir().join(format!("test_main_summary_{}", std::process::id()));
+        let runs_dir = temp_dir.join("runs");
+        let repo_root = temp_dir.join("repo");
+        let _ = fs::create_dir_all(&runs_dir);
+        let _ = fs::create_dir_all(&repo_root);
+
+        let cli = Cli {
+            command: Commands::Summary {
+                runs_dir: runs_dir.to_string_lossy().to_string(),
+                repo_root: repo_root.to_string_lossy().to_string(),
+            },
+        };
+        assert!(run_cli(cli).await.is_ok());
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_eval() {
+        // Run eval on unused ports
+        let cli_redis = Cli {
+            command: Commands::Eval {
+                task: TaskType::Redis,
+                port: Some(59997),
+            },
+        };
+        assert!(run_cli(cli_redis).await.is_ok());
+
+        let cli_http = Cli {
+            command: Commands::Eval {
+                task: TaskType::Http,
+                port: Some(59998),
+            },
+        };
+        assert!(run_cli(cli_http).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_publish() {
+        let temp_dir = std::env::temp_dir().join(format!("test_main_pub_{}", std::process::id()));
+        let repo_root = temp_dir.join("repo");
+        let runs_dir = temp_dir.join("runs");
+        let results_dir = temp_dir.join("results");
+        let _ = fs::create_dir_all(&repo_root);
+        let _ = fs::create_dir_all(&runs_dir);
+        let _ = fs::create_dir_all(&results_dir);
+
+        // Init git repo
+        let _ = std::process::Command::new("git").args(["init"]).current_dir(&repo_root).output();
+        let _ = std::process::Command::new("git").args(["config", "user.name", "Bench Tester"]).current_dir(&repo_root).output();
+        let _ = std::process::Command::new("git").args(["config", "user.email", "tester@bench.local"]).current_dir(&repo_root).output();
+        fs::write(repo_root.join("README.md"), "# Init").unwrap();
+        let _ = std::process::Command::new("git").args(["add", "."]).current_dir(&repo_root).output();
+        let _ = std::process::Command::new("git").args(["commit", "-m", "Initial commit"]).current_dir(&repo_root).output();
+
+        let run_id = "test_main_publish_run";
+        let run_dir = runs_dir.join(run_id);
+        let _ = fs::create_dir_all(run_dir.join("workspace"));
+        fs::write(run_dir.join("workspace/main.rs"), "fn main() {}").unwrap();
+
+        let manifest = RunManifest {
+            run_id: run_id.to_string(),
+            model: "test_model".to_string(),
+            task: "redis".to_string(),
+            status: "completed".to_string(),
+            language: "Rust".to_string(),
+            effort: Some("low".to_string()),
+            started_at: "2026-09-04T12:00:00Z".to_string(),
+            completed_at: "2026-09-04T12:01:00Z".to_string(),
+            duration_seconds: 60.0,
+            pass_rate: 100.0,
+            passed_stages: 4,
+            total_stages: 4,
+            stages: Vec::new(),
+            throughput_req_sec: Some(1000.0),
+            tokens: RunTokenUsage {
+                prompt_tokens: 100,
+                cached_tokens: 50,
+                completion_tokens: 20,
+                total_tokens: 120,
+            },
+            cost_usd: 0.01,
+            savings_percent: 10.0,
+            efficiency_score: 100.0,
+            files: Vec::new(),
+            env: None,
+            git_commit: None,
+            is_published: None,
+        };
+        fs::write(run_dir.join("manifest.json"), serde_json::to_string(&manifest).unwrap()).unwrap();
+
+        let cli = Cli {
+            command: Commands::Publish {
+                run_id: run_id.to_string(),
+                message: Some("Main test publish".to_string()),
+                runs_dir: runs_dir.to_string_lossy().to_string(),
+                results_dir: results_dir.to_string_lossy().to_string(),
+                repo_root: repo_root.to_string_lossy().to_string(),
+            },
+        };
+        assert!(run_cli(cli).await.is_ok());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_run_eval_only_redis() {
+        let temp_workdir = std::env::temp_dir().join(format!("test_main_run_redis_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_workdir);
+
+        let cli_run = Cli {
+            command: Commands::Run {
+                model: "google/gemini-2.5-flash".to_string(),
+                task: TaskType::Redis,
+                effort: "low".to_string(),
+                max_turns: 1,
+                budget_usd: 0.10,
+                timeout_min: 1,
+                api_key: None,
+                workdir: temp_workdir.to_string_lossy().to_string(),
+                eval_only: true,
+            },
+        };
+        assert!(run_cli(cli_run).await.is_ok());
+
+        let _ = fs::remove_dir_all(&temp_workdir);
+
+        // Clean any gemini/test artifacts from runs/ and results/
+        let runs_dir = RunArchiver::resolve_runs_dir();
+        if let Ok(entries) = fs::read_dir(&runs_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+        if let Ok(entries) = fs::read_dir("./results") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_run_eval_only_http_with_candidate() {
+        let temp_workdir = std::env::temp_dir().join(format!("test_main_run_http_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_workdir);
+        let start_sh = temp_workdir.join("start.sh");
+        fs::write(&start_sh, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&start_sh, fs::Permissions::from_mode(0o755));
+        }
+
+        let cli_run = Cli {
+            command: Commands::Run {
+                model: "google/gemini-2.5-flash".to_string(),
+                task: TaskType::Http,
+                effort: "low".to_string(),
+                max_turns: 1,
+                budget_usd: 0.10,
+                timeout_min: 1,
+                api_key: None,
+                workdir: temp_workdir.to_string_lossy().to_string(),
+                eval_only: true,
+            },
+        };
+        assert!(run_cli(cli_run).await.is_ok());
+
+        let _ = fs::remove_dir_all(&temp_workdir);
+
+        // Clean any gemini/test artifacts from runs/ and results/
+        let runs_dir = RunArchiver::resolve_runs_dir();
+        if let Ok(entries) = fs::read_dir(&runs_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+        if let Ok(entries) = fs::read_dir("./results") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_ui_cancelled() {
+        let cli_ui = Cli {
+            command: Commands::Ui {
+                host: "127.0.0.1".to_string(),
+                port: 0,
+            },
+        };
+        // Run and cancel after a short duration
+        let _ = tokio::time::timeout(Duration::from_millis(150), run_cli(cli_ui)).await;
+    }
 }

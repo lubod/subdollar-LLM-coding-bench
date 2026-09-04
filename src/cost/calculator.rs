@@ -103,13 +103,17 @@ impl ModelPricing {
 
     /// Query OpenRouter /api/v1/auth/key to get the exact live cumulative dollar usage
     pub async fn query_openrouter_key_usage(api_key: &str) -> Option<f64> {
+        Self::query_openrouter_key_usage_at(api_key, "https://openrouter.ai/api/v1/auth/key").await
+    }
+
+    pub async fn query_openrouter_key_usage_at(api_key: &str, url: &str) -> Option<f64> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(4))
             .build()
             .ok()?;
 
         let resp = client
-            .get("https://openrouter.ai/api/v1/auth/key")
+            .get(url)
             .header("Authorization", format!("Bearer {}", api_key.trim()))
             .send()
             .await
@@ -129,6 +133,8 @@ impl ModelPricing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     #[test]
     fn test_pricing_for_known_models() {
@@ -149,6 +155,18 @@ mod tests {
 
         let llama = ModelPricing::for_model("meta-llama/llama-3.3-70b-instruct");
         assert_eq!(llama.prompt_per_million, 0.12);
+
+        let gpt4o = ModelPricing::for_model("openai/gpt-4o-mini");
+        assert_eq!(gpt4o.prompt_per_million, 0.15);
+        assert_eq!(gpt4o.cache_read_per_million, 0.075);
+
+        let haiku = ModelPricing::for_model("anthropic/claude-3-haiku");
+        assert_eq!(haiku.prompt_per_million, 0.80);
+        assert_eq!(haiku.completion_per_million, 4.00);
+
+        let mistral = ModelPricing::for_model("mistralai/mistral-small");
+        assert_eq!(mistral.prompt_per_million, 0.10);
+        assert_eq!(mistral.completion_per_million, 0.30);
 
         let unknown = ModelPricing::for_model("some-random-unknown-model");
         assert_eq!(unknown.prompt_per_million, 0.20);
@@ -193,5 +211,48 @@ mod tests {
         let diff = (b.total_cost_usd - 0.01875).abs();
         assert!(diff < 1e-6, "Expected 0.01875, got {}", b.total_cost_usd);
         assert!((b.savings_percent - 75.0).abs() < 1e-4);
+    }
+
+    #[tokio::test]
+    async fn test_query_openrouter_key_usage_mock() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = r#"{"data":{"usage": 0.4567}}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}/api/v1/auth/key", port);
+        let usage = ModelPricing::query_openrouter_key_usage_at("test-key", &url).await;
+        assert_eq!(usage, Some(0.4567));
+    }
+
+    #[tokio::test]
+    async fn test_query_openrouter_key_usage_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let response = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}/api/v1/auth/key", port);
+        let usage = ModelPricing::query_openrouter_key_usage_at("bad-key", &url).await;
+        assert_eq!(usage, None);
     }
 }

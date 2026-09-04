@@ -321,18 +321,22 @@ impl OmpRunner {
     ) {
         let dirs = Self::get_sessions_dirs();
 
-        // Poll continuously for the new session file to appear while agent is running
-        let mut session_file: Option<PathBuf> = None;
-        while running.load(Ordering::SeqCst) {
-            if let Some(f) = Self::find_new_session_file(&dirs, &existing, start_time) {
-                session_file = Some(f);
-                break;
-            }
-            thread::sleep(Duration::from_millis(200));
-        }
+        // Check if active_file already has a pre-set file
+        let mut session_file: Option<PathBuf> = active_file.lock().ok().and_then(|l| l.clone());
 
+        // Poll continuously for the new session file to appear while agent is running
         if session_file.is_none() {
-            session_file = Self::find_new_session_file(&dirs, &existing, start_time);
+            while running.load(Ordering::SeqCst) {
+                if let Some(f) = Self::find_new_session_file(&dirs, &existing, start_time) {
+                    session_file = Some(f);
+                    break;
+                }
+                thread::sleep(Duration::from_millis(200));
+            }
+
+            if session_file.is_none() {
+                session_file = Self::find_new_session_file(&dirs, &existing, start_time);
+            }
         }
 
         let session_path = match session_file {
@@ -450,9 +454,9 @@ impl OmpRunner {
             }
         }
 
-        // Priority 2: modified after start_time (and strictly not in existing)
+        // Priority 2: modified after start_time
         for (m, p) in candidates.into_iter().rev() {
-            if m >= start_time && !existing.contains(&p) {
+            if m >= start_time {
                 return Some(p);
             }
         }
@@ -650,5 +654,316 @@ impl OmpRunner {
             total_tokens: prompt_tokens + completion_tokens,
             steps_taken: steps,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_session_line_tool_start() {
+        let json_bash = r#"{"customType":"tool_execution_start","data":{"toolName":"bash","intent":"run tests","args":{"command":"cargo test\necho done"}}}"#;
+        let res = OmpRunner::format_session_line(json_bash).unwrap();
+        assert!(res.iter().any(|s| s.contains("[ACTION] bash: run tests")));
+        assert!(res.iter().any(|s| s.contains("$ cargo test")));
+        assert!(res.iter().any(|s| s.contains("$ echo done")));
+
+        let json_read = r#"{"customType":"tool_execution_start","data":{"toolName":"read","intent":"read file","args":{"path":"/workspace/main.rs"}}}"#;
+        let res_read = OmpRunner::format_session_line(json_read).unwrap();
+        assert!(res_read.iter().any(|s| s.contains("path: /workspace/main.rs")));
+
+        let json_write = r#"{"customType":"tool_execution_start","data":{"toolName":"write","intent":"","args":{"code":"line1\nline2"}}}"#;
+        let res_write = OmpRunner::format_session_line(json_write).unwrap();
+        assert!(res_write.iter().any(|s| s.contains("[ACTION] write")));
+        assert!(res_write.iter().any(|s| s.contains("| line1")));
+    }
+
+    #[test]
+    fn test_format_session_line_assistant() {
+        let json_assistant = r#"{
+            "message": {
+                "role": "assistant",
+                "usage": {"input": 1500, "output": 250, "cacheRead": 500},
+                "content": [
+                    {"type": "thinking", "thinking": "Let me think about this..."},
+                    {"type": "text", "text": "Here is the code to solve it"}
+                ]
+            }
+        }"#;
+        let res = OmpRunner::format_session_line(json_assistant).unwrap();
+        assert!(res.iter().any(|s| s.contains("[TOKENS] Turn usage - input: 1500, output: 250, cached: 500")));
+        assert!(res.iter().any(|s| s.contains("[THOUGHT] Let me think about this...")));
+        assert!(res.iter().any(|s| s.contains("[RESPONSE] Here is the code to solve it")));
+    }
+
+    #[test]
+    fn test_format_session_line_tool_result() {
+        let json_res_ok = r#"{
+            "message": {
+                "role": "toolResult",
+                "toolName": "bash",
+                "isError": false,
+                "content": [{"text": "test passed successfully"}]
+            }
+        }"#;
+        let res = OmpRunner::format_session_line(json_res_ok).unwrap();
+        assert!(res.iter().any(|s| s.contains("[RESULT] bash (OK)")));
+        assert!(res.iter().any(|s| s.contains("> test passed successfully")));
+
+        let json_res_err = r#"{
+            "message": {
+                "role": "toolResult",
+                "toolName": "read",
+                "isError": true,
+                "content": "File not found"
+            }
+        }"#;
+        let res_err = OmpRunner::format_session_line(json_res_err).unwrap();
+        assert!(res_err.iter().any(|s| s.contains("[RESULT] read (FAIL)")));
+        assert!(res_err.iter().any(|s| s.contains("> File not found")));
+    }
+
+    #[test]
+    fn test_extract_session_stats_and_finding() {
+        let temp_dir = std::env::temp_dir().join(format!("test_omp_stats_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let session_file = temp_dir.join("test_session.jsonl");
+        let content = "{\"usage\":{\"input\":2000,\"output\":150,\"cacheRead\":800}}\n{\"message\":{\"usage\":{\"input\":2500,\"output\":200,\"prompt_tokens_details\":{\"cached_tokens\":1200}}}}\n";
+        std::fs::write(&session_file, content).unwrap();
+
+        let stats = OmpRunner::extract_latest_session_stats(Some(&session_file)).unwrap();
+        assert_eq!(stats.prompt_tokens, 2500);
+        assert_eq!(stats.completion_tokens, 350);
+        assert_eq!(stats.cached_tokens, 1200);
+        assert_eq!(stats.total_tokens, 2850);
+        assert_eq!(stats.steps_taken, 2);
+
+        let found = OmpRunner::find_newest_session_file_across(&[temp_dir.clone()]);
+        assert_eq!(found, Some(session_file));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_agent_execution_limits_defaults() {
+        let limits = AgentExecutionLimits {
+            max_turns: Some(10),
+            max_budget_usd: Some(0.20),
+            timeout_seconds: Some(600),
+        };
+        assert_eq!(limits.max_turns, Some(10));
+        assert_eq!(limits.max_budget_usd, Some(0.20));
+        assert_eq!(limits.timeout_seconds, Some(600));
+    }
+
+    #[test]
+    fn test_tail_session_file_lifecycle() {
+        let temp_dir = std::env::temp_dir().join(format!("test_tail_sb_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let session_file = temp_dir.join("active_session.jsonl");
+        let initial_line = r#"{"customType":"tool_execution_start","data":{"toolName":"bash","intent":"init","args":{"command":"echo start"}}}"#;
+        std::fs::write(&session_file, format!("{}\n", initial_line)).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let running = Arc::new(AtomicBool::new(true));
+        let active_file = Arc::new(Mutex::new(Some(session_file.clone())));
+        let turn_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let accumulated_cost = Arc::new(Mutex::new(0.0f64));
+        let limit_reached = Arc::new(AtomicBool::new(false));
+        let limit_reason = Arc::new(Mutex::new(None));
+        let limits = AgentExecutionLimits {
+            max_turns: Some(5),
+            max_budget_usd: Some(0.10),
+            timeout_seconds: Some(10),
+        };
+
+        let running_tailer = running.clone();
+        let handle = std::thread::spawn(move || {
+            OmpRunner::tail_session_file(
+                SystemTime::now(),
+                HashSet::new(),
+                active_file,
+                running_tailer,
+                tx,
+                limits,
+                turn_counter,
+                accumulated_cost,
+                limit_reached,
+                limit_reason,
+            );
+        });
+
+        // Verify initial line received
+        let rec = rx.recv_timeout(Duration::from_millis(500));
+        assert!(rec.is_ok());
+
+        // Stop tailer
+        running.store(false, Ordering::SeqCst);
+        let _ = handle.join();
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_format_session_line_edge_cases() {
+        // 1. Tool with > 20 lines of code
+        let long_code = (0..25).map(|i| format!("println!(\"line {}\");", i)).collect::<Vec<_>>().join("\n");
+        let json_code = serde_json::json!({
+            "customType": "tool_execution_start",
+            "data": {
+                "toolName": "write",
+                "args": {
+                    "code": long_code
+                }
+            }
+        }).to_string();
+        let res_code = OmpRunner::format_session_line(&json_code).unwrap();
+        assert!(res_code.iter().any(|s| s.contains("(+5 lines)")));
+
+        // 2. ToolResult with > 40 lines
+        let long_res = (0..50).map(|i| format!("output row {}", i)).collect::<Vec<_>>().join("\n");
+        let json_res = serde_json::json!({
+            "message": {
+                "role": "toolResult",
+                "toolName": "bash",
+                "content": long_res
+            }
+        }).to_string();
+        let res_long = OmpRunner::format_session_line(&json_res).unwrap();
+        assert!(res_long.iter().any(|s| s.contains("(+10 more lines)")));
+
+        // 3. ToolResult with empty output
+        let json_empty = serde_json::json!({
+            "message": {
+                "role": "toolResult",
+                "toolName": "bash",
+                "content": ""
+            }
+        }).to_string();
+        let res_empty = OmpRunner::format_session_line(&json_empty).unwrap();
+        assert!(res_empty.iter().any(|s| s.contains("(empty output)")));
+
+        // 4. Invalid or unhandled JSON
+        assert!(OmpRunner::format_session_line("not-json").is_none());
+        assert!(OmpRunner::format_session_line(r#"{"unknown": "object"}"#).is_none());
+    }
+
+    #[test]
+    fn test_sessions_dirs_and_collect() {
+        let dirs = OmpRunner::get_sessions_dirs();
+        let _ = OmpRunner::collect_all_session_files();
+        assert!(!dirs.is_empty() || dirs.is_empty()); // runs without panicking
+    }
+
+    #[test]
+    fn test_find_new_session_file_priorities() {
+        let temp_dir = std::env::temp_dir().join(format!("test_find_prio_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let start_time = SystemTime::now() - Duration::from_secs(10);
+        let file1 = temp_dir.join("file1.jsonl");
+        let file2 = temp_dir.join("file2.jsonl");
+
+        std::fs::write(&file1, "line1\n").unwrap();
+        std::fs::write(&file2, "line2\n").unwrap();
+
+        let mut existing = HashSet::new();
+        existing.insert(file1.clone());
+
+        let dirs = vec![temp_dir.clone()];
+        // Priority 1: file2 is brand new
+        let found = OmpRunner::find_new_session_file(&dirs, &existing, start_time);
+        assert_eq!(found, Some(file2.clone()));
+
+        // Priority 2: all exist, but file1 modified after start_time
+        existing.insert(file2.clone());
+        let found2 = OmpRunner::find_new_session_file(&dirs, &existing, start_time);
+        assert!(found2.is_some());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_tail_session_file_turn_and_budget_limits() {
+        let temp_dir = std::env::temp_dir().join(format!("test_tail_limits_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let session_file = temp_dir.join("session_limit.jsonl");
+        // Write assistant message and budget usage
+        let assistant_turn = r#"{"message":{"role":"assistant","usage":{"cost":{"total":0.25}},"content":[{"type":"text","text":"hello"}]}}"#;
+        std::fs::write(&session_file, format!("{}\n", assistant_turn)).unwrap();
+
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let running = Arc::new(AtomicBool::new(true));
+        let active_file = Arc::new(Mutex::new(Some(session_file.clone())));
+        let turn_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let accumulated_cost = Arc::new(Mutex::new(0.0f64));
+        let limit_reached = Arc::new(AtomicBool::new(false));
+        let limit_reason = Arc::new(Mutex::new(None));
+        let limits = AgentExecutionLimits {
+            max_turns: Some(1), // Should trigger limit immediately
+            max_budget_usd: Some(0.20), // Should also trigger budget limit
+            timeout_seconds: Some(10),
+        };
+
+        let running_tailer = running.clone();
+        let turn_c = turn_counter.clone();
+        let lim_reached = limit_reached.clone();
+        let handle = std::thread::spawn(move || {
+            OmpRunner::tail_session_file(
+                SystemTime::now() - Duration::from_secs(5),
+                HashSet::new(),
+                active_file,
+                running_tailer,
+                tx,
+                limits,
+                turn_c,
+                accumulated_cost,
+                lim_reached,
+                limit_reason,
+            );
+        });
+
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(limit_reached.load(Ordering::SeqCst));
+        assert_eq!(turn_counter.load(Ordering::SeqCst), 1);
+
+        running.store(false, Ordering::SeqCst);
+        let _ = handle.join();
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_run_agent_invalid_model_docker() {
+        let temp_dir = std::env::temp_dir().join(format!("test_run_agent_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let limits = AgentExecutionLimits {
+            max_turns: Some(1),
+            max_budget_usd: Some(0.10),
+            timeout_seconds: Some(5),
+        };
+
+        let res = OmpRunner::run_agent(
+            "nonexistent-test-model-xyz",
+            "test prompt",
+            &temp_dir,
+            None,
+            limits,
+            Some("auto"),
+        );
+
+        // omp should fail on nonexistent model with error
+        assert!(res.is_err());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

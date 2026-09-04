@@ -1,5 +1,10 @@
 You are building an RFC-compliant HTTP/1.1 web server from scratch.
 
+### CRITICAL ARCHITECTURAL REQUIREMENT: BUILD FROM RAW TCP SOCKETS (NO FRAMEWORKS)
+- **Strict Prohibition on Frameworks & Built-in HTTP Servers**: You CANNOT use any built-in HTTP server or third-party web framework from any language (e.g., **DO NOT USE** Python's `http.server`, `Flask`, `FastAPI`, Go's `net/http` `http.ListenAndServe` / `http.Server`, `Gin`, `Fiber`, Node.js `http.createServer`, `Express`, Rust's `actix-web`, `axum`, `warp`, `hyper::server`, etc.).
+- **Raw TCP Sockets Only**: You must build the server from scratch using raw TCP sockets and stream I/O (e.g., `net.Listen` / `net.Conn` in Go, `std::net::TcpListener` / `tokio::net::TcpListener` in Rust, `socket` module in Python, `net.createServer` in Node.js, POSIX sockets in C/C++).
+- **Custom Protocol Implementation**: You must implement your own raw HTTP/1.1 wire protocol parser (parsing request lines, HTTP methods, paths, HTTP headers, Content-Length, and body streams) and your own response formatter (status lines, headers, `\r\n\r\n` boundary framing, and body bytes) directly over raw TCP byte streams.
+
 ### Software Engineering (SWE) & Code Quality Standards
 Your implementation must meet high professional software engineering standards:
 1. **Clean Architecture & Modularity**: Structure code with clear separation of concerns (TCP listener, HTTP request/header parser, router/handler mapping, file I/O layer, and response formatter). Avoid monolithic scripts or hardcoded shortcuts.

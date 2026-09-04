@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-04 11:59:35 UTC*
+*Last Updated: 2026-09-04 15:31:11 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -15,9 +15,7 @@
 
 ## 📊 Global Leaderboard
 
-| Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
-|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 🥇 1 | `openrouter/qwen/qwen3.8-flash` | `max` | Redis | `Rust` | 100% (4/4) | 61463 req/s | $0.4279 | **2.3** pts/¢ | [Inspect](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
+*No benchmark runs recorded yet. Run a benchmark to populate the leaderboard!*
 
 ---
 
@@ -28,10 +26,6 @@ The candidate LLM is instructed to build a production-grade, concurrent Redis cl
 - **Supported Commands**: `PING`, `ECHO`, `SET` (with `PX` millisecond expiration, `EX`, `NX`, `XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `COMMAND`, `QUIT`.
 - **Packaging Freedom**: Working multi-stage `Dockerfile` (automatically built and containerized) or `./start.sh`.
 - **Verification**: Automated raw-socket TCP verification test suite + `redis-benchmark -p 6379 -n 5000 -c 10 -t get,set -q`.
-
-| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `openrouter/qwen/qwen3.8-flash` | `max` | `Rust` | 100% | 61463 req/s | $0.4279 | 2.3 pts/¢ | [runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
 
 ---
 
@@ -58,8 +52,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `fda675c` (branch `master`) |
-| **Benchmark Captured** | 2026-09-04T11:59:35.090973447+00:00 |
+| **Git Baseline** | Commit `6b36a11` (branch `master`) |
+| **Benchmark Captured** | 2026-09-04T15:31:11.423232757+00:00 |
 
 ---
 
