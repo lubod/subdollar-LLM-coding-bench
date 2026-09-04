@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path as AxumPath, State},
+    extract::{Path as AxumPath, Query, State},
     response::{
         sse::{Event, KeepAlive, Sse},
         Html, IntoResponse, Response,
@@ -8,7 +8,8 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,34 @@ pub struct RunRequest {
     pub budget_usd: f64,
     pub max_turns: u32,
     pub eval_only: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubDollarModel {
+    pub id: String,
+    pub name: String,
+    pub prompt_price_per_m: f64,
+    pub completion_price_per_m: f64,
+    pub context_length: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelItem {
+    id: String,
+    name: String,
+    context_length: Option<u64>,
+    pricing: Option<OpenRouterPricing>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterPricing {
+    prompt: Option<String>,
+    completion: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterResponse {
+    data: Vec<OpenRouterModelItem>,
 }
 
 fn resolve_task_path(task: &str) -> PathBuf {
@@ -77,6 +106,7 @@ impl UiServer {
 
         let app = Router::new()
             .route("/", get(serve_index))
+            .route("/api/models", get(get_models))
             .route("/api/prompt/:task", get(get_prompt).post(save_prompt))
             .route("/api/leaderboard", get(get_leaderboard))
             .route("/api/run", post(start_run))
@@ -95,6 +125,74 @@ impl UiServer {
 
 async fn serve_index() -> Html<&'static str> {
     Html(include_str!("index.html"))
+}
+
+async fn get_models(
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<Vec<SubDollarModel>>, (axum::http::StatusCode, String)> {
+    let client = reqwest::Client::new();
+    let mut req = client.get("https://openrouter.ai/api/v1/models");
+
+    if let Some(key) = params.get("api_key") {
+        if !key.trim().is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", key.trim()));
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("Failed to fetch OpenRouter models: {}", e),
+        )
+    })?;
+
+    let data = resp.json::<OpenRouterResponse>().await.map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("Failed to parse OpenRouter response: {}", e),
+        )
+    })?;
+
+    let max_price = params
+        .get("max_price")
+        .and_then(|p| p.parse::<f64>().ok())
+        .unwrap_or(1.0); // Default $1.00 / 1M tokens
+
+    let mut filtered: Vec<SubDollarModel> = data
+        .data
+        .into_iter()
+        .filter_map(|item| {
+            let pricing = item.pricing?;
+            let p_str = pricing.prompt?;
+            let c_str = pricing.completion?;
+
+            let p_raw: f64 = p_str.parse().ok()?;
+            let c_raw: f64 = c_str.parse().ok()?;
+
+            let p_m = p_raw * 1_000_000.0;
+            let c_m = c_raw * 1_000_000.0;
+
+            if p_m >= 0.0 && c_m >= 0.0 && p_m <= max_price && c_m <= max_price {
+                Some(SubDollarModel {
+                    id: item.id,
+                    name: item.name,
+                    prompt_price_per_m: p_m,
+                    completion_price_per_m: c_m,
+                    context_length: item.context_length.unwrap_or(0),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    filtered.sort_by(|a, b| {
+        let cost_a = a.prompt_price_per_m + a.completion_price_per_m;
+        let cost_b = b.prompt_price_per_m + b.completion_price_per_m;
+        cost_a.partial_cmp(&cost_b).unwrap()
+    });
+
+    Ok(Json(filtered))
 }
 
 async fn get_prompt(AxumPath(task): AxumPath<String>) -> Response {

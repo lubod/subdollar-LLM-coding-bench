@@ -32,7 +32,7 @@
     }
 
     .container {
-      max-width: 1400px;
+      max-width: 1440px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
@@ -82,10 +82,10 @@
     /* Layout Grid */
     .grid {
       display: grid;
-      grid-template-columns: 380px 1fr;
+      grid-template-columns: 440px 1fr;
       gap: 20px;
     }
-    @media (max-width: 900px) {
+    @media (max-width: 1000px) {
       .grid { grid-template-columns: 1fr; }
     }
 
@@ -107,7 +107,7 @@
       padding-bottom: 10px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
     }
 
     /* Form controls */
@@ -120,6 +120,9 @@
       font-size: 0.8rem;
       font-weight: 600;
       color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
     .hint {
       font-size: 0.75rem;
@@ -145,26 +148,44 @@
       min-height: 250px;
     }
 
-    /* Model Presets */
+    /* Model Presets & Filters */
     .presets {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       margin-top: 4px;
     }
     .preset-btn {
       background: #21262d;
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 4px 8px;
+      padding: 3px 7px;
       border-radius: 4px;
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       cursor: pointer;
       transition: 0.2s;
     }
     .preset-btn:hover {
       border-color: var(--primary);
       color: #fff;
+    }
+    .preset-btn.active {
+      background: var(--primary);
+      color: #000;
+      font-weight: 600;
+    }
+
+    /* Price tag */
+    .price-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      display: inline-flex;
+      gap: 6px;
     }
 
     /* Buttons */
@@ -194,8 +215,10 @@
       background: #21262d;
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 6px 12px;
-      font-size: 0.8rem;
+      padding: 5px 10px;
+      font-size: 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
     }
     .btn-secondary:hover {
       background: #30363d;
@@ -245,11 +268,6 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
-    .terminal .log-err { color: var(--danger); }
-    .terminal .log-pass { color: var(--success); font-weight: bold; }
-    .terminal .log-info { color: var(--primary); }
-    .terminal .log-warn { color: var(--warning); }
-    .terminal .log-dim { color: var(--text-muted); }
 
     /* Table */
     table {
@@ -295,26 +313,55 @@
     <div class="grid">
       <!-- Configuration Panel -->
       <aside class="card">
-        <h2>⚙️ Run Configuration</h2>
+        <h2>
+          <span>⚙️ Benchmark Setup</span>
+          <span id="modelCountBadge" class="badge badge-pass" style="font-size: 0.7rem;">Loading models...</span>
+        </h2>
 
+        <!-- API Key -->
         <div class="form-group">
-          <label for="apiKey">OpenRouter API Key</label>
+          <label for="apiKey">
+            <span>OpenRouter API Key</span>
+            <button class="btn-secondary" onclick="fetchModels()">🔄 Refresh Models</button>
+          </label>
           <input type="password" id="apiKey" placeholder="sk-or-v1-..." />
-          <span class="hint">Stored locally in your browser.</span>
+          <span class="hint">Stored in your browser. Used to query models & run OMP.</span>
         </div>
 
+        <!-- Model Filter & Selector -->
         <div class="form-group">
-          <label for="model">Target Model</label>
-          <input type="text" id="model" value="openrouter/google/gemini-2.5-flash" />
+          <label for="modelSelect">
+            <span>Choose Sub-$1 Model</span>
+            <span class="hint" id="priceLabel">&lt; $1.00 / 1M tokens</span>
+          </label>
+          
+          <!-- Quick Family Filters -->
           <div class="presets">
-            <button class="preset-btn" onclick="selectModel('openrouter/google/gemini-2.5-flash')">Gemini Flash</button>
-            <button class="preset-btn" onclick="selectModel('openrouter/deepseek/deepseek-chat')">DeepSeek V3</button>
-            <button class="preset-btn" onclick="selectModel('openrouter/qwen/qwen-2.5-coder-32b-instruct')">Qwen Coder 32B</button>
-            <button class="preset-btn" onclick="selectModel('openrouter/meta-llama/llama-3.3-70b-instruct')">Llama 3.3 70B</button>
-            <button class="preset-btn" onclick="selectModel('openrouter/openai/gpt-4o-mini')">GPT-4o-mini</button>
+            <button class="preset-btn active" onclick="filterByFamily('all', this)">All</button>
+            <button class="preset-btn" onclick="filterByFamily('google', this)">Google</button>
+            <button class="preset-btn" onclick="filterByFamily('deepseek', this)">DeepSeek</button>
+            <button class="preset-btn" onclick="filterByFamily('qwen', this)">Qwen</button>
+            <button class="preset-btn" onclick="filterByFamily('meta', this)">Meta</button>
+            <button class="preset-btn" onclick="filterByFamily('openai', this)">OpenAI</button>
           </div>
+
+          <!-- Model Search Box -->
+          <input type="text" id="modelSearch" placeholder="🔍 Search by name or id (e.g. flash, coder, 8b)..." oninput="filterModelsList()" style="margin-top: 4px;" />
+
+          <!-- Dynamic Dropdown -->
+          <select id="modelSelect" size="6" onchange="onModelSelected()" style="height: 140px; margin-top: 4px;">
+            <option disabled>Loading models under $1.00 / 1M tokens...</option>
+          </select>
         </div>
 
+        <!-- Selected Model Display -->
+        <div class="form-group">
+          <label for="model">Selected Model ID (Passed to OMP)</label>
+          <input type="text" id="model" value="openrouter/google/gemini-2.5-flash" />
+          <div id="selectedPricePill" class="price-pill" style="display: none; margin-top: 4px;"></div>
+        </div>
+
+        <!-- Task Selection -->
         <div class="form-group">
           <label for="task">Benchmark Task</label>
           <select id="task" onchange="loadPrompt()">
@@ -323,6 +370,7 @@
           </select>
         </div>
 
+        <!-- Budget & Turns -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div class="form-group">
             <label for="budget">Budget Cap ($)</label>
@@ -340,7 +388,7 @@
         </div>
 
         <button class="btn" id="startBtn" onclick="startBenchmark()">
-          <span>🚀</span> Start Benchmark
+          <span>🚀</span> Start Benchmark Run
         </button>
       </aside>
 
@@ -359,7 +407,7 @@
             <button class="btn btn-secondary" onclick="clearConsole()">Clear</button>
           </div>
           <div class="terminal" id="terminalOutput">SubDollarBench console initialized.
-Configure your OpenRouter API key and click "Start Benchmark" to begin.
+Select a model under $1.00 and click "Start Benchmark Run" to begin.
 </div>
         </div>
 
@@ -397,15 +445,94 @@ Configure your OpenRouter API key and click "Start Benchmark" to begin.
   </div>
 
   <script>
+    let allModels = [];
+    let activeFamily = 'all';
+
     // LocalStorage API key retention
     const apiKeyInput = document.getElementById('apiKey');
     apiKeyInput.value = localStorage.getItem('subdollar_openrouter_key') || '';
-    apiKeyInput.addEventListener('input', () => {
+    apiKeyInput.addEventListener('change', () => {
       localStorage.setItem('subdollar_openrouter_key', apiKeyInput.value);
+      fetchModels();
     });
 
-    function selectModel(m) {
-      document.getElementById('model').value = m;
+    async function fetchModels() {
+      const apiKey = apiKeyInput.value.trim();
+      const badge = document.getElementById('modelCountBadge');
+      badge.textContent = 'Fetching...';
+      badge.className = 'badge';
+
+      try {
+        const url = `/api/models?max_price=1.0${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ''}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('API error');
+        allModels = await res.json();
+
+        badge.textContent = `${allModels.length} Models < $1.00`;
+        badge.className = 'badge badge-pass';
+        filterModelsList();
+      } catch (e) {
+        badge.textContent = 'Offline / Error';
+        badge.className = 'badge badge-fail';
+        console.error('Failed to fetch models', e);
+      }
+    }
+
+    function filterByFamily(family, btn) {
+      activeFamily = family;
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      filterModelsList();
+    }
+
+    function filterModelsList() {
+      const query = document.getElementById('modelSearch').value.toLowerCase().trim();
+      const select = document.getElementById('modelSelect');
+      select.innerHTML = '';
+
+      const filtered = allModels.filter(m => {
+        const matchesFamily = activeFamily === 'all' || m.id.toLowerCase().includes(activeFamily);
+        const matchesQuery = !query || m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
+        return matchesFamily && matchesQuery;
+      });
+
+      if (filtered.length === 0) {
+        select.innerHTML = '<option disabled>No models match your search criteria</option>';
+        return;
+      }
+
+      filtered.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.dataset.promptPrice = m.prompt_price_per_m.toFixed(3);
+        opt.dataset.compPrice = m.completion_price_per_m.toFixed(3);
+        opt.dataset.context = m.context_length;
+        opt.textContent = `${m.name} — [In: $${m.prompt_price_per_m.toFixed(2)} / Out: $${m.completion_price_per_m.toFixed(2)}]`;
+        select.appendChild(opt);
+      });
+
+      // Highlight current model if present
+      const current = document.getElementById('model').value.replace('openrouter/', '');
+      for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === current) {
+          select.selectedIndex = i;
+          onModelSelected();
+          break;
+        }
+      }
+    }
+
+    function onModelSelected() {
+      const select = document.getElementById('modelSelect');
+      const opt = select.selectedOptions[0];
+      if (!opt || !opt.value) return;
+
+      const modelId = opt.value;
+      document.getElementById('model').value = `openrouter/${modelId}`;
+
+      const pill = document.getElementById('selectedPricePill');
+      pill.style.display = 'inline-flex';
+      pill.innerHTML = `<span>📥 Input: <b>$${opt.dataset.promptPrice}/1M</b></span> • <span>📤 Output: <b>$${opt.dataset.compPrice}/1M</b></span> • <span>🧠 Ctx: <b>${parseInt(opt.dataset.context).toLocaleString()}</b></span>`;
     }
 
     function switchTab(name) {
@@ -540,7 +667,6 @@ Configure your OpenRouter API key and click "Start Benchmark" to begin.
           return;
         }
 
-        // Start SSE stream
         const eventSource = new EventSource('/api/stream');
         eventSource.onmessage = (event) => {
           if (event.data === '[DONE]') {
@@ -571,6 +697,7 @@ Configure your OpenRouter API key and click "Start Benchmark" to begin.
     }
 
     // Initial load
+    fetchModels();
     loadPrompt();
   </script>
 </body>
