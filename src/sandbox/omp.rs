@@ -321,12 +321,9 @@ impl OmpRunner {
     ) {
         let dirs = Self::get_sessions_dirs();
 
-        // Poll for the new session file to appear
+        // Poll continuously for the new session file to appear while agent is running
         let mut session_file: Option<PathBuf> = None;
-        for _ in 0..60 {
-            if !running.load(Ordering::SeqCst) {
-                break;
-            }
+        while running.load(Ordering::SeqCst) {
             if let Some(f) = Self::find_new_session_file(&dirs, &existing, start_time) {
                 session_file = Some(f);
                 break;
@@ -334,13 +331,15 @@ impl OmpRunner {
             thread::sleep(Duration::from_millis(200));
         }
 
+        if session_file.is_none() {
+            session_file = Self::find_new_session_file(&dirs, &existing, start_time);
+        }
+
         let session_path = match session_file {
             Some(p) => p,
             None => {
-                match Self::find_newest_session_file_across(&dirs) {
-                    Some(p) => p,
-                    None => return,
-                }
+                info!("No new session file detected for current run.");
+                return;
             }
         };
 
@@ -451,9 +450,9 @@ impl OmpRunner {
             }
         }
 
-        // Priority 2: modified after start_time
+        // Priority 2: modified after start_time (and strictly not in existing)
         for (m, p) in candidates.into_iter().rev() {
-            if m >= start_time {
+            if m >= start_time && !existing.contains(&p) {
                 return Some(p);
             }
         }
