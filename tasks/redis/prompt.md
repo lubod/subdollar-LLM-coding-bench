@@ -8,6 +8,12 @@ Your implementation must meet high professional software engineering standards:
 4. **Idiomatic Style & Best Practices**: Write clean, idiomatic code adhering to standard conventions for your chosen language (e.g., Go formatting & error checking, Rust Result/Error idioms, Python typing & structure).
 5. **Production Readiness**: Code should be production-grade, maintainable, performant, and self-contained.
 
+### CRITICAL INTEGRITY RULE: NO ACCESSING OR CONSULTING SOURCE CODE
+- **Strict Prohibition**: You are strictly FORBIDDEN from downloading, curling, scraping, cloning, reading, or consulting the source code of the reference implementation or any external implementation (e.g., Redis C source code on GitHub, raw files, or third-party repositories).
+- **Allowed Resources**: You may consult official documentation, API references, and protocol/RFC specifications (e.g., redis.io command docs).
+- **Black-Box Testing**: You may test runtime behavior against the running reference server using CLI tools (`redis-cli -p 6380 <cmd>`).
+- **Originality**: All code must be your own original implementation designed from specifications and observable behavior. Any access to reference source code invalidates the benchmark run.
+
 ### Constraints & Packaging Freedom (Dockerfile or start.sh)
 - You are free to choose ANY programming language of your choice (Go, Python, Rust, Node.js, C, C++, etc.).
 - Choose the language and design that maximizes reliability, simplicity, and throughput.
