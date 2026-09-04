@@ -396,7 +396,135 @@
     }
     .diff-line-add { background: rgba(63, 185, 80, 0.15); color: #7ee787; display: block; }
     .diff-line-del { background: rgba(248, 81, 73, 0.15); color: #ffa198; display: block; }
+
+    /* Markdown Body Styling (GitHub Dark Style) */
+    .markdown-body {
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      word-wrap: break-word;
+    }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+      margin-top: 24px;
+      margin-bottom: 16px;
+      font-weight: 600;
+      line-height: 1.25;
+      color: #f0f6fc;
+    }
+    .markdown-body h1 {
+      font-size: 1.65rem;
+      padding-bottom: 0.3em;
+      border-bottom: 1px solid var(--border);
+    }
+    .markdown-body h2 {
+      font-size: 1.3rem;
+      padding-bottom: 0.3em;
+      border-bottom: 1px solid var(--border);
+    }
+    .markdown-body h3 { font-size: 1.1rem; }
+    .markdown-body h4 { font-size: 0.95rem; }
+    .markdown-body p, .markdown-body blockquote, .markdown-body ul, .markdown-body ol, .markdown-body table, .markdown-body pre {
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .markdown-body ul, .markdown-body ol {
+      padding-left: 2em;
+    }
+    .markdown-body li {
+      margin-top: 0.25em;
+    }
+    .markdown-body li + li {
+      margin-top: 0.25em;
+    }
+    .markdown-body code {
+      padding: 0.2em 0.4em;
+      margin: 0;
+      font-size: 85%;
+      white-space: break-spaces;
+      background-color: rgba(110, 118, 129, 0.4);
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #e6edf3;
+    }
+    .markdown-body pre {
+      padding: 16px;
+      overflow: auto;
+      font-size: 85%;
+      line-height: 1.45;
+      color: #e6edf3;
+      background-color: #161b22;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .markdown-body pre code {
+      display: inline;
+      max-width: auto;
+      padding: 0;
+      margin: 0;
+      overflow: visible;
+      line-height: inherit;
+      word-wrap: normal;
+      background-color: transparent;
+      border: 0;
+      font-size: 100%;
+    }
+    .markdown-body table {
+      border-spacing: 0;
+      border-collapse: collapse;
+      display: block;
+      width: max-content;
+      max-width: 100%;
+      overflow: auto;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .markdown-body table tr {
+      background-color: #0d1117;
+      border-top: 1px solid #30363d;
+    }
+    .markdown-body table tr:nth-child(2n) {
+      background-color: #161b22;
+    }
+    .markdown-body table th, .markdown-body table td {
+      padding: 6px 13px;
+      border: 1px solid #30363d;
+    }
+    .markdown-body table th {
+      font-weight: 600;
+      background-color: #21262d;
+      color: #f0f6fc;
+    }
+    .markdown-body blockquote {
+      padding: 0 1em;
+      color: #8b949e;
+      border-left: 0.25em solid #30363d;
+      margin: 0 0 16px 0;
+    }
+    .markdown-body hr {
+      height: 0.25em;
+      padding: 0;
+      margin: 24px 0;
+      background-color: #30363d;
+      border: 0;
+    }
+    .markdown-body a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .markdown-body a:hover {
+      text-decoration: underline;
+    }
+    .markdown-body .task-list-item {
+      list-style-type: none;
+      margin-left: -1.2em;
+    }
+    .markdown-body .task-list-item input[type="checkbox"] {
+      margin-right: 0.5em;
+      vertical-align: middle;
+    }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -733,13 +861,25 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
           </div>
         </div>
 
-        <!-- Tab 4: Prompt Editor -->
-        <div id="tab-prompt" style="display: none; flex-direction: column; gap: 10px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="hint">System instructions fed into OMP for this task</span>
-            <button class="btn btn-secondary" onclick="savePrompt()">💾 Save Changes</button>
+        <!-- Tab 4: Prompt Specification & Editor -->
+        <div id="tab-prompt" style="display: none; flex-direction: column; gap: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span class="hint" style="font-weight: 600; color: #fff; font-size: 0.88rem;">System instructions fed into OMP agent</span>
+              <div class="preset-btn-group" style="display: flex; gap: 4px;">
+                <button id="promptModePreview" class="preset-btn active" onclick="setPromptMode('preview')">👁️ Rendered Preview</button>
+                <button id="promptModeEdit" class="preset-btn" onclick="setPromptMode('edit')">✏️ Edit Raw Markdown</button>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="btn btn-secondary" onclick="loadPrompt()">🔄 Reload</button>
+              <button id="promptSaveBtn" class="btn btn-primary" style="display: none;" onclick="savePrompt()">💾 Save Changes</button>
+            </div>
           </div>
-          <textarea id="promptEditor" placeholder="Loading prompt specification..."></textarea>
+          <div id="promptViewer" class="markdown-body" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 20px; max-height: 600px; overflow-y: auto;">
+            <span style="color: var(--text-muted);">Loading prompt specification...</span>
+          </div>
+          <textarea id="promptEditor" style="display: none; width: 100%; min-height: 550px; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.5; padding: 14px;" placeholder="Loading prompt specification..."></textarea>
         </div>
 
         <!-- Tab 5: Leaderboard -->
@@ -797,8 +937,17 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           </div>
 
           <!-- SUMMARY.md Content Box -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <div class="preset-btn-group" style="display: flex; gap: 4px;">
+              <button id="summaryModePreview" class="preset-btn active" onclick="setSummaryMode('preview')">👁️ Rendered Preview</button>
+              <button id="summaryModeRaw" class="preset-btn" onclick="setSummaryMode('raw')">📋 Raw Markdown</button>
+            </div>
+          </div>
           <div style="position: relative;">
-            <pre id="summaryViewer" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #e6edf3; max-height: 550px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;">Loading SUMMARY.md...</pre>
+            <div id="summaryViewer" class="markdown-body" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 20px; max-height: 600px; overflow-y: auto;">
+              <span style="color: var(--text-muted);">Loading SUMMARY.md...</span>
+            </div>
+            <pre id="summaryRawViewer" style="display: none; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #e6edf3; max-height: 600px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;">Loading SUMMARY.md...</pre>
           </div>
         </div>
       </main>
@@ -981,28 +1130,208 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
+    // Markdown Rendering Engine with GFM & Zero-Dependency Fallback
+    function renderMarkdown(md) {
+      if (!md) return '';
+      if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+        try {
+          return marked.parse(md, { gfm: true, breaks: true });
+        } catch (e) {
+          console.warn('marked.parse failed, using simple fallback', e);
+        }
+      }
+      return simpleMarkdownParse(md);
+    }
+
+    function simpleMarkdownParse(md) {
+      if (!md) return '';
+      let text = md.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+      // 1. Code blocks
+      const codeBlocks = [];
+      text = text.replace(/```([a-zA-Z0-9_\-+]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        const idx = codeBlocks.length;
+        const langClass = lang ? ` class="language-${escapeHtml(lang)}"` : '';
+        codeBlocks.push(`<pre><code${langClass}>${escapeHtml(code.trimEnd())}</code></pre>`);
+        return `\n\n@@CODEBLOCK_${idx}@@\n\n`;
+      });
+
+      // 2. Inline code
+      const inlineCodes = [];
+      text = text.replace(/`([^`\n]+)`/g, (match, code) => {
+        const idx = inlineCodes.length;
+        inlineCodes.push(`<code>${escapeHtml(code)}</code>`);
+        return `@@INLINECODE_${idx}@@`;
+      });
+
+      // 3. Escape HTML
+      text = escapeHtml(text);
+
+      // 4. Headings
+      text = text.replace(/^######[ \t]+(.*)$/gm, '\n\n<h6>$1</h6>\n\n');
+      text = text.replace(/^#####[ \t]+(.*)$/gm, '\n\n<h5>$1</h5>\n\n');
+      text = text.replace(/^####[ \t]+(.*)$/gm, '\n\n<h4>$1</h4>\n\n');
+      text = text.replace(/^###[ \t]+(.*)$/gm, '\n\n<h3>$1</h3>\n\n');
+      text = text.replace(/^##[ \t]+(.*)$/gm, '\n\n<h2>$1</h2>\n\n');
+      text = text.replace(/^#[ \t]+(.*)$/gm, '\n\n<h1>$1</h1>\n\n');
+
+      // 5. Horizontal rules
+      text = text.replace(/^(?:---|___|\*\*\*)[ \t]*$/gm, '\n\n<hr>\n\n');
+
+      // 6. Blockquotes
+      text = text.replace(/^[ \t]*&gt;[ \t]?(.*)$/gm, '<blockquote>$1</blockquote>');
+      text = text.replace(/<\/blockquote>\n<blockquote>/g, '<br>');
+      text = text.replace(/(<blockquote>.*?<\/blockquote>)/gs, '\n\n$1\n\n');
+
+      // 7. GFM Tables
+      text = text.replace(/(^\|[^\n]+\|\n\|[\s\-:|]+\|\n(?:\|[^\n]+\|(?:\n|$))+)/gm, (match) => {
+        const rows = match.trim().split(/\n/).map(r => r.trim());
+        if (rows.length < 2) return match;
+
+        const parseCells = (row) => {
+          let inner = row.replace(/^\|/, '').replace(/\|$/, '');
+          return inner.split('|').map(c => c.trim());
+        };
+
+        const headers = parseCells(rows[0]);
+        let html = '<table><thead><tr>';
+        for (const h of headers) {
+          html += `<th>${h}</th>`;
+        }
+        html += '</tr></thead><tbody>';
+
+        for (let i = 2; i < rows.length; i++) {
+          const cells = parseCells(rows[i]);
+          html += '<tr>';
+          for (let j = 0; j < headers.length; j++) {
+            html += `<td>${cells[j] !== undefined ? cells[j] : ''}</td>`;
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+        return '\n\n' + html + '\n\n';
+      });
+
+      // 8. Task lists & Unordered Lists
+      text = text.replace(/^[ \t]*[-*][ \t]+\[([ xX])\][ \t]+(.*)$/gm, (m, checked, item) => {
+        const isChecked = checked.toLowerCase() === 'x' ? ' checked' : '';
+        return `<li class="task-list-item"><input type="checkbox" disabled${isChecked}> ${item}</li>`;
+      });
+      text = text.replace(/^[ \t]*[-*][ \t]+(.*)$/gm, '<li>$1</li>');
+      text = text.replace(/((?:<li(?: class="task-list-item")?>.*?<\/li>\n?)+)/g, (match) => {
+        return '\n\n<ul>' + match.trim() + '</ul>\n\n';
+      });
+
+      // 9. Ordered Lists
+      text = text.replace(/^[ \t]*\d+\.[ \t]+(.*)$/gm, '<ol-item>$1</ol-item>');
+      text = text.replace(/((?:<ol-item>.*?<\/ol-item>\n?)+)/g, (match) => {
+        const items = match.replace(/<ol-item>/g, '<li>').replace(/<\/ol-item>/g, '</li>');
+        return '\n\n<ol>' + items.trim() + '</ol>\n\n';
+      });
+
+      // 10. Bold and Italic
+      text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+      text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/___(.*?)___/g, '<strong><em>$1</em></strong>');
+      text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
+      text = text.replace(/\*([^\*\n]+)\*/g, '<em>$1</em>');
+      text = text.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+
+      // 11. Links
+      text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+      // 12. Restore Inline Code & Code Blocks
+      text = text.replace(/@@INLINECODE_(\d+)@@/g, (match, idx) => {
+        return inlineCodes[parseInt(idx, 10)] || '';
+      });
+      text = text.replace(/@@CODEBLOCK_(\d+)@@/g, (match, idx) => {
+        return codeBlocks[parseInt(idx, 10)] || '';
+      });
+
+      // 13. Group into blocks
+      const blocks = text.split(/\n\n+/);
+      const formattedBlocks = blocks.map(b => {
+        const trimmed = b.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('<h') || trimmed.startsWith('<pre') || trimmed.startsWith('<table') ||
+            trimmed.startsWith('<ul') || trimmed.startsWith('<ol') || trimmed.startsWith('<blockquote') ||
+            trimmed.startsWith('<hr')) {
+          return trimmed;
+        }
+        return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
+      });
+
+      return formattedBlocks.filter(b => b.length > 0).join('\n\n');
+    }
+
+    let currentPromptText = '';
+    let activePromptMode = 'preview'; // 'preview' or 'edit'
+
     async function loadPrompt() {
       const task = document.getElementById('task').value;
       try {
         const res = await fetch(`/api/prompt/${task}`);
         if (res.ok) {
-          const text = await res.text();
-          document.getElementById('promptEditor').value = text;
+          currentPromptText = await res.text();
+          const editor = document.getElementById('promptEditor');
+          if (editor) editor.value = currentPromptText;
+          renderPromptMarkdown();
         }
       } catch (e) {
         console.error('Failed to load prompt', e);
       }
     }
 
+    function renderPromptMarkdown() {
+      const viewer = document.getElementById('promptViewer');
+      if (viewer) {
+        viewer.innerHTML = renderMarkdown(currentPromptText);
+      }
+    }
+
+    function setPromptMode(mode) {
+      activePromptMode = mode;
+      const previewBtn = document.getElementById('promptModePreview');
+      const editBtn = document.getElementById('promptModeEdit');
+      const viewer = document.getElementById('promptViewer');
+      const editor = document.getElementById('promptEditor');
+      const saveBtn = document.getElementById('promptSaveBtn');
+
+      if (mode === 'preview') {
+        if (previewBtn) previewBtn.classList.add('active');
+        if (editBtn) editBtn.classList.remove('active');
+        if (editor) currentPromptText = editor.value;
+        renderPromptMarkdown();
+        if (viewer) viewer.style.display = 'block';
+        if (editor) editor.style.display = 'none';
+        if (saveBtn) saveBtn.style.display = 'none';
+      } else {
+        if (previewBtn) previewBtn.classList.remove('active');
+        if (editBtn) editBtn.classList.add('active');
+        if (viewer) viewer.style.display = 'none';
+        if (editor) {
+          editor.value = currentPromptText;
+          editor.style.display = 'block';
+        }
+        if (saveBtn) saveBtn.style.display = 'inline-block';
+      }
+    }
+
     async function savePrompt() {
       const task = document.getElementById('task').value;
-      const content = document.getElementById('promptEditor').value;
+      const editor = document.getElementById('promptEditor');
+      const content = editor ? editor.value : currentPromptText;
       try {
         const res = await fetch(`/api/prompt/${task}`, {
           method: 'POST',
           body: content
         });
-        if (res.ok) alert('Prompt saved successfully!');
+        if (res.ok) {
+          currentPromptText = content;
+          renderPromptMarkdown();
+          alert('Prompt saved successfully!');
+          setPromptMode('preview');
+        }
       } catch (e) {
         alert('Failed to save prompt');
       }
@@ -1429,27 +1758,66 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    let activeSummaryMode = 'preview'; // 'preview' or 'raw'
+    let currentSummaryText = '';
+
     async function loadSummary() {
       try {
         const res = await fetch('/api/summary');
         if (res.ok) {
-          const text = await res.text();
-          document.getElementById('summaryViewer').textContent = text;
+          currentSummaryText = await res.text();
+          renderSummary();
         } else {
-          document.getElementById('summaryViewer').textContent = 'Failed to load SUMMARY.md';
+          const viewer = document.getElementById('summaryViewer');
+          const rawViewer = document.getElementById('summaryRawViewer');
+          if (viewer) viewer.innerHTML = '<p style="color: var(--danger);">Failed to load SUMMARY.md</p>';
+          if (rawViewer) rawViewer.textContent = 'Failed to load SUMMARY.md';
         }
       } catch (e) {
-        document.getElementById('summaryViewer').textContent = `Error loading SUMMARY.md: ${e.message}`;
+        const viewer = document.getElementById('summaryViewer');
+        const rawViewer = document.getElementById('summaryRawViewer');
+        if (viewer) viewer.innerHTML = `<p style="color: var(--danger);">Error loading SUMMARY.md: ${escapeHtml(e.message)}</p>`;
+        if (rawViewer) rawViewer.textContent = `Error loading SUMMARY.md: ${e.message}`;
+      }
+    }
+
+    function renderSummary() {
+      const viewer = document.getElementById('summaryViewer');
+      const rawViewer = document.getElementById('summaryRawViewer');
+      if (viewer) viewer.innerHTML = renderMarkdown(currentSummaryText);
+      if (rawViewer) rawViewer.textContent = currentSummaryText;
+    }
+
+    function setSummaryMode(mode) {
+      activeSummaryMode = mode;
+      const previewBtn = document.getElementById('summaryModePreview');
+      const rawBtn = document.getElementById('summaryModeRaw');
+      const viewer = document.getElementById('summaryViewer');
+      const rawViewer = document.getElementById('summaryRawViewer');
+
+      if (mode === 'preview') {
+        if (previewBtn) previewBtn.classList.add('active');
+        if (rawBtn) rawBtn.classList.remove('active');
+        if (viewer) viewer.style.display = 'block';
+        if (rawViewer) rawViewer.style.display = 'none';
+      } else {
+        if (previewBtn) previewBtn.classList.remove('active');
+        if (rawBtn) rawBtn.classList.add('active');
+        if (viewer) viewer.style.display = 'none';
+        if (rawViewer) rawViewer.style.display = 'block';
       }
     }
 
     async function regenerateSummary() {
       try {
-        document.getElementById('summaryViewer').textContent = 'Regenerating SUMMARY.md...';
+        const viewer = document.getElementById('summaryViewer');
+        const rawViewer = document.getElementById('summaryRawViewer');
+        if (viewer) viewer.innerHTML = '<p style="color: var(--primary);">Regenerating SUMMARY.md...</p>';
+        if (rawViewer) rawViewer.textContent = 'Regenerating SUMMARY.md...';
         const res = await fetch('/api/summary', { method: 'POST' });
         if (res.ok) {
-          const text = await res.text();
-          document.getElementById('summaryViewer').textContent = text;
+          currentSummaryText = await res.text();
+          renderSummary();
           alert('✅ SUMMARY.md successfully regenerated from recorded runs!');
         } else {
           const errText = await res.text();
@@ -1463,7 +1831,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     }
 
     function copySummaryText() {
-      const text = document.getElementById('summaryViewer').textContent;
+      const text = currentSummaryText || (document.getElementById('summaryRawViewer') ? document.getElementById('summaryRawViewer').textContent : '');
       navigator.clipboard.writeText(text).then(() => alert('📋 SUMMARY.md copied to clipboard!'));
     }
 
