@@ -68,7 +68,6 @@ impl SandboxManager {
             .args([
                 "run",
                 "-d",
-                "--rm",
                 "--name",
                 "subdollar-candidate",
                 "-v",
@@ -83,6 +82,30 @@ impl SandboxManager {
             .output();
 
         Ok(())
+    }
+
+    pub fn get_candidate_logs(&self) -> String {
+        let output = Command::new("docker")
+            .args(["logs", "--tail", "100", "subdollar-candidate"])
+            .output();
+        match output {
+            Ok(out) => {
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                let mut logs = String::new();
+                if !stdout.is_empty() {
+                    logs.push_str(&format!("--- Container stdout ---\n{}\n", stdout));
+                }
+                if !stderr.is_empty() {
+                    logs.push_str(&format!("--- Container stderr ---\n{}\n", stderr));
+                }
+                if logs.is_empty() {
+                    logs.push_str("(No output logged by container)");
+                }
+                logs
+            }
+            Err(e) => format!("Failed to read container logs: {}", e),
+        }
     }
 
     pub fn cleanup(&self) {

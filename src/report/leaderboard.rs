@@ -75,7 +75,7 @@ impl LeaderboardManager {
                 }
             }
         }
-        list.sort_by(|a, b| b.efficiency_score.partial_cmp(&a.efficiency_score).unwrap());
+        list.sort_by(|a, b| b.efficiency_score.partial_cmp(&a.efficiency_score).unwrap_or(std::cmp::Ordering::Equal));
         list
     }
 
@@ -117,5 +117,97 @@ impl LeaderboardManager {
         }
 
         println!("\n{}", table);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_language_detection() {
+        let temp = std::env::temp_dir().join(format!("test_lang_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+
+        // Go
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("main.go"), "package main").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Go");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Rust
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("main.rs"), "fn main() {}").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Rust");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Python
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("server.py"), "print('hi')").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Python");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Node
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("index.js"), "console.log(1)").unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Node.js");
+        let _ = fs::remove_dir_all(&temp);
+
+        // Empty dir
+        fs::create_dir_all(&temp).unwrap();
+        assert_eq!(LeaderboardManager::detect_language(&temp), "Unknown");
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_leaderboard_sorting_and_persistence() {
+        let temp = std::env::temp_dir().join(format!("test_lb_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+
+        let r1 = BenchmarkRunResult {
+            id: "run_low_score".to_string(),
+            model: "model_b".to_string(),
+            task: "redis".to_string(),
+            language: "Python".to_string(),
+            pass_rate: 50.0,
+            passed_stages: 2,
+            total_stages: 4,
+            throughput_req_sec: None,
+            prompt_tokens: 1000,
+            cached_tokens: 500,
+            completion_tokens: 200,
+            total_cost_usd: 0.01,
+            savings_percent: 25.0,
+            efficiency_score: 50.0,
+            timestamp: "2026-09-04T06:00:00Z".to_string(),
+        };
+
+        let r2 = BenchmarkRunResult {
+            id: "run_high_score".to_string(),
+            model: "model_a".to_string(),
+            task: "redis".to_string(),
+            language: "Go".to_string(),
+            pass_rate: 100.0,
+            passed_stages: 4,
+            total_stages: 4,
+            throughput_req_sec: Some(50000.0),
+            prompt_tokens: 2000,
+            cached_tokens: 1500,
+            completion_tokens: 300,
+            total_cost_usd: 0.005,
+            savings_percent: 60.0,
+            efficiency_score: 200.0,
+            timestamp: "2026-09-04T06:05:00Z".to_string(),
+        };
+
+        LeaderboardManager::save_result(temp.to_str().unwrap(), &r1).unwrap();
+        LeaderboardManager::save_result(temp.to_str().unwrap(), &r2).unwrap();
+
+        let list = LeaderboardManager::load_all(temp.to_str().unwrap());
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].id, "run_high_score");
+        assert_eq!(list[1].id, "run_low_score");
+
+        let _ = fs::remove_dir_all(&temp);
     }
 }

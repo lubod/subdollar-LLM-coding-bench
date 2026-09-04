@@ -1,25 +1,20 @@
-mod bench;
-mod config;
-mod cost;
-mod report;
-mod sandbox;
-mod verifier;
-mod web;
-
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::Parser;
 use colored::*;
-use config::{Cli, Commands, TaskType};
-use cost::ModelPricing;
-use report::{BenchmarkRunResult, LeaderboardManager};
-use sandbox::{OmpRunner, SandboxManager};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::warn;
-use verifier::{HttpVerifier, RedisVerifier};
+
+use subdollar_bench::bench;
+use subdollar_bench::config::{Cli, Commands, TaskType};
+use subdollar_bench::cost::ModelPricing;
+use subdollar_bench::report::{BenchmarkRunResult, LeaderboardManager, RunArchiver, RunManifest, RunTokenUsage};
+use subdollar_bench::sandbox::{OmpRunner, SandboxManager};
+use subdollar_bench::verifier::{HttpVerifier, RedisVerifier};
+use subdollar_bench::web;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -36,6 +31,9 @@ async fn main() -> Result<()> {
             workdir,
             eval_only,
         } => {
+            let start_instant = std::time::Instant::now();
+            let started_at = Utc::now().to_rfc3339();
+
             println!("{}", "=========================================================".bold().blue());
             println!("  {} - Autonomous Under-$1 LLM Coding Benchmark", "SubDollarBench".bold().cyan());
             println!("  Model: {}", model.bold().yellow());
@@ -74,13 +72,16 @@ async fn main() -> Result<()> {
                 .map_err(|_| anyhow!("Could not read prompt file: {}", prompt_file))?;
 
             // 3. Run OMP Agent (unless eval_only)
-            let (prompt_tokens, cached_tokens, completion_tokens) = if !eval_only {
+            let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !eval_only {
                 println!("\n{}", ">>> Spawning OMP Agent in headless mode...".bold().magenta());
                 let stats = OmpRunner::run_agent(&model, &prompt_content, work_path, api_key.as_deref(), max_turns)?;
-                (stats.prompt_tokens, stats.cached_tokens, stats.completion_tokens)
+                let p = stats.prompt_tokens;
+                let c = stats.cached_tokens;
+                let comp = stats.completion_tokens;
+                (stats, p, c, comp)
             } else {
                 println!("\n{}", ">>> Skipping OMP agent run (--eval-only set)".italic());
-                (0, 0, 0)
+                (Default::default(), 0, 0, 0)
             };
 
             // 4. Start candidate server inside Docker
@@ -95,7 +96,7 @@ async fn main() -> Result<()> {
 
             // 5. Run Verification
             println!("\n{}", ">>> Running Protocol Verification Test Suite...".bold().cyan());
-            let (pass_rate, passed_stages, total_stages) = match task {
+            let (pass_rate, passed_stages, total_stages, stages) = match task {
                 TaskType::Redis => {
                     let verifier = RedisVerifier::new(6379, Some(6380));
                     let summary = verifier.run_all().await;
@@ -109,7 +110,7 @@ async fn main() -> Result<()> {
                             }
                         }
                     }
-                    (summary.pass_rate, summary.passed_count, summary.total_stages)
+                    (summary.pass_rate, summary.passed_count, summary.total_stages, summary.stages)
                 }
                 TaskType::Http => {
                     let verifier = HttpVerifier::new(8080);
@@ -124,7 +125,7 @@ async fn main() -> Result<()> {
                             }
                         }
                     }
-                    (summary.pass_rate, summary.passed_count, summary.total_stages)
+                    (summary.pass_rate, summary.passed_count, summary.total_stages, summary.stages)
                 }
             };
 
@@ -173,7 +174,41 @@ async fn main() -> Result<()> {
             let efficiency_score = pass_rate / cost_cents;
             let lang = LeaderboardManager::detect_language(work_path);
 
-            let run_id = format!("{}_{}_{}", task, model.replace('/', "_"), Utc::now().format("%Y%m%d_%H%M%S"));
+            let completed_at = Utc::now().to_rfc3339();
+            let duration_seconds = start_instant.elapsed().as_secs_f64();
+            let run_id = format!("{}_{}_{}", task, model.replace('/', "_").replace(':', "_"), Utc::now().format("%Y%m%d_%H%M%S"));
+
+            let scanned_files = RunArchiver::scan_workspace_files(work_path);
+            let manifest = RunManifest {
+                run_id: run_id.clone(),
+                model: model.clone(),
+                task: task.to_string(),
+                status: if pass_rate == 100.0 { "completed".to_string() } else { "failed_tests".to_string() },
+                language: lang.clone(),
+                started_at,
+                completed_at: completed_at.clone(),
+                duration_seconds,
+                pass_rate,
+                passed_stages,
+                total_stages,
+                stages,
+                throughput_req_sec: throughput,
+                tokens: RunTokenUsage {
+                    prompt_tokens,
+                    cached_tokens,
+                    completion_tokens,
+                    total_tokens: omp_stats.total_tokens.max(prompt_tokens + completion_tokens),
+                },
+                cost_usd,
+                savings_percent: breakdown.savings_percent,
+                efficiency_score,
+                files: scanned_files,
+            };
+
+            let runs_dir = RunArchiver::resolve_runs_dir();
+            let cli_log = format!("Run {} completed with pass_rate {:.1}%", run_id, pass_rate);
+            let _ = RunArchiver::archive_run(&runs_dir, &manifest, work_path, &cli_log);
+
             let result = BenchmarkRunResult {
                 id: run_id,
                 model: model.clone(),
@@ -189,7 +224,7 @@ async fn main() -> Result<()> {
                 total_cost_usd: cost_usd,
                 savings_percent: breakdown.savings_percent,
                 efficiency_score,
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: completed_at,
             };
 
             LeaderboardManager::save_result("./results", &result)?;
@@ -205,6 +240,7 @@ async fn main() -> Result<()> {
             }
             println!("  - Final Cost:      ${:.4} USD", cost_usd);
             println!("  - Efficiency:      {:.1} points / cent", efficiency_score);
+            println!("  - Archived to:     runs/{}/", result.id.bold());
             println!("{}", "=========================================================".bold().blue());
 
             let all = LeaderboardManager::load_all("./results");

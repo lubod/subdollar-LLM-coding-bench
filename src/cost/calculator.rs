@@ -125,3 +125,73 @@ impl ModelPricing {
             .as_f64()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pricing_for_known_models() {
+        let gemini = ModelPricing::for_model("google/gemini-2.5-flash");
+        assert_eq!(gemini.prompt_per_million, 0.15);
+        assert_eq!(gemini.completion_per_million, 0.60);
+        assert_eq!(gemini.cache_read_per_million, 0.0375);
+
+        let deepseek = ModelPricing::for_model("deepseek/deepseek-chat");
+        assert_eq!(deepseek.prompt_per_million, 0.14);
+        assert_eq!(deepseek.completion_per_million, 0.28);
+        assert_eq!(deepseek.cache_read_per_million, 0.014);
+
+        let qwen = ModelPricing::for_model("qwen/qwen-2.5-coder-32b-instruct");
+        assert_eq!(qwen.prompt_per_million, 0.06);
+        assert_eq!(qwen.completion_per_million, 0.15);
+        assert_eq!(qwen.cache_read_per_million, 0.015);
+
+        let llama = ModelPricing::for_model("meta-llama/llama-3.3-70b-instruct");
+        assert_eq!(llama.prompt_per_million, 0.12);
+
+        let unknown = ModelPricing::for_model("some-random-unknown-model");
+        assert_eq!(unknown.prompt_per_million, 0.20);
+        assert_eq!(unknown.completion_per_million, 0.60);
+    }
+
+    #[test]
+    fn test_cost_calculation_zero_tokens() {
+        let p = ModelPricing::for_model("google/gemini-2.5-flash");
+        let b = p.compute_cost_with_cache(0, 0, 0);
+        assert_eq!(b.total_cost_usd, 0.0);
+        assert_eq!(b.un_cached_cost_usd, 0.0);
+        assert_eq!(b.savings_usd, 0.0);
+        assert_eq!(b.savings_percent, 0.0);
+    }
+
+    #[test]
+    fn test_cost_calculation_no_cache() {
+        let p = ModelPricing::for_model("google/gemini-2.5-flash");
+        let b = p.compute_cost_with_cache(1_000_000, 0, 1_000_000);
+        let diff = (b.total_cost_usd - 0.75).abs();
+        assert!(diff < 1e-6, "Expected 0.75, got {}", b.total_cost_usd);
+        assert_eq!(b.savings_usd, 0.0);
+        assert_eq!(b.savings_percent, 0.0);
+    }
+
+    #[test]
+    fn test_cost_calculation_full_prompt_cache() {
+        let p = ModelPricing::for_model("google/gemini-2.5-flash");
+        let b = p.compute_cost_with_cache(1_000_000, 1_000_000, 0);
+        let diff = (b.total_cost_usd - 0.0375).abs();
+        assert!(diff < 1e-6, "Expected 0.0375, got {}", b.total_cost_usd);
+        let diff_savings = (b.savings_usd - 0.1125).abs();
+        assert!(diff_savings < 1e-6, "Expected 0.1125, got {}", b.savings_usd);
+        assert!((b.savings_percent - 75.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_cost_calculation_cached_exceeds_prompt() {
+        let p = ModelPricing::for_model("google/gemini-2.5-flash");
+        let b = p.compute_cost_with_cache(500_000, 1_000_000, 0);
+        let diff = (b.total_cost_usd - 0.01875).abs();
+        assert!(diff < 1e-6, "Expected 0.01875, got {}", b.total_cost_usd);
+        assert!((b.savings_percent - 75.0).abs() < 1e-4);
+    }
+}

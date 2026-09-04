@@ -1,9 +1,13 @@
 use anyhow::{anyhow, Result};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct OmpSessionStats {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
@@ -22,6 +26,22 @@ impl OmpRunner {
         api_key: Option<&str>,
         max_turns: u32,
     ) -> Result<OmpSessionStats> {
+        Self::run_agent_with_logger(model, prompt, workdir, api_key, max_turns, |line| {
+            println!("{}", line);
+        })
+    }
+
+    pub fn run_agent_with_logger<F>(
+        model: &str,
+        prompt: &str,
+        workdir: &Path,
+        api_key: Option<&str>,
+        max_turns: u32,
+        mut log_fn: F,
+    ) -> Result<OmpSessionStats>
+    where
+        F: FnMut(String) + Send + 'static,
+    {
         info!("Launching OMP agent with model: {}", model);
 
         let mut cmd = Command::new("omp");
@@ -29,15 +49,48 @@ impl OmpRunner {
             .arg("-p")
             .arg(prompt)
             .arg(format!("--model={}", model))
-            .arg(format!("--cwd={}", workdir.display()));
+            .arg(format!("--cwd={}", workdir.display()))
+            .env("PI_NO_PTY", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         if let Some(key) = api_key {
             cmd.env("OPENROUTER_API_KEY", key);
         }
 
         info!("Executing OMP command in: {}", workdir.display());
-        let status = cmd.status().map_err(|e| anyhow!("Failed to spawn omp: {}", e))?;
+        let mut child = cmd.spawn().map_err(|e| anyhow!("Failed to spawn omp: {}", e))?;
 
+        let (tx, rx) = mpsc::channel();
+
+        // Spawn thread to read stdout
+        if let Some(stdout) = child.stdout.take() {
+            let tx_out = tx.clone();
+            thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().flatten() {
+                    let _ = tx_out.send(line);
+                }
+            });
+        }
+
+        // Spawn thread to read stderr
+        if let Some(stderr) = child.stderr.take() {
+            let tx_err = tx.clone();
+            thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().flatten() {
+                    let _ = tx_err.send(line);
+                }
+            });
+        }
+        drop(tx);
+
+        for line in rx {
+            log_fn(line);
+        }
+
+        let status = child.wait().map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
         if !status.success() {
             warn!("OMP agent exited with non-zero status: {:?}", status.code());
         }

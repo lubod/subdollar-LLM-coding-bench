@@ -5,13 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::sleep;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StageResult {
-    pub stage: u32,
-    pub name: String,
-    pub passed: bool,
-    pub error: Option<String>,
-}
+use super::StageResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedisTestSummary {
@@ -23,12 +17,20 @@ pub struct RedisTestSummary {
 
 pub struct RedisVerifier {
     pub target_port: u16,
-    pub ref_port: Option<u16>,
+    pub _ref_port: Option<u16>,
 }
 
 impl RedisVerifier {
     pub fn new(target_port: u16, ref_port: Option<u16>) -> Self {
-        Self { target_port, ref_port }
+        Self { target_port, _ref_port: ref_port }
+    }
+
+    pub fn format_resp_cmd(args: &[&str]) -> String {
+        let mut payload = format!("*{}\r\n", args.len());
+        for arg in args {
+            payload.push_str(&format!("${}\r\n{}\r\n", arg.len(), arg));
+        }
+        payload
     }
 
     pub async fn run_all(&self) -> RedisTestSummary {
@@ -60,10 +62,7 @@ impl RedisVerifier {
     }
 
     async fn send_resp_cmd(stream: &mut TcpStream, args: &[&str]) -> Result<String> {
-        let mut payload = format!("*{}\r\n", args.len());
-        for arg in args {
-            payload.push_str(&format!("${}\r\n{}\r\n", arg.len(), arg));
-        }
+        let payload = Self::format_resp_cmd(args);
 
         stream.write_all(payload.as_bytes()).await?;
         stream.flush().await?;
@@ -80,7 +79,7 @@ impl RedisVerifier {
         Ok(String::from_utf8_lossy(&buf[..n]).to_string())
     }
 
-    async fn test_stage1_handshake(&self) -> StageResult {
+    pub async fn test_stage1_handshake(&self) -> StageResult {
         let name = "Stage 1: PING & ECHO Handshake".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
@@ -118,7 +117,7 @@ impl RedisVerifier {
         StageResult { stage: 1, name, passed: true, error: None }
     }
 
-    async fn test_stage2_key_value(&self) -> StageResult {
+    pub async fn test_stage2_key_value(&self) -> StageResult {
         let name = "Stage 2: Basic Key-Value (SET/GET/DEL/EXISTS)".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
@@ -168,7 +167,7 @@ impl RedisVerifier {
         StageResult { stage: 2, name, passed: true, error: None }
     }
 
-    async fn test_stage3_expiration(&self) -> StageResult {
+    pub async fn test_stage3_expiration(&self) -> StageResult {
         let name = "Stage 3: Expiration (SET ... PX <ms>)".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
@@ -204,7 +203,7 @@ impl RedisVerifier {
         StageResult { stage: 3, name, passed: true, error: None }
     }
 
-    async fn test_stage4_counters(&self) -> StageResult {
+    pub async fn test_stage4_counters(&self) -> StageResult {
         let name = "Stage 4: INCR & DECR Arithmetic".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
@@ -236,5 +235,62 @@ impl RedisVerifier {
         }
 
         StageResult { stage: 4, name, passed: true, error: None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[test]
+    fn test_resp_formatting() {
+        assert_eq!(RedisVerifier::format_resp_cmd(&["PING"]), "*1\r\n$4\r\nPING\r\n");
+        assert_eq!(
+            RedisVerifier::format_resp_cmd(&["ECHO", "hello"]),
+            "*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"
+        );
+        assert_eq!(
+            RedisVerifier::format_resp_cmd(&["SET", "k", "v", "PX", "100"]),
+            "*5\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n$2\r\nPX\r\n$3\r\n100\r\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mock_redis_handshake_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+
+                if let Ok(n) = socket.read(&mut buf).await {
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    if req.contains("PING") {
+                        let _ = socket.write_all(b"+PONG\r\n").await;
+                    }
+                }
+
+                if let Ok(n) = socket.read(&mut buf).await {
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    if req.contains("ECHO") {
+                        let _ = socket.write_all(b"$14\r\nsubdollar_test\r\n").await;
+                    }
+                }
+            }
+        });
+
+        let verifier = RedisVerifier::new(port, None);
+        let res = verifier.test_stage1_handshake().await;
+        assert!(res.passed, "Stage 1 should pass with mock server: {:?}", res.error);
+    }
+
+    #[tokio::test]
+    async fn test_mock_redis_connection_refused() {
+        let verifier = RedisVerifier::new(59999, None);
+        let res = verifier.test_stage1_handshake().await;
+        assert!(!res.passed);
+        assert!(res.error.is_some());
     }
 }

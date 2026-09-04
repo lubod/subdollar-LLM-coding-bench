@@ -1,13 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StageResult {
-    pub stage: u32,
-    pub name: String,
-    pub passed: bool,
-    pub error: Option<String>,
-}
+use super::StageResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpTestSummary {
@@ -51,7 +45,7 @@ impl HttpVerifier {
         }
     }
 
-    async fn test_stage1_root(&self) -> StageResult {
+    pub async fn test_stage1_root(&self) -> StageResult {
         let name = "Stage 1: GET / (Root 200 OK)".to_string();
         let url = format!("http://127.0.0.1:{}/", self.target_port);
         match self.client.get(&url).send().await {
@@ -66,7 +60,7 @@ impl HttpVerifier {
         }
     }
 
-    async fn test_stage2_not_found(&self) -> StageResult {
+    pub async fn test_stage2_not_found(&self) -> StageResult {
         let name = "Stage 2: 404 Not Found Handling".to_string();
         let url = format!("http://127.0.0.1:{}/nonexistent-route-1234", self.target_port);
         match self.client.get(&url).send().await {
@@ -81,7 +75,7 @@ impl HttpVerifier {
         }
     }
 
-    async fn test_stage3_echo(&self) -> StageResult {
+    pub async fn test_stage3_echo(&self) -> StageResult {
         let name = "Stage 3: GET /echo/{str}".to_string();
         let word = "subdollar_speed_test";
         let url = format!("http://127.0.0.1:{}/echo/{}", self.target_port, word);
@@ -100,7 +94,7 @@ impl HttpVerifier {
         }
     }
 
-    async fn test_stage4_user_agent(&self) -> StageResult {
+    pub async fn test_stage4_user_agent(&self) -> StageResult {
         let name = "Stage 4: GET /user-agent Header Echo".to_string();
         let ua = "SubDollarBench-Agent/1.0";
         let url = format!("http://127.0.0.1:{}/user-agent", self.target_port);
@@ -116,7 +110,7 @@ impl HttpVerifier {
         }
     }
 
-    async fn test_stage5_file_storage(&self) -> StageResult {
+    pub async fn test_stage5_file_storage(&self) -> StageResult {
         let name = "Stage 5: POST & GET /files/{filename}".to_string();
         let filename = "bench_artifact.txt";
         let content = "Hello from SubDollarBench automated test payload!";
@@ -143,7 +137,99 @@ impl HttpVerifier {
                     Err(e) => StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
                 }
             }
-            Err(e) => StageResult { stage: 5, name, passed: false, error: Some(format!("GET error: {}", e)) },
+            Err(e) => StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_http_verifier_all_stages_pass() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let file_store: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+
+        let store_clone = file_store.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let store = store_clone.clone();
+
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let n = match socket.read(&mut buf).await {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let first_line = req.lines().next().unwrap_or("");
+                    let parts: Vec<&str> = first_line.split_whitespace().collect();
+                    if parts.len() < 2 {
+                        return;
+                    }
+                    let method = parts[0];
+                    let path = parts[1];
+
+                    let response = if method == "GET" && path == "/" {
+                        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK".to_string()
+                    } else if method == "GET" && path.starts_with("/echo/") {
+                        let echo_str = &path["/echo/".len()..];
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                            echo_str.len(),
+                            echo_str
+                        )
+                    } else if method == "GET" && path == "/user-agent" {
+                        let mut ua = "unknown";
+                        for line in req.lines() {
+                            if line.to_lowercase().starts_with("user-agent:") {
+                                ua = line["user-agent:".len()..].trim();
+                            }
+                        }
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                            ua.len(),
+                            ua
+                        )
+                    } else if method == "POST" && path.starts_with("/files/") {
+                        let filename = path["/files/".len()..].to_string();
+                        let body = req.split("\r\n\r\n").nth(1).unwrap_or("");
+                        store.lock().unwrap().insert(filename, body.to_string());
+                        "HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n".to_string()
+                    } else if method == "GET" && path.starts_with("/files/") {
+                        let filename = &path["/files/".len()..];
+                        if let Some(content) = store.lock().unwrap().get(filename) {
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                                content.len(),
+                                content
+                            )
+                        } else {
+                            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_string()
+                        }
+                    } else {
+                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_string()
+                    };
+
+                    let _ = socket.write_all(response.as_bytes()).await;
+                });
+            }
+        });
+
+        let verifier = HttpVerifier::new(port);
+        let summary = verifier.run_all().await;
+        assert_eq!(summary.passed_count, 5);
+        assert_eq!(summary.total_stages, 5);
+        assert_eq!(summary.pass_rate, 100.0);
     }
 }

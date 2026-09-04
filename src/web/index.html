@@ -296,6 +296,53 @@
     }
     .badge-pass { background: rgba(63, 185, 80, 0.2); color: var(--success); }
     .badge-fail { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
+    .badge-info { background: rgba(88, 166, 255, 0.2); color: var(--primary); }
+
+    /* Trace Inspector Card */
+    .inspector-card {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .stat-box-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .stat-box {
+      background: #161b22;
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 6px;
+      text-align: center;
+    }
+    .stat-box .stat-val {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .stat-box .stat-lbl {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .code-viewer {
+      background: #05070a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #c9d1d9;
+      max-height: 380px;
+      overflow-y: auto;
+      white-space: pre;
+    }
   </style>
 </head>
 <body>
@@ -408,6 +455,7 @@
       <main class="card">
         <div class="tabs">
           <button class="tab active" onclick="switchTab('console')">Live Console</button>
+          <button class="tab" onclick="switchTab('traceability')">Traceability & Runs</button>
           <button class="tab" onclick="switchTab('prompt')">Prompt Specification</button>
           <button class="tab" onclick="switchTab('leaderboard')">Leaderboard</button>
         </div>
@@ -423,16 +471,108 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
 </div>
         </div>
 
-        <!-- Tab 2: Prompt Editor -->
+        <!-- Tab 2: Traceability & Runs History -->
+        <div id="tab-traceability" style="display: none; flex-direction: column; gap: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="hint">Complete run manifests, captured logs, and LLM generated code snapshots</span>
+            <button class="btn btn-secondary" onclick="loadRuns()">🔄 Refresh Runs</button>
+          </div>
+
+          <!-- Runs List Table -->
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run ID</th>
+                  <th>Task</th>
+                  <th>Model</th>
+                  <th>Lang</th>
+                  <th>Pass Rate</th>
+                  <th>Cost ($)</th>
+                  <th>Throughput</th>
+                  <th>Score / ¢</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="runsTableBody">
+                <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Loading runs...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Selected Run Detail Inspector -->
+          <div id="runInspector" class="inspector-card" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+              <h3 style="font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+                <span>🔍 Inspecting Run:</span>
+                <span id="inspectRunId" style="color: var(--primary); font-family: 'JetBrains Mono', monospace;"></span>
+              </h3>
+              <button class="btn-secondary" onclick="closeRunInspector()">✕ Close</button>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stat-box-grid">
+              <div class="stat-box">
+                <div class="stat-val" id="inspectScore" style="color: var(--primary);">-</div>
+                <div class="stat-lbl">Score / ¢</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectPass">-</div>
+                <div class="stat-lbl">Pass Rate</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectCost" style="color: var(--accent);">-</div>
+                <div class="stat-lbl">Cost ($)</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectTokens">-</div>
+                <div class="stat-lbl">Total Tokens</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val" id="inspectDuration">-</div>
+                <div class="stat-lbl">Duration</div>
+              </div>
+            </div>
+
+            <!-- Test Stages Breakdown -->
+            <div>
+              <h4 style="font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--text);">🧪 Verification Stages Breakdown:</h4>
+              <div id="inspectStagesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            </div>
+
+            <!-- Generated Code Explorer -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">💻 Candidate LLM Generated Code:</h4>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <select id="inspectFileSelect" onchange="onInspectFileChange()" style="padding: 4px 8px; font-size: 0.75rem;"></select>
+                  <button class="btn-secondary" onclick="copyInspectFile()">📋 Copy File</button>
+                </div>
+              </div>
+              <pre class="code-viewer" id="inspectCodeViewer">(Select a file above to inspect source code)</pre>
+            </div>
+
+            <!-- Console Log Viewer -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">📜 Captured Execution Trace (console.log):</h4>
+                <button class="btn-secondary" onclick="copyInspectLog()">📋 Copy Full Log</button>
+              </div>
+              <pre class="code-viewer" id="inspectLogViewer" style="color: #7ee787; max-height: 250px;">(Loading log...)</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Prompt Editor -->
         <div id="tab-prompt" style="display: none; flex-direction: column; gap: 10px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span class="hint">System instructions fed into OMP for this task</span>
             <button class="btn btn-secondary" onclick="savePrompt()">💾 Save Changes</button>
           </div>
-          <textarea id="promptEditor"></textarea>
+          <textarea id="promptEditor" placeholder="Loading prompt specification..."></textarea>
         </div>
 
-        <!-- Tab 3: Leaderboard -->
+        <!-- Tab 4: Leaderboard -->
         <div id="tab-leaderboard" style="display: none; overflow-x: auto;">
           <table>
             <thead>
@@ -459,76 +599,72 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
   <script>
     let allModels = [];
     let activeFamily = 'all';
+    let currentInspectRun = null;
 
-    // LocalStorage API key retention
-    const apiKeyInput = document.getElementById('apiKey');
-    apiKeyInput.value = localStorage.getItem('subdollar_openrouter_key') || '';
-    apiKeyInput.addEventListener('change', () => {
-      localStorage.setItem('subdollar_openrouter_key', apiKeyInput.value);
+    // Load saved API key
+    const savedKey = localStorage.getItem('openrouter_api_key');
+    if (savedKey) {
+      document.getElementById('apiKey').value = savedKey;
+    }
+
+    document.getElementById('apiKey').addEventListener('change', (e) => {
+      localStorage.setItem('openrouter_api_key', e.target.value.trim());
       fetchModels();
     });
 
     async function fetchModels() {
-      const apiKey = apiKeyInput.value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
       const badge = document.getElementById('modelCountBadge');
-      badge.textContent = 'Fetching...';
-      badge.className = 'badge';
+      badge.textContent = 'Fetching models...';
+      badge.className = 'badge badge-info';
 
       try {
-        const url = `/api/models?max_price=1.0${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ''}`;
+        const url = apiKey ? `/api/models?key=${encodeURIComponent(apiKey)}` : '/api/models';
         const res = await fetch(url);
-        if (!res.ok) throw new Error('API error');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         allModels = await res.json();
-
-        badge.textContent = `${allModels.length} Models < $1.00`;
+        badge.textContent = `${allModels.length} models < $1.00`;
         badge.className = 'badge badge-pass';
         filterModelsList();
       } catch (e) {
-        badge.textContent = 'Offline / Error';
+        console.error('Failed to load models:', e);
+        badge.textContent = 'Failed to load models';
         badge.className = 'badge badge-fail';
-        console.error('Failed to fetch models', e);
       }
     }
 
-    function filterByFamily(family, btn) {
-      activeFamily = family;
+    function filterByFamily(fam, btn) {
+      activeFamily = fam;
       document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-      if (btn) btn.classList.add('active');
+      btn.classList.add('active');
       filterModelsList();
     }
 
     function filterModelsList() {
-      const query = document.getElementById('modelSearch').value.toLowerCase().trim();
+      const search = document.getElementById('modelSearch').value.toLowerCase().trim();
       const sortMode = document.getElementById('modelSort').value;
       const select = document.getElementById('modelSelect');
-      select.innerHTML = '';
 
       let filtered = allModels.filter(m => {
-        const matchesFamily = activeFamily === 'all' || m.id.toLowerCase().includes(activeFamily);
-        const matchesQuery = !query || m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
-        return matchesFamily && matchesQuery;
+        const matchesFam = (activeFamily === 'all') || m.id.toLowerCase().includes(activeFamily);
+        const matchesSearch = !search || m.id.toLowerCase().includes(search) || m.name.toLowerCase().includes(search);
+        return matchesFam && matchesSearch;
       });
 
-      // Sort models dynamically
-      filtered.sort((a, b) => {
-        if (sortMode === 'newest') {
-          return (b.created || 0) - (a.created || 0);
-        } else if (sortMode === 'price_asc') {
-          const costA = a.prompt_price_per_m + a.completion_price_per_m;
-          const costB = b.prompt_price_per_m + b.completion_price_per_m;
-          return costA - costB;
-        } else if (sortMode === 'price_desc') {
-          const costA = a.prompt_price_per_m + a.completion_price_per_m;
-          const costB = b.prompt_price_per_m + b.completion_price_per_m;
-          return costB - costA;
-        } else if (sortMode === 'name') {
-          return a.name.localeCompare(b.name);
-        }
-        return 0;
-      });
+      if (sortMode === 'newest') {
+        filtered.sort((a, b) => (b.created || 0) - (a.created || 0));
+      } else if (sortMode === 'price_asc') {
+        filtered.sort((a, b) => a.prompt_price_per_m - b.prompt_price_per_m);
+      } else if (sortMode === 'price_desc') {
+        filtered.sort((a, b) => b.prompt_price_per_m - a.prompt_price_per_m);
+      } else if (sortMode === 'name') {
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      select.innerHTML = '';
 
       if (filtered.length === 0) {
-        select.innerHTML = '<option disabled>No models match your search criteria</option>';
+        select.innerHTML = '<option disabled>No models match your filters</option>';
         return;
       }
 
@@ -552,7 +688,6 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
         select.appendChild(opt);
       });
 
-      // Highlight current model if present
       const current = document.getElementById('model').value.replace('openrouter/', '');
       for (let i = 0; i < select.options.length; i++) {
         if (select.options[i].value === current) {
@@ -584,19 +719,24 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
     function switchTab(name) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('tab-console').style.display = 'none';
+      document.getElementById('tab-traceability').style.display = 'none';
       document.getElementById('tab-prompt').style.display = 'none';
       document.getElementById('tab-leaderboard').style.display = 'none';
 
       if (name === 'console') {
         document.getElementById('tab-console').style.display = 'flex';
         document.querySelectorAll('.tab')[0].classList.add('active');
+      } else if (name === 'traceability') {
+        document.getElementById('tab-traceability').style.display = 'flex';
+        document.querySelectorAll('.tab')[1].classList.add('active');
+        loadRuns();
       } else if (name === 'prompt') {
         document.getElementById('tab-prompt').style.display = 'flex';
-        document.querySelectorAll('.tab')[1].classList.add('active');
+        document.querySelectorAll('.tab')[2].classList.add('active');
         loadPrompt();
       } else if (name === 'leaderboard') {
         document.getElementById('tab-leaderboard').style.display = 'block';
-        document.querySelectorAll('.tab')[2].classList.add('active');
+        document.querySelectorAll('.tab')[3].classList.add('active');
         loadLeaderboard();
       }
     }
@@ -671,6 +811,152 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
       }
     }
 
+    async function loadRuns() {
+      try {
+        const res = await fetch('/api/runs');
+        if (!res.ok) return;
+        const runs = await res.json();
+        const tbody = document.getElementById('runsTableBody');
+        tbody.innerHTML = '';
+        if (runs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No archived runs found in runs/.</td></tr>';
+          return;
+        }
+
+        runs.forEach(r => {
+          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec)} req/s` : 'N/A';
+          const passBadge = r.pass_rate === 100 
+            ? `<span class="badge badge-pass">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>` 
+            : `<span class="badge badge-fail">${r.pass_rate}% (${r.passed_stages}/${r.total_stages})</span>`;
+          
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text);">${r.run_id}</td>
+            <td><b>${r.task}</b></td>
+            <td style="color: var(--primary); font-weight: 600;">${r.model}</td>
+            <td style="color: var(--success);">${r.language}</td>
+            <td>${passBadge}</td>
+            <td style="color: var(--accent);">$${r.cost_usd.toFixed(4)}</td>
+            <td>${tp}</td>
+            <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
+            <td><button class="btn-secondary" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        console.error('Failed to load runs:', e);
+      }
+    }
+
+    async function inspectRun(runId) {
+      const inspector = document.getElementById('runInspector');
+      inspector.style.display = 'flex';
+      document.getElementById('inspectRunId').textContent = runId;
+
+      try {
+        const res = await fetch(`/api/runs/${runId}`);
+        if (!res.ok) throw new Error('Run manifest not found');
+        const m = await res.json();
+        currentInspectRun = m;
+
+        document.getElementById('inspectScore').textContent = m.efficiency_score.toFixed(1);
+        document.getElementById('inspectPass').innerHTML = m.pass_rate === 100 
+          ? `<span style="color: var(--success);">${m.pass_rate}%</span>` 
+          : `<span style="color: var(--danger);">${m.pass_rate}%</span>`;
+        document.getElementById('inspectCost').textContent = `$${m.cost_usd.toFixed(4)}`;
+        document.getElementById('inspectTokens').textContent = m.tokens ? m.tokens.total_tokens.toLocaleString() : 'N/A';
+        document.getElementById('inspectDuration').textContent = `${Math.round(m.duration_seconds)}s`;
+
+        // Stages list
+        const stagesList = document.getElementById('inspectStagesList');
+        stagesList.innerHTML = '';
+        if (m.stages && m.stages.length > 0) {
+          m.stages.forEach(s => {
+            const badge = s.passed 
+              ? `<span class="badge badge-pass">PASS</span>` 
+              : `<span class="badge badge-fail">FAIL</span>`;
+            const err = s.error ? `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--danger); margin-top: 2px;">Error: ${s.error}</div>` : '';
+            stagesList.innerHTML += `
+              <div style="background: #161b22; border: 1px solid var(--border); padding: 8px 12px; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 0.8rem; font-weight: 500;">${s.name}</span>
+                  ${badge}
+                </div>
+                ${err}
+              </div>
+            `;
+          });
+        } else {
+          stagesList.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No stage details recorded.</div>';
+        }
+
+        // File Selector
+        const fileSel = document.getElementById('inspectFileSelect');
+        fileSel.innerHTML = '';
+        if (m.files && m.files.length > 0) {
+          m.files.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.textContent = `${f.name} (${(f.size_bytes / 1024).toFixed(1)} KB)`;
+            fileSel.appendChild(opt);
+          });
+          onInspectFileChange();
+        } else {
+          fileSel.innerHTML = '<option disabled>No workspace files saved</option>';
+          document.getElementById('inspectCodeViewer').textContent = '(No files recorded)';
+        }
+
+        // Load console.log
+        const logRes = await fetch(`/api/runs/${runId}/log`);
+        if (logRes.ok) {
+          const logText = await logRes.text();
+          document.getElementById('inspectLogViewer').textContent = logText;
+        } else {
+          document.getElementById('inspectLogViewer').textContent = '(Console log not available)';
+        }
+
+        inspector.scrollIntoView({ behavior: 'smooth' });
+
+      } catch (e) {
+        alert(`Failed to load run details: ${e.message}`);
+      }
+    }
+
+    async function onInspectFileChange() {
+      if (!currentInspectRun) return;
+      const filename = document.getElementById('inspectFileSelect').value;
+      if (!filename) return;
+
+      const viewer = document.getElementById('inspectCodeViewer');
+      viewer.textContent = `Loading ${filename}...`;
+
+      try {
+        const res = await fetch(`/api/runs/${currentInspectRun.run_id}/file?file=${encodeURIComponent(filename)}`);
+        if (res.ok) {
+          viewer.textContent = await res.text();
+        } else {
+          viewer.textContent = `(Could not load file ${filename})`;
+        }
+      } catch (e) {
+        viewer.textContent = `(Error: ${e.message})`;
+      }
+    }
+
+    function closeRunInspector() {
+      document.getElementById('runInspector').style.display = 'none';
+      currentInspectRun = null;
+    }
+
+    function copyInspectFile() {
+      const code = document.getElementById('inspectCodeViewer').textContent;
+      navigator.clipboard.writeText(code).then(() => alert('Code copied to clipboard!'));
+    }
+
+    function copyInspectLog() {
+      const log = document.getElementById('inspectLogViewer').textContent;
+      navigator.clipboard.writeText(log).then(() => alert('Full log copied to clipboard!'));
+    }
+
     async function startBenchmark() {
       const apiKey = document.getElementById('apiKey').value.trim();
       const model = document.getElementById('model').value.trim();
@@ -720,6 +1006,7 @@ Select a model under $1.00 and click "Start Benchmark Run" to begin.
             eventSource.close();
             resetStatus();
             loadLeaderboard();
+            loadRuns();
           } else {
             appendLog(event.data);
           }
