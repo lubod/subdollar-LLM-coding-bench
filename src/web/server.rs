@@ -51,6 +51,7 @@ pub struct SubDollarModel {
     pub prompt_price_per_m: f64,
     pub completion_price_per_m: f64,
     pub context_length: u64,
+    pub created: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +59,7 @@ struct OpenRouterModelItem {
     id: String,
     name: String,
     context_length: Option<u64>,
+    created: Option<i64>,
     pricing: Option<OpenRouterPricing>,
 }
 
@@ -179,6 +181,7 @@ async fn get_models(
                     prompt_price_per_m: p_m,
                     completion_price_per_m: c_m,
                     context_length: item.context_length.unwrap_or(0),
+                    created: item.created.unwrap_or(0),
                 })
             } else {
                 None
