@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-04 10:58:29 UTC*
+*Last Updated: 2026-09-04 11:56:53 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -22,12 +22,13 @@
 | 🥉 3 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | HTTP/1.1 | `Python` | 100% (5/5) | 22195 req/s | $0.0080 | **125.2** pts/¢ | [Inspect](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_090340/) |
 | 4 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | Redis | `Rust` | 100% (4/4) | 74405 req/s | $0.0107 | **93.4** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848/) |
 | 5 | `openrouter/meta/muse-spark-1.3-contributor` | `max` | Redis | `Unknown` | 100% (4/4) | 58337 req/s | $0.0453 | **22.1** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_074725/) |
-| 6 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085157/) |
-| 7 | `openrouter/google/gemini-2.5-flash` | `auto` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_google_gemini-2.5-flash_20260904_074517/) |
-| 8 | `openrouter/google/gemini-2.5-flash` | `auto` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_google_gemini-2.5-flash_20260904_073515/) |
-| 9 | `openrouter/google/gemini-2.5-flash` | `auto` | Redis | `Unknown` | 0% (0/4) | N/A | $0.5484 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_google_gemini-2.5-flash_20260904_071128/) |
-| 10 | `openrouter/meta/muse-spark-1.3-contributor` | `max` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_070244/) |
-| 11 | `openrouter/meta/muse-spark-1.3-contributor` | `max` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_070139/) |
+| 6 | `openrouter/qwen/qwen3.8-flash` | `max` | Redis | `Rust` | 100% (4/4) | 61463 req/s | $0.4279 | **2.3** pts/¢ | [Inspect](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
+| 7 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085157/) |
+| 8 | `openrouter/google/gemini-2.5-flash` | `auto` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_google_gemini-2.5-flash_20260904_074517/) |
+| 9 | `openrouter/google/gemini-2.5-flash` | `auto` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_google_gemini-2.5-flash_20260904_073515/) |
+| 10 | `openrouter/google/gemini-2.5-flash` | `auto` | Redis | `Unknown` | 0% (0/4) | N/A | $0.5484 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_google_gemini-2.5-flash_20260904_071128/) |
+| 11 | `openrouter/meta/muse-spark-1.3-contributor` | `max` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_070244/) |
+| 12 | `openrouter/meta/muse-spark-1.3-contributor` | `max` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_070139/) |
 
 ---
 
@@ -45,6 +46,7 @@ The candidate LLM is instructed to build a production-grade, concurrent Redis cl
 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Python` | 100% | 25869 req/s | $0.0000 | 10000.0 pts/¢ | [runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085143/](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085143/) |
 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Rust` | 100% | 74405 req/s | $0.0107 | 93.4 pts/¢ | [runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848/](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848/) |
 | `openrouter/meta/muse-spark-1.3-contributor` | `max` | `Unknown` | 100% | 58337 req/s | $0.0453 | 22.1 pts/¢ | [runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_074725/](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_074725/) |
+| `openrouter/qwen/qwen3.8-flash` | `max` | `Rust` | 100% | 61463 req/s | $0.4279 | 2.3 pts/¢ | [runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/](runs/redis_openrouter_qwen_qwen3.8-flash_20260904_110157/) |
 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085157/](runs/redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085157/) |
 | `openrouter/google/gemini-2.5-flash` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_openrouter_google_gemini-2.5-flash_20260904_074517/](runs/redis_openrouter_google_gemini-2.5-flash_20260904_074517/) |
 | `openrouter/google/gemini-2.5-flash` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_openrouter_google_gemini-2.5-flash_20260904_073515/](runs/redis_openrouter_google_gemini-2.5-flash_20260904_073515/) |
@@ -81,8 +83,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `58a9163` (branch `master`) |
-| **Benchmark Captured** | 2026-09-04T10:58:29.248970080+00:00 |
+| **Git Baseline** | Commit `a23f4ba` (branch `master`) |
+| **Benchmark Captured** | 2026-09-04T11:56:53.952057520+00:00 |
 
 ---
 
