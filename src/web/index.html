@@ -299,39 +299,6 @@
     .badge-info { background: rgba(88, 166, 255, 0.2); color: var(--primary); }
     .badge-effort { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
 
-    /* Trace Inspector Card */
-    .inspector-card {
-      background: #0d1117;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .stat-box-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-      gap: 10px;
-    }
-    .stat-box {
-      background: #161b22;
-      border: 1px solid var(--border);
-      padding: 10px;
-      border-radius: 6px;
-      text-align: center;
-    }
-    .stat-box .stat-val {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: #fff;
-    }
-    .stat-box .stat-lbl {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
     .code-viewer {
       background: #05070a;
       border: 1px solid var(--border);
@@ -343,6 +310,290 @@
       max-height: 380px;
       overflow-y: auto;
       white-space: pre;
+    }
+
+    /* ==========================================================================
+       Run Inspector Modal Dialog
+       ========================================================================== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 8, 14, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-dialog {
+      width: 100%;
+      max-width: 1320px;
+      height: 92vh;
+      max-height: 920px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalSlideIn {
+      from { opacity: 0; transform: scale(0.97) translateY(12px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-header {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #161b22;
+      flex-shrink: 0;
+      gap: 16px;
+    }
+    .modal-title-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .modal-kpi-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      padding: 10px 20px;
+      background: #090d13;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .kpi-chip {
+      background: #161b22;
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      text-align: center;
+    }
+    .kpi-val {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kpi-lbl {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+    .modal-tabs-bar {
+      display: flex;
+      gap: 4px;
+      padding: 8px 20px 0 20px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .modal-tab-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .modal-tab-btn:hover {
+      color: #fff;
+    }
+    .modal-tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: rgba(88, 166, 255, 0.08);
+      border-top-left-radius: 6px;
+      border-top-right-radius: 6px;
+    }
+    .modal-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0d1117;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .modal-pane {
+      display: none;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    .modal-pane.active {
+      display: flex;
+    }
+
+    /* Split Code Browser */
+    .code-browser-split {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    .code-sidebar {
+      width: 280px;
+      min-width: 230px;
+      max-width: 320px;
+      border-right: 1px solid var(--border);
+      background: #090d13;
+      display: flex;
+      flex-direction: column;
+    }
+    .code-sidebar-filter {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .code-file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      list-style: none;
+      margin: 0;
+    }
+    .code-file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      transition: all 0.12s ease;
+      user-select: none;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .code-file-item:hover {
+      background: #161b22;
+      color: #fff;
+    }
+    .code-file-item.active {
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--primary);
+      font-weight: 600;
+      border: 1px solid rgba(88, 166, 255, 0.3);
+    }
+    .code-main-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      height: 100%;
+      background: #05070a;
+    }
+    .code-main-header {
+      padding: 8px 16px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .code-pre-viewer {
+      flex: 1;
+      margin: 0;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: #c9d1d9;
+      background: #05070a;
+      overflow: auto;
+      white-space: pre;
+    }
+
+    /* Trace Log Terminal */
+    .trace-container {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: #05070a;
+    }
+    .trace-header {
+      padding: 8px 16px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .trace-terminal {
+      flex: 1;
+      margin: 0;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: #7ee787;
+      background: #05070a;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Stages Breakdown */
+    .stages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #0d1117;
+    }
+    .stage-card {
+      background: #161b22;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Specs & Manifest */
+    .manifest-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: #0d1117;
     }
   </style>
 </head>
@@ -546,84 +797,7 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
             </table>
           </div>
 
-          <!-- Selected Run Detail Inspector -->
-          <div id="runInspector" class="inspector-card" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
-              <h3 style="font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 8px;">
-                <span>🔍 Inspecting Run:</span>
-                <span id="inspectRunId" style="color: var(--primary); font-family: 'JetBrains Mono', monospace;"></span>
-                <span id="inspectGitBadge"></span>
-              </h3>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <button id="inspectPublishBtn" class="btn-primary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="publishRunModal(currentInspectRun ? currentInspectRun.run_id : '')">🚀 Publish to Git</button>
-                <button class="btn-secondary" onclick="closeRunInspector()">✕ Close</button>
-              </div>
-            </div>
 
-            <!-- Execution Environment & Hardware Specs -->
-            <div style="background: #161b22; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">🖥️ Execution Environment & Hardware Specs:</h4>
-                <span id="inspectGitCommit" style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent);"></span>
-              </div>
-              <div id="inspectEnvTable" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 0.75rem;"></div>
-            </div>
-
-            <!-- Stats Grid -->
-            <div class="stat-box-grid">
-              <div class="stat-box">
-                <div class="stat-val" id="inspectScore" style="color: var(--primary);">-</div>
-                <div class="stat-lbl">Score / ¢</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-val" id="inspectEffort" style="color: var(--warning);">-</div>
-                <div class="stat-lbl">Effort</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-val" id="inspectPass">-</div>
-                <div class="stat-lbl">Pass Rate</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-val" id="inspectCost" style="color: var(--accent);">-</div>
-                <div class="stat-lbl">Cost ($)</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-val" id="inspectTokens">-</div>
-                <div class="stat-lbl">Total Tokens</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-val" id="inspectDuration">-</div>
-                <div class="stat-lbl">Duration</div>
-              </div>
-            </div>
-
-            <!-- Test Stages Breakdown -->
-            <div>
-              <h4 style="font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--text);">🧪 Verification Stages Breakdown:</h4>
-              <div id="inspectStagesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
-            </div>
-
-            <!-- Generated Code Explorer -->
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">💻 Candidate LLM Generated Code:</h4>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                  <select id="inspectFileSelect" onchange="onInspectFileChange()" style="padding: 4px 8px; font-size: 0.75rem;"></select>
-                  <button class="btn-secondary" onclick="copyInspectFile()">📋 Copy File</button>
-                </div>
-              </div>
-              <pre class="code-viewer" id="inspectCodeViewer">(Select a file above to inspect source code)</pre>
-            </div>
-
-            <!-- Console Log Viewer -->
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h4 style="font-size: 0.8rem; font-weight: 600; color: var(--text);">📜 Captured Execution Trace (console.log):</h4>
-                <button class="btn-secondary" onclick="copyInspectLog()">📋 Copy Full Log</button>
-              </div>
-              <pre class="code-viewer" id="inspectLogViewer" style="color: #7ee787; max-height: 250px;">(Loading log...)</pre>
-            </div>
-          </div>
         </div>
 
         <!-- Tab 3: Prompt Editor -->
@@ -649,10 +823,11 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
                 <th>Cost ($)</th>
                 <th>Score / ¢</th>
                 <th>Time</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody id="leaderboardBody">
-              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
+              <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">No runs recorded yet.</td></tr>
             </tbody>
           </table>
         </div>
@@ -934,6 +1109,9 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             <td style="color: var(--accent);">$${r.total_cost_usd.toFixed(4)}</td>
             <td style="font-weight: bold; color: var(--primary);">${r.efficiency_score.toFixed(1)}</td>
             <td style="color: var(--text-muted); font-size: 0.75rem;">${new Date(r.timestamp).toLocaleTimeString()}</td>
+            <td style="text-align:center;">
+              <button class="btn-secondary" style="padding:2px 8px;font-size:0.72rem;" onclick="inspectRun('${r.id}')">🔍 Inspect</button>
+            </td>
           </tr>`;
           tbody.innerHTML += row;
         });
@@ -987,10 +1165,76 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
+    let currentInspectLogRaw = '';
+    let currentInspectFiles = [];
+    let currentInspectActiveFile = null;
+
+    function openRunInspectorModal() {
+      const modal = document.getElementById('inspectModal');
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeRunInspector() {
+      const modal = document.getElementById('inspectModal');
+      if (modal) modal.style.display = 'none';
+      document.body.style.overflow = '';
+      currentInspectRun = null;
+      currentInspectLogRaw = '';
+      currentInspectFiles = [];
+      currentInspectActiveFile = null;
+    }
+
+    function onModalBackdropClick(e) {
+      if (e.target && e.target.id === 'inspectModal') {
+        closeRunInspector();
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('inspectModal');
+        if (modal && modal.style.display === 'flex') {
+          closeRunInspector();
+        }
+      }
+    });
+
+    function switchModalTab(tabKey) {
+      const tabs = ['code', 'trace', 'stages', 'specs'];
+      tabs.forEach(k => {
+        const btn = document.getElementById(`modalTabBtn-${k}`);
+        const pane = document.getElementById(`modalPane-${k}`);
+        if (btn) btn.classList.toggle('active', k === tabKey);
+        if (pane) pane.classList.toggle('active', k === tabKey);
+      });
+    }
+
+    function getFileIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      if (ext === 'rs') return '🦀';
+      if (ext === 'go') return '🐹';
+      if (ext === 'py') return '🐍';
+      if (ext === 'sh' || ext === 'bash') return '🐚';
+      if (ext === 'toml' || ext === 'yaml' || ext === 'yml' || ext === 'json') return '⚙️';
+      if (ext === 'md' || ext === 'txt') return '📝';
+      if (ext === 'lock' || ext === 'mod') return '🔒';
+      return '📄';
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(2) + ' MB';
+    }
+
     async function inspectRun(runId) {
-      const inspector = document.getElementById('runInspector');
-      inspector.style.display = 'flex';
-      document.getElementById('inspectRunId').textContent = runId;
+      openRunInspectorModal();
+      document.getElementById('modalInspectRunId').textContent = runId;
+      document.getElementById('modalInspectCodeViewer').textContent = 'Loading manifest and files...';
+      document.getElementById('modalInspectLogViewer').textContent = 'Loading execution trace...';
+      switchModalTab('code');
 
       try {
         const res = await fetch(`/api/runs/${runId}`);
@@ -998,130 +1242,308 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const m = await res.json();
         currentInspectRun = m;
 
-        document.getElementById('inspectScore').textContent = m.efficiency_score.toFixed(1);
-        document.getElementById('inspectEffort').textContent = m.effort || 'auto';
-        document.getElementById('inspectPass').innerHTML = m.pass_rate === 100 
-          ? `<span style="color: var(--success);">${m.pass_rate}%</span>` 
-          : `<span style="color: var(--danger);">${m.pass_rate}%</span>`;
-        document.getElementById('inspectCost').textContent = `$${m.cost_usd.toFixed(4)}`;
-        document.getElementById('inspectTokens').textContent = m.tokens ? m.tokens.total_tokens.toLocaleString() : 'N/A';
-        document.getElementById('inspectDuration').textContent = `${Math.round(m.duration_seconds)}s`;
-
-        // Execution Environment & Git Status
-        const envContainer = document.getElementById('inspectEnvTable');
-        if (m.env) {
-          document.getElementById('inspectGitCommit').textContent = `Git Baseline: ${m.git_commit || m.env.git_commit} (${m.env.git_branch})`;
-          envContainer.innerHTML = `
-            <div><span style="color:var(--text-muted)">OS:</span> ${m.env.os}</div>
-            <div><span style="color:var(--text-muted)">Kernel:</span> ${m.env.kernel}</div>
-            <div><span style="color:var(--text-muted)">CPU:</span> ${m.env.cpu_model} (${m.env.cpu_cores} vCPUs)</div>
-            <div><span style="color:var(--text-muted)">Memory:</span> ${m.env.total_memory}</div>
-            <div><span style="color:var(--text-muted)">Docker:</span> ${m.env.docker_version}</div>
-            <div><span style="color:var(--text-muted)">Rust:</span> ${m.env.rust_version}</div>
-          `;
-        } else {
-          document.getElementById('inspectGitCommit').textContent = '';
-          envContainer.innerHTML = '<div style="color:var(--text-muted)">No environment specs captured yet.</div>';
-        }
-
-        const gitBadge = document.getElementById('inspectGitBadge');
-        const pubBtn = document.getElementById('inspectPublishBtn');
+        // Populate Header & Badges
+        const gitBadge = document.getElementById('modalInspectGitBadge');
         if (m.is_published) {
-          gitBadge.innerHTML = `<span class="badge" style="background:#238636;color:#fff;font-size:0.75rem;">✔ Committed to Git</span>`;
-          if (pubBtn) pubBtn.textContent = '🔄 Re-publish to Git';
+          gitBadge.innerHTML = `<span class="badge" style="background:#238636;color:#fff;font-size:0.75rem;">✔ Git Published</span>`;
         } else {
           gitBadge.innerHTML = `<span class="badge" style="background:#6e7681;color:#fff;font-size:0.75rem;">Local Only</span>`;
-          if (pubBtn) pubBtn.textContent = '🚀 Publish to Git';
         }
 
-        // Stages list
-        const stagesList = document.getElementById('inspectStagesList');
-        stagesList.innerHTML = '';
-        if (m.stages && m.stages.length > 0) {
-          m.stages.forEach(s => {
-            const badge = s.passed 
-              ? `<span class="badge badge-pass">PASS</span>` 
-              : `<span class="badge badge-fail">FAIL</span>`;
-            const err = s.error ? `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--danger); margin-top: 2px;">Error: ${s.error}</div>` : '';
-            stagesList.innerHTML += `
-              <div style="background: #161b22; border: 1px solid var(--border); padding: 8px 12px; border-radius: 4px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="font-size: 0.8rem; font-weight: 500;">${s.name}</span>
-                  ${badge}
-                </div>
-                ${err}
-              </div>
-            `;
-          });
+        const statusBadge = document.getElementById('modalInspectStatusBadge');
+        const isCompleted = m.status === 'completed' || m.pass_rate === 100;
+        statusBadge.innerHTML = `<span class="badge ${isCompleted ? 'badge-pass' : 'badge-fail'}">${(m.status || 'unknown').toUpperCase()}</span>`;
+
+        const pubBtn = document.getElementById('modalInspectPublishBtn');
+        if (pubBtn) pubBtn.textContent = m.is_published ? '🔄 Re-publish to Git' : '🚀 Publish to Git';
+
+        // Populate KPI Strip
+        document.getElementById('modalInspectScore').textContent = (m.efficiency_score || 0).toFixed(1);
+        document.getElementById('modalInspectPass').innerHTML = m.pass_rate === 100 
+          ? `<span style="color: var(--success);">${m.pass_rate}% (${m.passed_stages || 0}/${m.total_stages || 0})</span>` 
+          : `<span style="color: var(--danger);">${(m.pass_rate || 0).toFixed(0)}% (${m.passed_stages || 0}/${m.total_stages || 0})</span>`;
+        document.getElementById('modalInspectCost').textContent = `$${(m.cost_usd || 0).toFixed(4)}`;
+        
+        let tokenStr = 'N/A';
+        if (m.tokens) {
+          const tot = m.tokens.total_tokens || 0;
+          const pr = m.tokens.prompt_tokens || 0;
+          const cp = m.tokens.completion_tokens || 0;
+          tokenStr = `${tot.toLocaleString()} <span style="font-size:0.68rem; color:var(--text-muted); font-weight:normal;">(${pr.toLocaleString()} / ${cp.toLocaleString()})</span>`;
+        }
+        document.getElementById('modalInspectTokens').innerHTML = tokenStr;
+
+        document.getElementById('modalInspectThroughput').textContent = m.throughput_req_sec ? `${Math.round(m.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
+        document.getElementById('modalInspectDuration').textContent = `${Math.round(m.duration_seconds || 0)}s`;
+        document.getElementById('modalInspectEffort').innerHTML = `${m.effort || 'auto'} <span style="color:var(--text-muted); font-size:0.72rem;">· ${m.task}</span>`;
+
+        // Render Test Stages
+        renderInspectStages(m);
+
+        // Render Specs & Manifest
+        renderInspectSpecs(m);
+
+        // Render Workspace Files
+        currentInspectFiles = m.files || [];
+        document.getElementById('modalCodeCountBadge').textContent = currentInspectFiles.length;
+        renderInspectFileList(currentInspectFiles);
+
+        if (currentInspectFiles.length > 0) {
+          const preferred = currentInspectFiles.find(f => f.name === 'src/main.rs' || f.name === 'main.rs' || f.name === 'main.go' || f.name.endsWith('.rs') || f.name.endsWith('.go')) || currentInspectFiles[0];
+          selectInspectFile(preferred.name);
         } else {
-          stagesList.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No stage details recorded.</div>';
+          document.getElementById('modalActiveFileName').textContent = '(No files captured)';
+          document.getElementById('modalActiveFileMeta').textContent = '';
+          document.getElementById('modalInspectCodeViewer').textContent = '// No workspace files were generated or recorded during this run.';
         }
 
-        // File Selector
-        const fileSel = document.getElementById('inspectFileSelect');
-        fileSel.innerHTML = '';
-        if (m.files && m.files.length > 0) {
-          m.files.forEach(f => {
-            const opt = document.createElement('option');
-            opt.value = f.name;
-            opt.textContent = `${f.name} (${(f.size_bytes / 1024).toFixed(1)} KB)`;
-            fileSel.appendChild(opt);
-          });
-          onInspectFileChange();
-        } else {
-          fileSel.innerHTML = '<option disabled>No workspace files saved</option>';
-          document.getElementById('inspectCodeViewer').textContent = '(No files recorded)';
-        }
-
-        // Load console.log
-        const logRes = await fetch(`/api/runs/${runId}/log`);
-        if (logRes.ok) {
-          const logText = await logRes.text();
-          document.getElementById('inspectLogViewer').textContent = logText;
-        } else {
-          document.getElementById('inspectLogViewer').textContent = '(Console log not available)';
-        }
-
-        inspector.scrollIntoView({ behavior: 'smooth' });
+        // Fetch captured execution trace (console.log)
+        fetchInspectLog(runId);
 
       } catch (e) {
         alert(`Failed to load run details: ${e.message}`);
+        closeRunInspector();
       }
     }
 
-    async function onInspectFileChange() {
-      if (!currentInspectRun) return;
-      const filename = document.getElementById('inspectFileSelect').value;
-      if (!filename) return;
+    async function fetchInspectLog(runId) {
+      try {
+        const res = await fetch(`/api/runs/${runId}/log`);
+        if (res.ok) {
+          currentInspectLogRaw = await res.text();
+        } else {
+          currentInspectLogRaw = '(Execution trace log was not found for this run)';
+        }
+      } catch (e) {
+        currentInspectLogRaw = `(Error fetching log: ${e.message})`;
+      }
+      filterInspectLog(document.getElementById('modalTraceFilterInput') ? document.getElementById('modalTraceFilterInput').value : '');
+    }
 
-      const viewer = document.getElementById('inspectCodeViewer');
+    function renderInspectFileList(files) {
+      const list = document.getElementById('modalInspectFileList');
+      list.innerHTML = '';
+      if (!files || files.length === 0) {
+        list.innerHTML = '<div style="padding:10px; color:var(--text-muted); font-size:0.75rem; text-align:center;">No files saved</div>';
+        return;
+      }
+      files.forEach(f => {
+        const item = document.createElement('div');
+        item.className = `code-file-item ${currentInspectActiveFile === f.name ? 'active' : ''}`;
+        item.id = `fileItem-${f.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        item.onclick = () => selectInspectFile(f.name);
+        item.innerHTML = `
+          <div style="display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">
+            <span style="font-size:0.9rem;">${getFileIcon(f.name)}</span>
+            <span style="overflow:hidden; text-overflow:ellipsis;" title="${f.name}">${f.name}</span>
+          </div>
+          <span style="font-size:0.68rem; color:var(--text-muted); flex-shrink:0; margin-left:6px;">${formatBytes(f.size_bytes)}</span>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function filterInspectFiles(query) {
+      const q = (query || '').toLowerCase().trim();
+      const filtered = q ? currentInspectFiles.filter(f => f.name.toLowerCase().includes(q)) : currentInspectFiles;
+      renderInspectFileList(filtered);
+    }
+
+    async function selectInspectFile(filename) {
+      currentInspectActiveFile = filename;
+      document.querySelectorAll('.code-file-item').forEach(el => el.classList.remove('active'));
+      const activeEl = document.getElementById(`fileItem-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+      if (activeEl) activeEl.classList.add('active');
+
+      const fileObj = currentInspectFiles.find(f => f.name === filename);
+      document.getElementById('modalActiveFileIcon').textContent = getFileIcon(filename);
+      document.getElementById('modalActiveFileName').textContent = filename;
+      document.getElementById('modalActiveFileMeta').textContent = fileObj ? `(${formatBytes(fileObj.size_bytes)})` : '';
+
+      const viewer = document.getElementById('modalInspectCodeViewer');
       viewer.textContent = `Loading ${filename}...`;
 
       try {
         const res = await fetch(`/api/runs/${currentInspectRun.run_id}/file?file=${encodeURIComponent(filename)}`);
         if (res.ok) {
-          viewer.textContent = await res.text();
+          const content = await res.text();
+          viewer.textContent = content;
+          const lineCount = content.split('\n').length;
+          document.getElementById('modalActiveFileMeta').textContent = `${formatBytes(fileObj ? fileObj.size_bytes : content.length)} · ${lineCount.toLocaleString()} lines`;
         } else {
-          viewer.textContent = `(Could not load file ${filename})`;
+          viewer.textContent = `(Failed to load file: ${filename})`;
         }
       } catch (e) {
         viewer.textContent = `(Error: ${e.message})`;
       }
     }
 
-    function closeRunInspector() {
-      document.getElementById('runInspector').style.display = 'none';
-      currentInspectRun = null;
+    function filterInspectLog(query) {
+      const viewer = document.getElementById('modalInspectLogViewer');
+      const counter = document.getElementById('modalTraceLineCount');
+      if (!currentInspectLogRaw) {
+        viewer.textContent = '(No log available)';
+        if (counter) counter.textContent = '0 lines';
+        return;
+      }
+
+      const q = (query || '').trim().toLowerCase();
+      const allLines = currentInspectLogRaw.split('\n');
+      const totalCount = allLines.length;
+
+      if (!q) {
+        viewer.textContent = currentInspectLogRaw;
+        if (counter) counter.textContent = `${totalCount.toLocaleString()} lines`;
+        document.getElementById('modalLogLinesBadge').textContent = `${totalCount} lines`;
+        return;
+      }
+
+      const matchedLines = allLines.filter(line => line.toLowerCase().includes(q));
+      viewer.textContent = matchedLines.length > 0 ? matchedLines.join('\n') : `(No lines matched query "${query}")`;
+      if (counter) counter.textContent = `${matchedLines.length.toLocaleString()} / ${totalCount.toLocaleString()} lines`;
+    }
+
+    function scrollInspectLog(toBottom) {
+      const viewer = document.getElementById('modalInspectLogViewer');
+      if (viewer) {
+        viewer.scrollTop = toBottom ? viewer.scrollHeight : 0;
+      }
+    }
+
+    function renderInspectStages(m) {
+      const container = document.getElementById('modalStagesList');
+      const banner = document.getElementById('modalStagesSummaryBanner');
+      container.innerHTML = '';
+
+      const passed = m.passed_stages || 0;
+      const total = m.total_stages || (m.stages ? m.stages.length : 0);
+      const isFullPass = m.pass_rate === 100 && total > 0;
+
+      document.getElementById('modalStagesCountBadge').textContent = `${passed}/${total}`;
+      document.getElementById('modalStagesCountBadge').className = `badge ${isFullPass ? 'badge-pass' : 'badge-fail'}`;
+
+      banner.style.background = isFullPass ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)';
+      banner.style.border = `1px solid ${isFullPass ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`;
+      banner.innerHTML = `
+        <div style="font-weight: 600; font-size: 0.88rem; color: ${isFullPass ? 'var(--success)' : 'var(--danger)'};">
+          ${isFullPass ? '🎉 All Verification Stages Passed!' : `⚠️ Verification Incomplete: ${passed} of ${total} Passed (${(m.pass_rate || 0).toFixed(0)}%)`}
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-muted);">
+          Task: <b style="color:#fff;">${m.task}</b> | Status: <b style="color:#fff;">${m.status}</b>
+        </div>
+      `;
+
+      if (m.stages && m.stages.length > 0) {
+        m.stages.forEach(s => {
+          const card = document.createElement('div');
+          card.className = 'stage-card';
+          const badge = s.passed 
+            ? `<span class="badge badge-pass">✔ PASSED</span>` 
+            : `<span class="badge badge-fail">✕ FAILED</span>`;
+          const errBox = s.error ? `
+            <div style="background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.3); border-radius: 4px; padding: 8px 12px; margin-top: 4px;">
+              <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; margin-bottom: 2px;">FAILURE REASON:</div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--danger); white-space: pre-wrap;">${s.error}</div>
+            </div>
+          ` : '';
+
+          card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.86rem; font-weight: 600; color: #fff;">${s.name || `Stage ${s.stage}`}</span>
+              ${badge}
+            </div>
+            ${errBox}
+          `;
+          container.appendChild(card);
+        });
+      } else {
+        container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px;">No detailed stages were recorded for this run.</div>';
+      }
+
+      if (m.throughput_req_sec) {
+        const tpCard = document.createElement('div');
+        tpCard.className = 'stage-card';
+        tpCard.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.86rem; font-weight: 600; color: var(--primary);">⚡ High-Concurrency Throughput Benchmark:</span>
+            <span class="badge badge-pass">${Math.round(m.throughput_req_sec).toLocaleString()} req/s</span>
+          </div>
+          <div style="font-size: 0.76rem; color: var(--text-muted);">
+            Measured against official redis benchmark tool suite inside isolated sandbox environment.
+          </div>
+        `;
+        container.appendChild(tpCard);
+      }
+    }
+
+    function renderInspectSpecs(m) {
+      const grid = document.getElementById('modalInspectEnvGrid');
+      const gitCommitSpan = document.getElementById('modalInspectGitCommit');
+      grid.innerHTML = '';
+
+      if (m.env) {
+        gitCommitSpan.textContent = `Git Baseline: ${m.git_commit || m.env.git_commit} (${m.env.git_branch || 'master'})`;
+        grid.innerHTML = `
+          <div><span style="color:var(--text-muted)">OS:</span> <b>${m.env.os || 'Linux'}</b></div>
+          <div><span style="color:var(--text-muted)">Kernel:</span> <b>${m.env.kernel || 'N/A'}</b></div>
+          <div><span style="color:var(--text-muted)">Arch:</span> <b>${m.env.arch || 'x86_64'}</b></div>
+          <div><span style="color:var(--text-muted)">CPU:</span> <b>${m.env.cpu_model || 'Unknown'} (${m.env.cpu_cores || 0} vCPUs)</b></div>
+          <div><span style="color:var(--text-muted)">Memory:</span> <b>${m.env.total_memory || 'Unknown'}</b></div>
+          <div><span style="color:var(--text-muted)">Docker:</span> <b>${m.env.docker_version || 'N/A'}</b></div>
+          <div><span style="color:var(--text-muted)">Rust:</span> <b>${m.env.rust_version || 'N/A'}</b></div>
+          <div><span style="color:var(--text-muted)">Node / Python:</span> <b>${m.env.node_version || 'N/A'} / ${m.env.python_version || 'N/A'}</b></div>
+        `;
+      } else {
+        gitCommitSpan.textContent = '';
+        grid.innerHTML = '<div style="color:var(--text-muted)">No environment specs recorded.</div>';
+      }
+
+      document.getElementById('modalInspectManifestViewer').textContent = JSON.stringify(m, null, 2);
+    }
+
+    function copyButtonFeedback(btnId, defaultText) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.textContent = '✔ Copied!';
+      btn.style.color = 'var(--success)';
+      setTimeout(() => {
+        btn.textContent = defaultText;
+        btn.style.color = '';
+      }, 1500);
+    }
+
+    function copyRunId() {
+      if (!currentInspectRun) return;
+      navigator.clipboard.writeText(currentInspectRun.run_id).then(() => {
+        copyButtonFeedback('modalCopyRunIdBtn', '📋 Copy ID');
+      });
     }
 
     function copyInspectFile() {
-      const code = document.getElementById('inspectCodeViewer').textContent;
-      navigator.clipboard.writeText(code).then(() => alert('Code copied to clipboard!'));
+      const code = document.getElementById('modalInspectCodeViewer').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        copyButtonFeedback('modalCopyCodeBtn', '📋 Copy File');
+      });
     }
 
     function copyInspectLog() {
-      const log = document.getElementById('inspectLogViewer').textContent;
-      navigator.clipboard.writeText(log).then(() => alert('Full log copied to clipboard!'));
+      if (!currentInspectLogRaw) return;
+      navigator.clipboard.writeText(currentInspectLogRaw).then(() => {
+        copyButtonFeedback('modalCopyLogBtn', '📋 Copy Full Trace');
+      });
+    }
+
+    function copyInspectManifest() {
+      if (!currentInspectRun) return;
+      navigator.clipboard.writeText(JSON.stringify(currentInspectRun, null, 2)).then(() => {
+        copyButtonFeedback('modalCopyManifestBtn', '📋 Copy JSON');
+      });
+    }
+
+    function publishCurrentModalRun() {
+      if (currentInspectRun) {
+        publishRunModal(currentInspectRun.run_id);
+      }
     }
 
     async function publishRunModal(runId) {
@@ -1130,7 +1552,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       if (customMsg === null) return;
 
       try {
-        const pubBtn = document.getElementById('inspectPublishBtn');
+        const pubBtn = document.getElementById('modalInspectPublishBtn') || document.getElementById('inspectPublishBtn');
         if (pubBtn) pubBtn.disabled = true;
         const res = await fetch(`/api/runs/${runId}/publish`, {
           method: 'POST',
@@ -1151,7 +1573,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       } catch (e) {
         alert(`❌ Failed to publish: ${e.message}`);
       } finally {
-        const pubBtn = document.getElementById('inspectPublishBtn');
+        const pubBtn = document.getElementById('modalInspectPublishBtn') || document.getElementById('inspectPublishBtn');
         if (pubBtn) pubBtn.disabled = false;
       }
     }
@@ -1385,5 +1807,157 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     checkActiveRun();
     setInterval(checkActiveRun, 5000);
   </script>
+  <!-- =========================================================================
+       Run Inspector Modal Dialog
+       ========================================================================= -->
+  <div id="inspectModal" class="modal-overlay" onclick="onModalBackdropClick(event)">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalInspectRunId">
+      <!-- Modal Header -->
+      <div class="modal-header">
+        <div class="modal-title-area">
+          <span style="font-size: 1.05rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <span>🔍 Run Inspector:</span>
+            <span id="modalInspectRunId" style="color: var(--primary); font-family: 'JetBrains Mono', monospace; font-size: 0.95rem;"></span>
+          </span>
+          <button id="modalCopyRunIdBtn" class="btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" onclick="copyRunId()">📋 Copy ID</button>
+          <span id="modalInspectGitBadge"></span>
+          <span id="modalInspectStatusBadge"></span>
+        </div>
+        <div class="modal-actions">
+          <button id="modalInspectPublishBtn" class="btn-primary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="publishCurrentModalRun()">🚀 Publish to Git</button>
+          <button class="btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 600;" onclick="closeRunInspector()" title="Close (Escape)">✕ Close</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Bar -->
+      <div class="modal-kpi-bar">
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectScore" style="color: var(--primary);">-</div>
+          <div class="kpi-lbl">Score / ¢</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectPass">-</div>
+          <div class="kpi-lbl">Pass Rate</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectCost" style="color: var(--accent);">-</div>
+          <div class="kpi-lbl">Total Cost</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectTokens">-</div>
+          <div class="kpi-lbl">Tokens (P / C)</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectThroughput" style="color: var(--success);">-</div>
+          <div class="kpi-lbl">Throughput</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectDuration">-</div>
+          <div class="kpi-lbl">Wall Duration</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectEffort" style="color: var(--warning);">-</div>
+          <div class="kpi-lbl">Effort / Task</div>
+        </div>
+      </div>
+
+      <!-- Modal Tabs Bar -->
+      <div class="modal-tabs-bar">
+        <button class="modal-tab-btn active" id="modalTabBtn-code" onclick="switchModalTab('code')">
+          💻 Source Code <span id="modalCodeCountBadge" class="badge badge-info" style="font-size: 0.68rem; margin-left: 4px;">0</span>
+        </button>
+        <button class="modal-tab-btn" id="modalTabBtn-trace" onclick="switchModalTab('trace')">
+          📜 Execution Trace <span id="modalLogLinesBadge" class="badge" style="background: rgba(255,255,255,0.1); color: #c9d1d9; font-size: 0.68rem; margin-left: 4px;">log</span>
+        </button>
+        <button class="modal-tab-btn" id="modalTabBtn-stages" onclick="switchModalTab('stages')">
+          🧪 Test Stages <span id="modalStagesCountBadge" class="badge badge-pass" style="font-size: 0.68rem; margin-left: 4px;">0/0</span>
+        </button>
+        <button class="modal-tab-btn" id="modalTabBtn-specs" onclick="switchModalTab('specs')">
+          🖥️ Environment & Manifest
+        </button>
+      </div>
+
+      <!-- Modal Body Tab Panes -->
+      <div class="modal-body">
+        <!-- Pane 1: Source Code Explorer -->
+        <div id="modalPane-code" class="modal-pane active">
+          <div class="code-browser-split">
+            <!-- Sidebar file tree -->
+            <div class="code-sidebar">
+              <div class="code-sidebar-filter">
+                <input type="text" id="modalFileSearchInput" placeholder="🔍 Filter workspace files..." oninput="filterInspectFiles(this.value)" style="width: 100%; padding: 4px 8px; font-size: 0.75rem; background: #05070a; border: 1px solid var(--border); border-radius: 4px; color: #fff;">
+              </div>
+              <div class="code-file-list" id="modalInspectFileList">
+                <!-- Dynamically populated files -->
+              </div>
+            </div>
+
+            <!-- Main code display -->
+            <div class="code-main-view">
+              <div class="code-main-header">
+                <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+                  <span id="modalActiveFileIcon" style="font-size: 1rem;">📄</span>
+                  <span id="modalActiveFileName" style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">(No file selected)</span>
+                  <span id="modalActiveFileMeta" style="font-size: 0.72rem; color: var(--text-muted);"></span>
+                </div>
+                <button id="modalCopyCodeBtn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="copyInspectFile()">📋 Copy File</button>
+              </div>
+              <pre class="code-pre-viewer" id="modalInspectCodeViewer">(Select a file from the sidebar to view source code)</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pane 2: Execution Trace Log -->
+        <div id="modalPane-trace" class="modal-pane">
+          <div class="trace-container">
+            <div class="trace-header">
+              <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 600px;">
+                <input type="text" id="modalTraceFilterInput" placeholder="🔍 Filter trace lines (e.g. 'error', 'turn', 'cargo', 'PING')..." oninput="filterInspectLog(this.value)" style="flex: 1; padding: 5px 10px; font-size: 0.78rem; background: #05070a; border: 1px solid var(--border); border-radius: 4px; color: #fff;">
+                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="document.getElementById('modalTraceFilterInput').value=''; filterInspectLog('');">✕ Clear</button>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="modalTraceLineCount" style="font-size: 0.74rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">0 lines</span>
+                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="scrollInspectLog(false)">⬆ Top</button>
+                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="scrollInspectLog(true)">⬇ Bottom</button>
+                <button id="modalCopyLogBtn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="copyInspectLog()">📋 Copy Full Trace</button>
+              </div>
+            </div>
+            <pre class="trace-terminal" id="modalInspectLogViewer">(Loading execution trace...)</pre>
+          </div>
+        </div>
+
+        <!-- Pane 3: Verification Stages Breakdown -->
+        <div id="modalPane-stages" class="modal-pane">
+          <div class="stages-container">
+            <div id="modalStagesSummaryBanner" style="padding: 12px 16px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;"></div>
+            <div id="modalStagesList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+          </div>
+        </div>
+
+        <!-- Pane 4: Environment Specs & Raw Manifest -->
+        <div id="modalPane-specs" class="modal-pane">
+          <div class="manifest-container">
+            <!-- Hardware Specs Box -->
+            <div style="background: #161b22; border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+                <h4 style="font-size: 0.85rem; font-weight: 600; color: #fff;">🖥️ Execution Environment & Hardware Baseline:</h4>
+                <span id="modalInspectGitCommit" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent);"></span>
+              </div>
+              <div id="modalInspectEnvGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 0.78rem;"></div>
+            </div>
+
+            <!-- Raw Manifest JSON -->
+            <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="font-size: 0.85rem; font-weight: 600; color: #fff;">📄 Raw Run Manifest (`manifest.json`):</h4>
+                <button id="modalCopyManifestBtn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="copyInspectManifest()">📋 Copy JSON</button>
+              </div>
+              <pre class="code-pre-viewer" id="modalInspectManifestViewer" style="max-height: 400px; color: #79c0ff;"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
