@@ -61,22 +61,85 @@ impl RedisVerifier {
             .map_err(|e| anyhow!("Failed to connect to {}: {}", addr, e))
     }
 
+    pub fn is_complete_resp_frame(buf: &[u8]) -> bool {
+        if buf.is_empty() {
+            return false;
+        }
+        match buf[0] {
+            b'+' | b'-' | b':' => buf.windows(2).any(|w| w == b"\r\n"),
+            b'$' => {
+                if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
+                    let len_str = match std::str::from_utf8(&buf[1..pos]) {
+                        Ok(s) => s.trim(),
+                        Err(_) => return true,
+                    };
+                    if len_str == "-1" {
+                        return true;
+                    }
+                    if let Ok(len) = len_str.parse::<usize>() {
+                        let expected_total = pos + 2 + len + 2;
+                        buf.len() >= expected_total
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                }
+            }
+            b'*' => {
+                if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
+                    let count_str = match std::str::from_utf8(&buf[1..pos]) {
+                        Ok(s) => s.trim(),
+                        Err(_) => return true,
+                    };
+                    if count_str == "-1" || count_str == "0" {
+                        return true;
+                    }
+                    buf.windows(2).any(|w| w == b"\r\n")
+                } else {
+                    false
+                }
+            }
+            _ => buf.windows(2).any(|w| w == b"\r\n"),
+        }
+    }
+
     async fn send_resp_cmd(stream: &mut TcpStream, args: &[&str]) -> Result<String> {
         let payload = Self::format_resp_cmd(args);
 
         stream.write_all(payload.as_bytes()).await?;
         stream.flush().await?;
 
-        let mut buf = [0u8; 4096];
-        let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
-            .await
-            .map_err(|_| anyhow!("Read timed out"))??;
+        let mut buf = Vec::new();
+        let mut temp = [0u8; 1024];
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(3);
 
-        if n == 0 {
-            return Err(anyhow!("Server closed connection prematurely"));
+        while !Self::is_complete_resp_frame(&buf) {
+            let elapsed = start.elapsed();
+            if elapsed >= timeout {
+                if !buf.is_empty() {
+                    break;
+                }
+                return Err(anyhow!("Read timed out"));
+            }
+            let remaining = timeout - elapsed;
+
+            let n = tokio::time::timeout(remaining, stream.read(&mut temp))
+                .await
+                .map_err(|_| anyhow!("Read timed out"))??;
+
+            if n == 0 {
+                if buf.is_empty() {
+                    return Err(anyhow!("Server closed connection prematurely"));
+                }
+                break;
+            }
+
+            buf.extend_from_slice(&temp[..n]);
         }
 
-        Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+        Ok(String::from_utf8_lossy(&buf).to_string())
     }
 
     pub async fn test_stage1_handshake(&self) -> StageResult {
@@ -279,6 +342,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_is_complete_resp_frame() {
+        assert!(RedisVerifier::is_complete_resp_frame(b"+PONG\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b"+PO"));
+        assert!(RedisVerifier::is_complete_resp_frame(b":123\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b":123"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"-ERR something\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b"-ERR something"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"$-1\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b"$4\r\ntest"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"$4\r\ntest\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b"$14\r\nsubdollar_test"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"$14\r\nsubdollar_test\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b""));
+    }
+
+    #[tokio::test]
+    async fn test_chunked_resp_packet_delivery() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                if let Ok(n) = socket.read(&mut buf).await {
+                    if n > 0 {
+                        // Split payload across two packets with a delay
+                        let _ = socket.write_all(b"$14\r\n").await;
+                        let _ = socket.flush().await;
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _ = socket.write_all(b"subdollar_test\r\n").await;
+                        let _ = socket.flush().await;
+                    }
+                }
+            }
+        });
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port)).await.unwrap();
+        let resp = RedisVerifier::send_resp_cmd(&mut stream, &["ECHO", "subdollar_test"]).await.unwrap();
+        assert_eq!(resp, "$14\r\nsubdollar_test\r\n");
+    }
+
     #[tokio::test]
     async fn test_mock_redis_handshake_success() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -385,5 +490,69 @@ mod tests {
         let summary = verifier.run_all().await;
         assert_eq!(summary.passed_count, 4, "Summary failed: {:?}", summary.stages);
         assert_eq!(summary.pass_rate, 100.0);
+    }
+
+    #[tokio::test]
+    async fn test_mock_redis_stage_failure_modes() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    while let Ok(n) = socket.read(&mut buf).await {
+                        if n == 0 { break; }
+                        let req = String::from_utf8_lossy(&buf[..n]);
+                        let upper = req.to_uppercase();
+                        if upper.contains("PING") {
+                            let _ = socket.write_all(b"+WRONG\r\n").await;
+                        } else if upper.contains("SET") {
+                            let _ = socket.write_all(b"-ERR fail\r\n").await;
+                        } else if upper.contains("INCR") {
+                            let _ = socket.write_all(b"+NOT_INT\r\n").await;
+                        } else {
+                            let _ = socket.write_all(b"-ERR generic\r\n").await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let verifier = RedisVerifier::new(port, None);
+        let s1 = verifier.test_stage1_handshake().await;
+        assert!(!s1.passed);
+        assert!(s1.error.is_some());
+
+        let s2 = verifier.test_stage2_key_value().await;
+        assert!(!s2.passed);
+        assert!(s2.error.is_some());
+
+        let s3 = verifier.test_stage3_expiration().await;
+        assert!(!s3.passed);
+        assert!(s3.error.is_some());
+
+        let s4 = verifier.test_stage4_counters().await;
+        assert!(!s4.passed);
+        assert!(s4.error.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mock_redis_server_premature_close() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                // Drop socket immediately
+                drop(socket);
+            }
+        });
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port)).await.unwrap();
+        let res = RedisVerifier::send_resp_cmd(&mut stream, &["PING"]).await;
+        assert!(res.is_err());
     }
 }

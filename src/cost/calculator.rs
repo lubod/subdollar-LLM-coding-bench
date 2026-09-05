@@ -145,6 +145,60 @@ impl ModelPricing {
             .get("usage")?
             .as_f64()
     }
+
+    /// Query OpenRouter /api/v1/models to get live catalog pricing for a model
+    pub async fn fetch_openrouter_model_pricing(model_name: &str) -> Option<ModelPricing> {
+        Self::fetch_openrouter_model_pricing_at(model_name, "https://openrouter.ai/api/v1/models").await
+    }
+
+    pub async fn fetch_openrouter_model_pricing_at(model_name: &str, url: &str) -> Option<ModelPricing> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(4))
+            .build()
+            .ok()?;
+
+        let resp = client.get(url).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+
+        let body: serde_json::Value = resp.json().await.ok()?;
+        let data = body.get("data")?.as_array()?;
+
+        let norm_model = model_name.to_lowercase();
+        let matched = data.iter().find(|entry| {
+            if let Some(id) = entry.get("id").and_then(|v| v.as_str()) {
+                let id_lower = id.to_lowercase();
+                id_lower == norm_model
+                    || norm_model.ends_with(&format!("/{}", id_lower))
+                    || id_lower.ends_with(&format!("/{}", norm_model))
+                    || id_lower == norm_model.trim_start_matches("openrouter/")
+            } else {
+                false
+            }
+        })?;
+
+        let pricing = matched.get("pricing")?;
+        let prompt_str = pricing.get("prompt").and_then(|v| v.as_str())?;
+        let completion_str = pricing.get("completion").and_then(|v| v.as_str())?;
+
+        let prompt_per_tok = prompt_str.parse::<f64>().ok()?;
+        let comp_per_tok = completion_str.parse::<f64>().ok()?;
+
+        Some(Self::from_rates(
+            prompt_per_tok * 1_000_000.0,
+            comp_per_tok * 1_000_000.0,
+        ))
+    }
+
+    /// Asynchronously resolve pricing, querying OpenRouter live catalog first with fallback to hardcoded rates
+    pub async fn for_model_async(model_name: &str) -> Self {
+        if let Some(pricing) = Self::fetch_openrouter_model_pricing(model_name).await {
+            pricing
+        } else {
+            Self::for_model(model_name)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -276,5 +330,43 @@ mod tests {
         let url = format!("http://127.0.0.1:{}/api/v1/auth/key", port);
         let usage = ModelPricing::query_openrouter_key_usage_at("bad-key", &url).await;
         assert_eq!(usage, None);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_openrouter_model_pricing_at_mock() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = r#"{"data":[{"id":"custom/super-model","pricing":{"prompt":"0.0000015","completion":"0.0000045"}}]}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}/api/v1/models", port);
+        let pricing = ModelPricing::fetch_openrouter_model_pricing_at("custom/super-model", &url).await.unwrap();
+        assert!((pricing.prompt_per_million - 1.50).abs() < 1e-6);
+        assert!((pricing.completion_per_million - 4.50).abs() < 1e-6);
+        assert!((pricing.cache_read_per_million - 0.375).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn test_for_model_async_fallback() {
+        // Fallback to hardcoded when model not in openrouter or request fails
+        let pricing = ModelPricing::for_model_async("unknown-provider/dummy-gemini-2.5-flash-test").await;
+        assert_eq!(pricing.prompt_per_million, 0.15);
+        assert_eq!(pricing.completion_per_million, 0.60);
+
+        let unknown = ModelPricing::for_model_async("completely-unknown-xyz").await;
+        assert_eq!(unknown.prompt_per_million, 0.20);
+        assert_eq!(unknown.completion_per_million, 0.60);
     }
 }

@@ -39,7 +39,7 @@ pub enum Commands {
         timeout_min: u64,
 
         /// OpenRouter API Key (optional, defaults to OPENROUTER_API_KEY env var)
-        #[arg(long)]
+        #[arg(long, env = "OPENROUTER_API_KEY")]
         api_key: Option<String>,
 
         /// Directory for candidate workspace
@@ -271,6 +271,26 @@ mod tests {
             }
             _ => panic!("Expected Run command"),
         }
+
+        let args_key = ["subdollar-bench", "run", "--model", "m", "--task", "redis", "--api-key", "sk-test-123"];
+        let cli_key = Cli::try_parse_from(args_key).unwrap();
+        match cli_key.command {
+            Commands::Run { api_key, .. } => {
+                assert_eq!(api_key, Some("sk-test-123".to_string()));
+            }
+            _ => panic!("Expected Run command"),
+        }
+
+        std::env::set_var("OPENROUTER_API_KEY", "sk-env-key-123");
+        let args_env = ["subdollar-bench", "run", "--model", "m", "--task", "redis"];
+        let cli_env = Cli::try_parse_from(args_env).unwrap();
+        match cli_env.command {
+            Commands::Run { api_key, .. } => {
+                assert_eq!(api_key, Some("sk-env-key-123".to_string()));
+            }
+            _ => panic!("Expected Run command"),
+        }
+        std::env::remove_var("OPENROUTER_API_KEY");
     }
 
     #[test]

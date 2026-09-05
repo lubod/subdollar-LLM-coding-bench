@@ -1225,6 +1225,9 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       document.getElementById('apiKey').value = savedKey;
     }
 
+    document.getElementById('apiKey').addEventListener('input', (e) => {
+      localStorage.setItem('openrouter_api_key', e.target.value.trim());
+    });
     document.getElementById('apiKey').addEventListener('change', (e) => {
       localStorage.setItem('openrouter_api_key', e.target.value.trim());
       fetchModels();
@@ -1252,8 +1255,11 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       badge.className = 'badge badge-info';
 
       try {
-        const url = apiKey ? `/api/models?key=${encodeURIComponent(apiKey)}` : '/api/models';
-        const res = await fetch(url);
+        const headers = {};
+        if (apiKey) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+        const res = await fetch('/api/models', { headers });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         allModels = await res.json();
         badge.textContent = `${allModels.length} models < $1.00`;

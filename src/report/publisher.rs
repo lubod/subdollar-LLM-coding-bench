@@ -81,6 +81,7 @@ impl RunPublisher {
             savings_percent: manifest.savings_percent,
             efficiency_score: manifest.efficiency_score,
             timestamp: manifest.completed_at.clone(),
+            method_version: manifest.method_version.clone(),
         };
         let _ = LeaderboardManager::save_result(results_dir.to_str().unwrap_or("./results"), &benchmark_result);
 
@@ -260,6 +261,7 @@ mod tests {
             env: Some(env.clone()),
             git_commit: Some("abc1234".to_string()),
             is_published: Some(true),
+            method_version: Some("0.1.0".to_string()),
         };
 
         let readme = RunPublisher::generate_run_readme(&manifest, &env);
@@ -328,6 +330,7 @@ mod tests {
             env: None,
             git_commit: None,
             is_published: None,
+            method_version: Some("0.1.0".to_string()),
         };
 
         fs::write(run_dir.join("manifest.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();

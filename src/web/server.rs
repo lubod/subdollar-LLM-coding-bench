@@ -854,21 +854,32 @@ async fn start_run(
                 );
                 let tx_sub = tx.clone();
                 let log_buf_sub = state_clone.log_buffer.clone();
-                match OmpRunner::run_agent_with_logger(
-                    &req.model,
-                    &prompt_content,
-                    work_path,
-                    effective_api_key.as_deref(),
-                    limits,
-                    Some(&effort_setting),
-                    move |line| {
-                        let ts = Utc::now().format("%H:%M:%S").to_string();
-                        let formatted = format!("[{}] [OMP] {}", ts, line);
-                        log_buf_sub.write().unwrap().push(formatted.clone());
-                        let _ = tx_sub.send(formatted);
-                    },
-                ) {
-                    Ok(stats) => {
+                let model_c = req.model.clone();
+                let prompt_c = prompt_content.clone();
+                let work_path_buf = work_path.to_path_buf();
+                let api_key_c = effective_api_key.clone();
+                let effort_c = effort_setting.clone();
+
+                let omp_result = tokio::task::spawn_blocking(move || {
+                    OmpRunner::run_agent_with_logger(
+                        &model_c,
+                        &prompt_c,
+                        &work_path_buf,
+                        api_key_c.as_deref(),
+                        limits,
+                        Some(&effort_c),
+                        move |line| {
+                            let ts = Utc::now().format("%H:%M:%S").to_string();
+                            let formatted = format!("[{}] [OMP] {}", ts, line);
+                            log_buf_sub.write().unwrap().push(formatted.clone());
+                            let _ = tx_sub.send(formatted);
+                        },
+                    )
+                })
+                .await;
+
+                match omp_result {
+                    Ok(Ok(stats)) => {
                         log(
                             &mut console_buffer,
                             format!(
@@ -881,10 +892,22 @@ async fn start_run(
                         let comp = stats.completion_tokens;
                         (stats, p, c, comp)
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         log(
                             &mut console_buffer,
                             format!("[OMP ERROR] Agent execution failed: {}", e),
+                        );
+                        agent_failed = true;
+                        let partial_stats = OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
+                        let p = partial_stats.prompt_tokens;
+                        let c = partial_stats.cached_tokens;
+                        let comp = partial_stats.completion_tokens;
+                        (partial_stats, p, c, comp)
+                    }
+                    Err(join_err) => {
+                        log(
+                            &mut console_buffer,
+                            format!("[OMP ERROR] Task execution error: {}", join_err),
                         );
                         agent_failed = true;
                         let partial_stats = OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
@@ -1114,7 +1137,7 @@ async fn start_run(
             }
 
             // 7. Cost & Metrics Accounting
-            let pricing = ModelPricing::for_model(&req.model);
+            let pricing = ModelPricing::for_model_async(&req.model).await;
             let breakdown = pricing.compute_cost_with_cache(
                 prompt_tokens,
                 cached_tokens,
@@ -1195,6 +1218,7 @@ async fn start_run(
                 env: None,
                 git_commit: None,
                 is_published: None,
+                method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             };
 
             // Archive complete run
@@ -1227,6 +1251,7 @@ async fn start_run(
                 savings_percent: breakdown.savings_percent,
                 efficiency_score,
                 timestamp: completed_at,
+                method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             };
 
             let r_dir = resolve_results_dir();
@@ -1602,6 +1627,7 @@ mod tests {
             env: None,
             git_commit: None,
             is_published: None,
+            method_version: Some("0.1.0".to_string()),
         };
         let manifest_b = RunManifest {
             run_id: run_b_id.to_string(),
@@ -1631,6 +1657,7 @@ mod tests {
             env: None,
             git_commit: None,
             is_published: None,
+            method_version: Some("0.1.0".to_string()),
         };
 
         fs::write(
@@ -1704,6 +1731,37 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), 200);
         assert!(res.text().await.unwrap().contains("println!(\"a\")"));
+
+        // Check GET /api/runs/:id/file missing param or missing file
+        let res = client
+            .get(format!("{}/api/runs/{}/file", base, run_a_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 400);
+
+        let res = client
+            .get(format!("{}/api/runs/{}/file?file=missing.txt", base, run_a_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 404);
+
+        // Check GET /api/compare missing run_b
+        let res = client
+            .get(format!("{}/api/compare?run_a={}&run_b=missing_b", base, run_a_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 404);
+
+        // Check GET /api/stream
+        let res = client
+            .get(format!("{}/api/stream", base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
 
         // Check POST /api/runs/:id/publish error handling
         let pub_req = PublishRequest {

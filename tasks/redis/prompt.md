@@ -49,6 +49,7 @@ Your server must accept TCP connections on port 6379 and parse the Redis Seriali
    - `INCR key` -> increments string integer by 1, responds with integer `:<new_val>\r\n`
    - `DECR key` -> decrements string integer by 1, responds with integer `:<new_val>\r\n`
    - If key does not exist, initialize it as 0 before incrementing/decrementing.
+   - **Error Handling**: If `INCR` or `DECR` is called on a key whose value cannot be parsed as a 64-bit signed integer, return a standard RESP error: `-ERR value is not an integer or out of range\r\n` (any RESP error line starting with `-ERR`).
 
 ### Verification Criteria
 1. Your server will be tested by a test harness sending raw TCP protocol commands and comparing responses against real Redis.

@@ -48,6 +48,8 @@ pub struct RunManifest {
     pub git_commit: Option<String>,
     #[serde(default)]
     pub is_published: Option<bool>,
+    #[serde(default)]
+    pub method_version: Option<String>,
 }
 
 pub struct RunArchiver;
@@ -271,6 +273,7 @@ mod tests {
             env: None,
             git_commit: None,
             is_published: None,
+            method_version: Some("0.1.0".to_string()),
         };
 
         let console_log = "[06:30:00] [INIT] Starting test run\n[06:31:00] [DONE] Finished!\n";

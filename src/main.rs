@@ -376,7 +376,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 }
 
                 // 7. Cost & Token calculation
-                let pricing = ModelPricing::for_model(&model);
+                let pricing = ModelPricing::for_model_async(&model).await;
                 let breakdown = pricing.compute_cost_with_cache(
                     prompt_tokens,
                     cached_tokens,
@@ -458,6 +458,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                     env: None,
                     git_commit: None,
                     is_published: None,
+                    method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 };
 
                 let runs_dir = RunArchiver::resolve_runs_dir();
@@ -480,6 +481,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                     savings_percent: breakdown.savings_percent,
                     efficiency_score,
                     timestamp: completed_at,
+                    method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 };
 
                 let results_dir_buf = subdollar_bench::config::get_repo_root().join("results");
@@ -711,6 +713,7 @@ mod tests {
             savings_percent: 10.0,
             efficiency_score: 100.0,
             timestamp: "2026-09-04T12:00:00Z".to_string(),
+            method_version: Some("0.1.0".to_string()),
         };
         let _ = LeaderboardManager::save_result(&temp_dir.to_string_lossy(), &result);
 
@@ -836,6 +839,7 @@ mod tests {
             env: None,
             git_commit: None,
             is_published: None,
+            method_version: Some("0.1.0".to_string()),
         };
         fs::write(
             run_dir.join("manifest.json"),

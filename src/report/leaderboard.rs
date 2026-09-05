@@ -27,6 +27,8 @@ pub struct BenchmarkRunResult {
     pub savings_percent: f64,
     pub efficiency_score: f64,
     pub timestamp: String,
+    #[serde(default)]
+    pub method_version: Option<String>,
 }
 
 /// Unbiased estimator for Pass@k (Chen et al. 2021)
@@ -272,6 +274,7 @@ mod tests {
             savings_percent: 50.0,
             efficiency_score: 200.0,
             timestamp: "2026-09-04T12:00:00Z".to_string(),
+            method_version: Some("0.1.0".to_string()),
         };
         LeaderboardManager::print_table(&[r]);
         LeaderboardManager::print_table(&[]);
@@ -299,6 +302,7 @@ mod tests {
             savings_percent: 25.0,
             efficiency_score: 50.0,
             timestamp: "2026-09-04T06:00:00Z".to_string(),
+            method_version: Some("0.1.0".to_string()),
         };
 
         let r2 = BenchmarkRunResult {
@@ -318,6 +322,7 @@ mod tests {
             savings_percent: 60.0,
             efficiency_score: 200.0,
             timestamp: "2026-09-04T06:05:00Z".to_string(),
+            method_version: Some("0.1.0".to_string()),
         };
 
         LeaderboardManager::save_result(temp.to_str().unwrap(), &r1).unwrap();

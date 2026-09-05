@@ -87,6 +87,7 @@ func main() {
         env: None,
         git_commit: None,
         is_published: None,
+        method_version: Some("0.1.0".to_string()),
     };
 
     let console_log = r#"[12:00:00] [INIT] Starting benchmark for google/gemini-2.5-flash on task 'redis'...

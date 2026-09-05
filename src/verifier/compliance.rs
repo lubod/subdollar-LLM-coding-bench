@@ -46,12 +46,16 @@ impl ComplianceChecker {
             Err(_) => return, // Ignore binary or unreadable files
         };
 
-        // 1. Dockerfile base-image inspection
+        // 1. Dockerfile base-image and RUN/CMD/ENTRYPOINT daemon inspection
         if filename.eq_ignore_ascii_case("Dockerfile") || filename.contains("Dockerfile") {
             let forbidden_base_images = [
                 "redis", "valkey", "keydb", "nginx", "caddy", "coredns",
                 "bind9", "named", "dnsmasq", "apache", "httpd", "envoy",
                 "traefik", "haproxy", "lighttpd", "memcached",
+            ];
+            let forbidden_daemons = [
+                "redis-server", "valkey-server", "keydb-server", "nginx", "caddy",
+                "coredns", "dnsmasq", "named", "bind9", "lighttpd", "apache2", "httpd", "memcached",
             ];
             for line in content.lines() {
                 let trimmed = line.trim();
@@ -60,6 +64,25 @@ impl ComplianceChecker {
                     for forbidden in forbidden_base_images {
                         if lower.contains(forbidden) {
                             violations.push(format!("Dockerfile uses forbidden base image '{}'", trimmed));
+                            break;
+                        }
+                    }
+                } else if lower.starts_with("run ")
+                    || lower.starts_with("cmd ")
+                    || lower.starts_with("cmd[")
+                    || lower.starts_with("entrypoint ")
+                    || lower.starts_with("entrypoint[")
+                {
+                    let cleaned = lower
+                        .replace('[', " ")
+                        .replace(']', " ")
+                        .replace('"', " ")
+                        .replace('\'', " ")
+                        .replace(',', " ");
+                    let tokens: Vec<&str> = cleaned.split_whitespace().collect();
+                    for daemon in forbidden_daemons {
+                        if tokens.iter().any(|&t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
+                            violations.push(format!("Dockerfile: executes or installs forbidden server daemon '{}' in '{}'", daemon, trimmed));
                             break;
                         }
                     }
@@ -298,7 +321,28 @@ mod tests {
         assert!(res_c.unwrap_err().contains("microhttpd"));
         let _ = fs::remove_file(temp_dir.join("server.c"));
 
-        // 12. Hidden folder ignore
+        // 12. Dockerfile RUN redis-server install
+        fs::write(temp_dir.join("Dockerfile"), "FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y redis-server\n").unwrap();
+        let res_df_run = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res_df_run.is_err());
+        assert!(res_df_run.unwrap_err().contains("redis-server"));
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 13. Dockerfile CMD redis-server
+        fs::write(temp_dir.join("Dockerfile"), "FROM ubuntu:24.04\nCMD [\"redis-server\", \"--protected-mode\", \"no\"]\n").unwrap();
+        let res_df_cmd = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res_df_cmd.is_err());
+        assert!(res_df_cmd.unwrap_err().contains("redis-server"));
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 14. Dockerfile ENTRYPOINT nginx
+        fs::write(temp_dir.join("Dockerfile"), "FROM alpine:3.19\nENTRYPOINT [\"nginx\", \"-g\", \"daemon off;\"]\n").unwrap();
+        let res_df_ep = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res_df_ep.is_err());
+        assert!(res_df_ep.unwrap_err().contains("nginx"));
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 15. Hidden folder ignore
         let hidden = temp_dir.join(".git");
         let _ = fs::create_dir_all(&hidden);
         fs::write(hidden.join("server.py"), "import http.server\n").unwrap();

@@ -257,6 +257,7 @@ mod tests {
             env: Some(env.clone()),
             git_commit: Some("abc1234".to_string()),
             is_published: Some(true),
+            method_version: Some("0.1.0".to_string()),
         };
 
         let md = SummaryGenerator::generate_summary_markdown(&[run1], &env);
