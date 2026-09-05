@@ -230,6 +230,6 @@ mod tests {
         let out = EnvironmentInfo::cmd_output_su("echo hello_su");
         assert!(out == "hello_su" || out == "N/A");
         let empty = EnvironmentInfo::cmd_output_su("true");
-        assert!(empty == "" || empty == "N/A");
+        assert!(empty.is_empty() || empty == "N/A");
     }
 }

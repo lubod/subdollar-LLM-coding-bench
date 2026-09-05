@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-05 16:36:06 UTC*
+*Last Updated: 2026-09-05 17:11:06 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -15,7 +15,10 @@
 
 ## 📊 Global Leaderboard
 
-*No benchmark runs recorded yet. Run a benchmark to populate the leaderboard!*
+| Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
+|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🥇 1 | `google/gemini-2.5-flash` | `low` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_google_gemini-2.5-flash_trial2_20260905_171105/) |
+| 🥈 2 | `google/gemini-2.5-flash` | `low` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_google_gemini-2.5-flash_trial1_20260905_171104/) |
 
 ---
 
@@ -27,6 +30,11 @@ The candidate LLM is instructed to build a production-grade, concurrent Redis cl
 - **Packaging Freedom**: Working multi-stage `Dockerfile` (automatically built and containerized) or `./start.sh`.
 - **Verification**: Automated raw-socket TCP verification test suite + `redis-benchmark -p 6379 -n 5000 -c 10 -t get,set -q`.
 
+| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `google/gemini-2.5-flash` | `low` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_google_gemini-2.5-flash_trial2_20260905_171105/](runs/redis_google_gemini-2.5-flash_trial2_20260905_171105/) |
+| `google/gemini-2.5-flash` | `low` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_google_gemini-2.5-flash_trial1_20260905_171104/](runs/redis_google_gemini-2.5-flash_trial1_20260905_171104/) |
+
 ---
 
 ## 🌐 Task 2: HTTP/1.1 Web Server (`task: http`)
@@ -34,7 +42,7 @@ The candidate LLM is instructed to build a production-grade, concurrent Redis cl
 The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server from scratch.
 - **Features**: `GET /` (200 OK), `404 Not Found Handling`, `GET /echo/{str}` with dynamic `Content-Length`, `GET /user-agent` header reflection, `POST` and `GET /files/{filename}` file persistence, HTTP/1.1 socket keep-alive reuse.
 - **Packaging Freedom**: Working `Dockerfile` or executable `./start.sh`.
-- **Verification**: 5-stage automated conformance suite + `wrk -t4 -c20 -d5s http://127.0.0.1:8080/`.
+- **Verification**: 5-stage automated conformance suite + `wrk -t2 -c20 -d3s http://127.0.0.1:8080/`.
 
 ---
 
@@ -52,8 +60,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `1b4d765` (branch `master`) |
-| **Benchmark Captured** | 2026-09-05T16:36:06.118474034+00:00 |
+| **Git Baseline** | Commit `5ce9c08` (branch `master`) |
+| **Benchmark Captured** | 2026-09-05T17:11:06.815530773+00:00 |
 
 ---
 

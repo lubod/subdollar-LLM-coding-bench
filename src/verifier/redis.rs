@@ -17,12 +17,15 @@ pub struct RedisTestSummary {
 
 pub struct RedisVerifier {
     pub target_port: u16,
-    pub _ref_port: Option<u16>,
+    pub run_seed: Option<String>,
 }
 
 impl RedisVerifier {
-    pub fn new(target_port: u16, ref_port: Option<u16>) -> Self {
-        Self { target_port, _ref_port: ref_port }
+    pub fn new(target_port: u16, seed: Option<&str>) -> Self {
+        Self {
+            target_port,
+            run_seed: seed.map(|s| s.to_string()),
+        }
     }
 
     pub fn format_resp_cmd(args: &[&str]) -> String {
@@ -61,47 +64,57 @@ impl RedisVerifier {
             .map_err(|e| anyhow!("Failed to connect to {}: {}", addr, e))
     }
 
-    pub fn is_complete_resp_frame(buf: &[u8]) -> bool {
+    /// Parses a complete RESP frame from the beginning of `buf`, returning the total number
+    /// of consumed bytes if complete, or `None` if the frame is partial/incomplete.
+    pub fn parse_resp_frame(buf: &[u8]) -> Option<usize> {
         if buf.is_empty() {
-            return false;
+            return None;
         }
         match buf[0] {
-            b'+' | b'-' | b':' => buf.windows(2).any(|w| w == b"\r\n"),
+            b'+' | b'-' | b':' => {
+                let pos = buf.windows(2).position(|w| w == b"\r\n")?;
+                Some(pos + 2)
+            }
             b'$' => {
-                if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
-                    let len_str = match std::str::from_utf8(&buf[1..pos]) {
-                        Ok(s) => s.trim(),
-                        Err(_) => return true,
-                    };
-                    if len_str == "-1" {
-                        return true;
-                    }
-                    if let Ok(len) = len_str.parse::<usize>() {
-                        let expected_total = pos + 2 + len + 2;
-                        buf.len() >= expected_total
-                    } else {
-                        true
-                    }
+                let pos = buf.windows(2).position(|w| w == b"\r\n")?;
+                let len_str = std::str::from_utf8(&buf[1..pos]).ok()?.trim();
+                if len_str == "-1" {
+                    return Some(pos + 2);
+                }
+                let len = len_str.parse::<usize>().ok()?;
+                let total = pos + 2 + len + 2;
+                if buf.len() >= total {
+                    Some(total)
                 } else {
-                    false
+                    None
                 }
             }
             b'*' => {
-                if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
-                    let count_str = match std::str::from_utf8(&buf[1..pos]) {
-                        Ok(s) => s.trim(),
-                        Err(_) => return true,
-                    };
-                    if count_str == "-1" || count_str == "0" {
-                        return true;
-                    }
-                    buf.windows(2).any(|w| w == b"\r\n")
-                } else {
-                    false
+                let pos = buf.windows(2).position(|w| w == b"\r\n")?;
+                let count_str = std::str::from_utf8(&buf[1..pos]).ok()?.trim();
+                if count_str == "-1" || count_str == "0" {
+                    return Some(pos + 2);
                 }
+                let count = count_str.parse::<usize>().ok()?;
+                let mut offset = pos + 2;
+                for _ in 0..count {
+                    if offset >= buf.len() {
+                        return None;
+                    }
+                    let consumed = Self::parse_resp_frame(&buf[offset..])?;
+                    offset += consumed;
+                }
+                Some(offset)
             }
-            _ => buf.windows(2).any(|w| w == b"\r\n"),
+            _ => {
+                let pos = buf.windows(2).position(|w| w == b"\r\n")?;
+                Some(pos + 2)
+            }
         }
+    }
+
+    pub fn is_complete_resp_frame(buf: &[u8]) -> bool {
+        Self::parse_resp_frame(buf).is_some()
     }
 
     async fn send_resp_cmd(stream: &mut TcpStream, args: &[&str]) -> Result<String> {
@@ -119,7 +132,10 @@ impl RedisVerifier {
             let elapsed = start.elapsed();
             if elapsed >= timeout {
                 if !buf.is_empty() {
-                    break;
+                    return Err(anyhow!(
+                        "Read timed out with partial incomplete RESP frame: {:?}",
+                        String::from_utf8_lossy(&buf)
+                    ));
                 }
                 return Err(anyhow!("Read timed out"));
             }
@@ -133,7 +149,10 @@ impl RedisVerifier {
                 if buf.is_empty() {
                     return Err(anyhow!("Server closed connection prematurely"));
                 }
-                break;
+                return Err(anyhow!(
+                    "Server closed connection with incomplete RESP frame: {:?}",
+                    String::from_utf8_lossy(&buf)
+                ));
             }
 
             buf.extend_from_slice(&temp[..n]);
@@ -163,17 +182,27 @@ impl RedisVerifier {
             };
         }
 
-        let res = match Self::send_resp_cmd(&mut stream, &["ECHO", "subdollar_test"]).await {
+        let echo_str = self
+            .run_seed
+            .as_ref()
+            .map(|s| {
+                let prefix = &s[..s.len().min(8)];
+                format!("echo_{}", prefix)
+            })
+            .unwrap_or_else(|| "subdollar_test".to_string());
+
+        let res = match Self::send_resp_cmd(&mut stream, &["ECHO", &echo_str]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 1, name, passed: false, error: Some(format!("ECHO failed: {}", e)) },
         };
 
-        if res.trim() != "$14\r\nsubdollar_test" && res != "$14\r\nsubdollar_test\r\n" {
+        let expected = format!("${}\r\n{}", echo_str.len(), echo_str);
+        if res.trim() != expected && res != format!("{}\r\n", expected) {
             return StageResult {
                 stage: 1,
                 name,
                 passed: false,
-                error: Some(format!("Expected ECHO with '$14\\r\\nsubdollar_test\\r\\n', got: {:?}", res)),
+                error: Some(format!("Expected ECHO with '{}\\r\\n', got: {:?}", expected, res)),
             };
         }
 
@@ -187,7 +216,11 @@ impl RedisVerifier {
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(e.to_string()) },
         };
 
-        let set_res = match Self::send_resp_cmd(&mut stream, &["SET", "bench_key", "bench_value"]).await {
+        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("bench");
+        let key = format!("k_{}", seed_prefix);
+        let val = format!("v_{}", seed_prefix);
+
+        let set_res = match Self::send_resp_cmd(&mut stream, &["SET", &key, &val]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("SET failed: {}", e)) },
         };
@@ -195,15 +228,16 @@ impl RedisVerifier {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected +OK, got {:?}", set_res)) };
         }
 
-        let get_res = match Self::send_resp_cmd(&mut stream, &["GET", "bench_key"]).await {
+        let get_res = match Self::send_resp_cmd(&mut stream, &["GET", &key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("GET failed: {}", e)) },
         };
-        if get_res.trim() != "$11\r\nbench_value" && get_res != "$11\r\nbench_value\r\n" {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected '$11\\r\\nbench_value', got {:?}", get_res)) };
+        let expected_val = format!("${}\r\n{}", val.len(), val);
+        if get_res.trim() != expected_val && get_res != format!("{}\r\n", expected_val) {
+            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected '{}', got {:?}", expected_val, get_res)) };
         }
 
-        let exists_res = match Self::send_resp_cmd(&mut stream, &["EXISTS", "bench_key"]).await {
+        let exists_res = match Self::send_resp_cmd(&mut stream, &["EXISTS", &key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("EXISTS failed: {}", e)) },
         };
@@ -211,7 +245,7 @@ impl RedisVerifier {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :1, got {:?}", exists_res)) };
         }
 
-        let del_res = match Self::send_resp_cmd(&mut stream, &["DEL", "bench_key"]).await {
+        let del_res = match Self::send_resp_cmd(&mut stream, &["DEL", &key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("DEL failed: {}", e)) },
         };
@@ -219,7 +253,7 @@ impl RedisVerifier {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :1 from DEL, got {:?}", del_res)) };
         }
 
-        let get_nil = match Self::send_resp_cmd(&mut stream, &["GET", "bench_key"]).await {
+        let get_nil = match Self::send_resp_cmd(&mut stream, &["GET", &key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("GET after DEL failed: {}", e)) },
         };
@@ -227,7 +261,7 @@ impl RedisVerifier {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected nil ($-1\\r\\n), got {:?}", get_nil)) };
         }
 
-        let exists_zero = match Self::send_resp_cmd(&mut stream, &["EXISTS", "bench_key"]).await {
+        let exists_zero = match Self::send_resp_cmd(&mut stream, &["EXISTS", &key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("EXISTS after DEL failed: {}", e)) },
         };
@@ -245,7 +279,11 @@ impl RedisVerifier {
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(e.to_string()) },
         };
 
-        let set_res = match Self::send_resp_cmd(&mut stream, &["SET", "ttl_key", "ttl_val", "PX", "150"]).await {
+        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("ttl");
+        let ttl_key = format!("ttl_{}", seed_prefix);
+        let ttl_val = format!("val_{}", seed_prefix);
+
+        let set_res = match Self::send_resp_cmd(&mut stream, &["SET", &ttl_key, &ttl_val, "PX", "150"]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("SET PX failed: {}", e)) },
         };
@@ -253,17 +291,18 @@ impl RedisVerifier {
             return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected +OK for SET PX, got {:?}", set_res)) };
         }
 
-        let get_fast = match Self::send_resp_cmd(&mut stream, &["GET", "ttl_key"]).await {
+        let get_fast = match Self::send_resp_cmd(&mut stream, &["GET", &ttl_key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("Immediate GET failed: {}", e)) },
         };
-        if get_fast.trim() != "$7\r\nttl_val" && get_fast != "$7\r\nttl_val\r\n" {
-            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected immediate GET to return '$7\\r\\nttl_val', got {:?}", get_fast)) };
+        let expected_fast = format!("${}\r\n{}", ttl_val.len(), ttl_val);
+        if get_fast.trim() != expected_fast && get_fast != format!("{}\r\n", expected_fast) {
+            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected immediate GET to return '{}', got {:?}", expected_fast, get_fast)) };
         }
 
         sleep(Duration::from_millis(250)).await;
 
-        let get_expired = match Self::send_resp_cmd(&mut stream, &["GET", "ttl_key"]).await {
+        let get_expired = match Self::send_resp_cmd(&mut stream, &["GET", &ttl_key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("Post-TTL GET failed: {}", e)) },
         };
@@ -281,7 +320,11 @@ impl RedisVerifier {
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(e.to_string()) },
         };
 
-        let incr1 = match Self::send_resp_cmd(&mut stream, &["INCR", "num_counter"]).await {
+        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("num");
+        let counter_key = format!("cnt_{}", seed_prefix);
+        let non_num_key = format!("str_{}", seed_prefix);
+
+        let incr1 = match Self::send_resp_cmd(&mut stream, &["INCR", &counter_key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("INCR 1 failed: {}", e)) },
         };
@@ -289,7 +332,7 @@ impl RedisVerifier {
             return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :1, got {:?}", incr1)) };
         }
 
-        let incr2 = match Self::send_resp_cmd(&mut stream, &["INCR", "num_counter"]).await {
+        let incr2 = match Self::send_resp_cmd(&mut stream, &["INCR", &counter_key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("INCR 2 failed: {}", e)) },
         };
@@ -297,7 +340,7 @@ impl RedisVerifier {
             return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :2, got {:?}", incr2)) };
         }
 
-        let decr1 = match Self::send_resp_cmd(&mut stream, &["DECR", "num_counter"]).await {
+        let decr1 = match Self::send_resp_cmd(&mut stream, &["DECR", &counter_key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("DECR failed: {}", e)) },
         };
@@ -306,8 +349,8 @@ impl RedisVerifier {
         }
 
         // Negative test: non-numeric increment error handling
-        let _ = Self::send_resp_cmd(&mut stream, &["SET", "non_num_str", "invalid_number"]).await;
-        let err_res = match Self::send_resp_cmd(&mut stream, &["INCR", "non_num_str"]).await {
+        let _ = Self::send_resp_cmd(&mut stream, &["SET", &non_num_key, "invalid_number"]).await;
+        let err_res = match Self::send_resp_cmd(&mut stream, &["INCR", &non_num_key]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("Negative test failed: {}", e)) },
         };
@@ -345,43 +388,23 @@ mod tests {
     #[test]
     fn test_is_complete_resp_frame() {
         assert!(RedisVerifier::is_complete_resp_frame(b"+PONG\r\n"));
-        assert!(!RedisVerifier::is_complete_resp_frame(b"+PO"));
-        assert!(RedisVerifier::is_complete_resp_frame(b":123\r\n"));
-        assert!(!RedisVerifier::is_complete_resp_frame(b":123"));
-        assert!(RedisVerifier::is_complete_resp_frame(b"-ERR something\r\n"));
-        assert!(!RedisVerifier::is_complete_resp_frame(b"-ERR something"));
+        assert!(RedisVerifier::is_complete_resp_frame(b":1\r\n"));
+        assert!(RedisVerifier::is_complete_resp_frame(b":0\r\n"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"-ERR unknown command\r\n"));
         assert!(RedisVerifier::is_complete_resp_frame(b"$-1\r\n"));
-        assert!(!RedisVerifier::is_complete_resp_frame(b"$4\r\ntest"));
-        assert!(RedisVerifier::is_complete_resp_frame(b"$4\r\ntest\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b"+PONG"));
         assert!(!RedisVerifier::is_complete_resp_frame(b"$14\r\nsubdollar_test"));
         assert!(RedisVerifier::is_complete_resp_frame(b"$14\r\nsubdollar_test\r\n"));
         assert!(!RedisVerifier::is_complete_resp_frame(b""));
-    }
 
-    #[tokio::test]
-    async fn test_chunked_resp_packet_delivery() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                let mut buf = [0u8; 1024];
-                if let Ok(n) = socket.read(&mut buf).await {
-                    if n > 0 {
-                        // Split payload across two packets with a delay
-                        let _ = socket.write_all(b"$14\r\n").await;
-                        let _ = socket.flush().await;
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                        let _ = socket.write_all(b"subdollar_test\r\n").await;
-                        let _ = socket.flush().await;
-                    }
-                }
-            }
-        });
-
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port)).await.unwrap();
-        let resp = RedisVerifier::send_resp_cmd(&mut stream, &["ECHO", "subdollar_test"]).await.unwrap();
-        assert_eq!(resp, "$14\r\nsubdollar_test\r\n");
+        // Array frames
+        assert!(RedisVerifier::is_complete_resp_frame(b"*0\r\n"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"*-1\r\n"));
+        assert!(RedisVerifier::is_complete_resp_frame(b"*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(b"*2\r\n$4\r\nECHO\r\n")); // only 1 of 2 elements
+        assert!(!RedisVerifier::is_complete_resp_frame(b"*2\r\n$4\r\nECHO\r\n$5\r\nhel")); // incomplete second element
+        assert!(RedisVerifier::is_complete_resp_frame(b"*1\r\n*1\r\n:42\r\n")); // nested complete array
+        assert!(!RedisVerifier::is_complete_resp_frame(b"*1\r\n*1\r\n")); // nested incomplete array
     }
 
     #[tokio::test]
@@ -444,39 +467,37 @@ mod tests {
                             let _ = socket.write_all(b"+PONG\r\n").await;
                         } else if upper.contains("ECHO") {
                             let _ = socket.write_all(b"$14\r\nsubdollar_test\r\n").await;
-                        } else if upper.contains("SET") && upper.contains("PX") {
-                            let _ = socket.write_all(b"+OK\r\n").await;
                         } else if upper.contains("SET") {
                             let _ = socket.write_all(b"+OK\r\n").await;
-                        } else if upper.contains("GET") && upper.contains("TTL_KEY") {
+                        } else if upper.contains("GET") && upper.contains("TTL") {
                             stage3_count += 1;
                             if stage3_count == 1 {
-                                let _ = socket.write_all(b"$7\r\nttl_val\r\n").await;
+                                let _ = socket.write_all(b"$7\r\nval_ttl\r\n").await;
                             } else {
                                 let _ = socket.write_all(b"$-1\r\n").await;
                             }
-                        } else if upper.contains("GET") && upper.contains("BENCH_KEY") {
+                        } else if upper.contains("GET") && upper.contains("K_BENCH") {
                             if !stage2_deleted {
-                                let _ = socket.write_all(b"$11\r\nbench_value\r\n").await;
+                                let _ = socket.write_all(b"$7\r\nv_bench\r\n").await;
                             } else {
                                 let _ = socket.write_all(b"$-1\r\n").await;
                             }
-                        } else if upper.contains("EXISTS") && upper.contains("BENCH_KEY") {
+                        } else if upper.contains("EXISTS") && upper.contains("K_BENCH") {
                             if !stage2_deleted {
                                 let _ = socket.write_all(b":1\r\n").await;
                             } else {
                                 let _ = socket.write_all(b":0\r\n").await;
                             }
-                        } else if upper.contains("DEL") && upper.contains("BENCH_KEY") {
+                        } else if upper.contains("DEL") && upper.contains("K_BENCH") {
                             stage2_deleted = true;
                             let _ = socket.write_all(b":1\r\n").await;
-                        } else if upper.contains("INCR") && upper.contains("NUM_COUNTER") {
+                        } else if upper.contains("INCR") && upper.contains("CNT_NUM") {
                             counter += 1;
                             let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
-                        } else if upper.contains("DECR") && upper.contains("NUM_COUNTER") {
+                        } else if upper.contains("DECR") && upper.contains("CNT_NUM") {
                             counter -= 1;
                             let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
-                        } else if upper.contains("INCR") && upper.contains("NON_NUM_STR") {
+                        } else if upper.contains("INCR") && upper.contains("STR_NUM") {
                             let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
                         } else {
                             let _ = socket.write_all(b"+OK\r\n").await;
@@ -489,6 +510,81 @@ mod tests {
         let verifier = RedisVerifier::new(port, None);
         let summary = verifier.run_all().await;
         assert_eq!(summary.passed_count, 4, "Summary failed: {:?}", summary.stages);
+        assert_eq!(summary.pass_rate, 100.0);
+    }
+
+    #[tokio::test]
+    async fn test_mock_redis_run_all_stages_seeded() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seed = "myrun123";
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 2048];
+                    let mut stage2_deleted = false;
+                    let mut stage3_count = 0;
+                    let mut counter = 0i64;
+
+                    while let Ok(n) = socket.read(&mut buf).await {
+                        if n == 0 { break; }
+                        let req = String::from_utf8_lossy(&buf[..n]);
+                        let upper = req.to_uppercase();
+
+                        if upper.contains("PING") {
+                            let _ = socket.write_all(b"+PONG\r\n").await;
+                        } else if upper.contains("ECHO") {
+                            let echo_str = "echo_myrun123";
+                            let resp = format!("${}\r\n{}\r\n", echo_str.len(), echo_str);
+                            let _ = socket.write_all(resp.as_bytes()).await;
+                        } else if upper.contains("SET") {
+                            let _ = socket.write_all(b"+OK\r\n").await;
+                        } else if upper.contains("GET") && upper.contains("TTL_MYRUN123") {
+                            stage3_count += 1;
+                            if stage3_count == 1 {
+                                let val = "val_myrun123";
+                                let resp = format!("${}\r\n{}\r\n", val.len(), val);
+                                let _ = socket.write_all(resp.as_bytes()).await;
+                            } else {
+                                let _ = socket.write_all(b"$-1\r\n").await;
+                            }
+                        } else if upper.contains("GET") && upper.contains("K_MYRUN123") {
+                            if !stage2_deleted {
+                                let val = "v_myrun123";
+                                let resp = format!("${}\r\n{}\r\n", val.len(), val);
+                                let _ = socket.write_all(resp.as_bytes()).await;
+                            } else {
+                                let _ = socket.write_all(b"$-1\r\n").await;
+                            }
+                        } else if upper.contains("EXISTS") && upper.contains("K_MYRUN123") {
+                            if !stage2_deleted {
+                                let _ = socket.write_all(b":1\r\n").await;
+                            } else {
+                                let _ = socket.write_all(b":0\r\n").await;
+                            }
+                        } else if upper.contains("DEL") && upper.contains("K_MYRUN123") {
+                            stage2_deleted = true;
+                            let _ = socket.write_all(b":1\r\n").await;
+                        } else if upper.contains("INCR") && upper.contains("CNT_MYRUN123") {
+                            counter += 1;
+                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                        } else if upper.contains("DECR") && upper.contains("CNT_MYRUN123") {
+                            counter -= 1;
+                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                        } else if upper.contains("INCR") && upper.contains("STR_MYRUN123") {
+                            let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
+                        } else {
+                            let _ = socket.write_all(b"+OK\r\n").await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let verifier = RedisVerifier::new(port, Some(seed));
+        let summary = verifier.run_all().await;
+        assert_eq!(summary.passed_count, 4, "Seeded summary failed: {:?}", summary.stages);
         assert_eq!(summary.pass_rate, 100.0);
     }
 

@@ -14,15 +14,20 @@ pub struct HttpTestSummary {
 pub struct HttpVerifier {
     pub target_port: u16,
     pub client: reqwest::Client,
+    pub run_seed: Option<String>,
 }
 
 impl HttpVerifier {
-    pub fn new(target_port: u16) -> Self {
+    pub fn new(target_port: u16, seed: Option<&str>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
-        Self { target_port, client }
+        Self {
+            target_port,
+            client,
+            run_seed: seed.map(|s| s.to_string()),
+        }
     }
 
     pub async fn run_all(&self) -> HttpTestSummary {
@@ -77,13 +82,51 @@ impl HttpVerifier {
 
     pub async fn test_stage3_echo(&self) -> StageResult {
         let name = "Stage 3: GET /echo/{str}".to_string();
-        let word = "subdollar_speed_test";
+        let word = self
+            .run_seed
+            .as_ref()
+            .map(|s| {
+                let prefix = &s[..s.len().min(8)];
+                format!("echo_{}", prefix)
+            })
+            .unwrap_or_else(|| "subdollar_speed_test".to_string());
         let url = format!("http://127.0.0.1:{}/echo/{}", self.target_port, word);
         match self.client.get(&url).send().await {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::OK {
                     return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) };
                 }
+
+                // Verify Content-Type header
+                let content_type = resp
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if !content_type.to_lowercase().starts_with("text/plain") {
+                    return StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected Content-Type 'text/plain', got '{}'", content_type)),
+                    };
+                }
+
+                // Verify Content-Length header
+                let content_length = resp
+                    .headers()
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if content_length != word.len().to_string() {
+                    return StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected Content-Length '{}', got '{}'", word.len(), content_length)),
+                    };
+                }
+
                 match resp.text().await {
                     Ok(text) if text.trim() == word => StageResult { stage: 3, name, passed: true, error: None },
                     Ok(text) => StageResult { stage: 3, name, passed: false, error: Some(format!("Body didn't match '{}', got: '{}'", word, text)) },
@@ -103,6 +146,37 @@ impl HttpVerifier {
                 if resp.status() != reqwest::StatusCode::OK {
                     return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) };
                 }
+
+                // Verify Content-Type header
+                let content_type = resp
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if !content_type.to_lowercase().starts_with("text/plain") {
+                    return StageResult {
+                        stage: 4,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected Content-Type 'text/plain', got '{}'", content_type)),
+                    };
+                }
+
+                // Verify Content-Length header
+                let content_length = resp
+                    .headers()
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if content_length != ua.len().to_string() {
+                    return StageResult {
+                        stage: 4,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected Content-Length '{}', got '{}'", ua.len(), content_length)),
+                    };
+                }
+
                 match resp.text().await {
                     Ok(text) if text.trim() == ua => StageResult { stage: 4, name, passed: true, error: None },
                     Ok(text) => StageResult { stage: 4, name, passed: false, error: Some(format!("Expected UA '{}', got '{}'", ua, text)) },
@@ -115,33 +189,75 @@ impl HttpVerifier {
 
     pub async fn test_stage5_file_storage(&self) -> StageResult {
         let name = "Stage 5: POST & GET /files/{filename}".to_string();
-        let filename = "bench_artifact.txt";
-        let content = "Hello from SubDollarBench automated test payload!";
+        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("artifact");
+        let filename = format!("bench_{}.txt", seed_prefix);
+        let content = format!("SubDollarBench payload {}", seed_prefix);
         let post_url = format!("http://127.0.0.1:{}/files/{}", self.target_port, filename);
         let get_url = format!("http://127.0.0.1:{}/files/{}", self.target_port, filename);
 
-        match self.client.post(&post_url).body(content).send().await {
+        // POST request must return strictly 201 Created
+        match self.client.post(&post_url).body(content.clone()).send().await {
             Ok(resp) => {
-                if resp.status() != reqwest::StatusCode::CREATED && !resp.status().is_success() {
-                    return StageResult { stage: 5, name, passed: false, error: Some(format!("POST /files failed with status: {}", resp.status())) };
+                if resp.status() != reqwest::StatusCode::CREATED {
+                    return StageResult {
+                        stage: 5,
+                        name,
+                        passed: false,
+                        error: Some(format!("POST /files expected 201 Created, got status: {}", resp.status())),
+                    };
                 }
             }
             Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(format!("POST error: {}", e)) },
         }
 
+        // GET request to retrieve created file
         match self.client.get(&get_url).send().await {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::OK {
                     return StageResult { stage: 5, name, passed: false, error: Some(format!("GET /files failed with status: {}", resp.status())) };
                 }
+
+                // Verify Content-Length header
+                let content_length = resp
+                    .headers()
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if content_length != content.len().to_string() {
+                    return StageResult {
+                        stage: 5,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected Content-Length '{}', got '{}'", content.len(), content_length)),
+                    };
+                }
+
                 match resp.text().await {
-                    Ok(text) if text.trim() == content => StageResult { stage: 5, name, passed: true, error: None },
-                    Ok(text) => StageResult { stage: 5, name, passed: false, error: Some(format!("File content mismatch! Expected '{}', got '{}'", content, text)) },
-                    Err(e) => StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
+                    Ok(text) if text.trim() == content => {}
+                    Ok(text) => return StageResult { stage: 5, name, passed: false, error: Some(format!("File content mismatch! Expected '{}', got '{}'", content, text)) },
+                    Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
                 }
             }
-            Err(e) => StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
         }
+
+        // GET request for non-existent file must return 404
+        let nonexistent_url = format!("http://127.0.0.1:{}/files/missing_{}.txt", self.target_port, seed_prefix);
+        match self.client.get(&nonexistent_url).send().await {
+            Ok(resp) => {
+                if resp.status() != reqwest::StatusCode::NOT_FOUND {
+                    return StageResult {
+                        stage: 5,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected 404 Not Found for missing file, got {}", resp.status())),
+                    };
+                }
+            }
+            Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(format!("GET missing file error: {}", e)) },
+        }
+
+        StageResult { stage: 5, name, passed: true, error: None }
     }
 }
 
@@ -186,7 +302,7 @@ mod tests {
                         } else if method == "GET" && path.starts_with("/echo/") {
                             let echo_str = &path["/echo/".len()..];
                             format!(
-                                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
+                                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
                                 echo_str.len(),
                                 echo_str
                             )
@@ -198,7 +314,7 @@ mod tests {
                                 }
                             }
                             format!(
-                                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
+                                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
                                 ua.len(),
                                 ua
                             )
@@ -211,7 +327,7 @@ mod tests {
                             let filename = &path["/files/".len()..];
                             if let Some(content) = store.lock().unwrap().get(filename) {
                                 format!(
-                                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
+                                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{}",
                                     content.len(),
                                     content
                                 )
@@ -228,10 +344,18 @@ mod tests {
             }
         });
 
-        let verifier = HttpVerifier::new(port);
+        // Test unseeded
+        let verifier = HttpVerifier::new(port, None);
         let summary = verifier.run_all().await;
-        assert_eq!(summary.passed_count, 5);
+        assert_eq!(summary.passed_count, 5, "Unseeded summary failed: {:?}", summary.stages);
         assert_eq!(summary.total_stages, 5);
         assert_eq!(summary.pass_rate, 100.0);
+
+        // Test seeded
+        let verifier_seeded = HttpVerifier::new(port, Some("testseed"));
+        let summary_seeded = verifier_seeded.run_all().await;
+        assert_eq!(summary_seeded.passed_count, 5, "Seeded summary failed: {:?}", summary_seeded.stages);
+        assert_eq!(summary_seeded.total_stages, 5);
+        assert_eq!(summary_seeded.pass_rate, 100.0);
     }
 }

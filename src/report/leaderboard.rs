@@ -6,15 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-pub use crate::verifier::StageResult;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkRunResult {
     pub id: String,
     pub model: String,
     pub task: String,
     pub language: String,
-    #[serde(default)]
     pub effort: Option<String>,
     pub pass_rate: f64,
     pub passed_stages: u32,
@@ -27,93 +24,103 @@ pub struct BenchmarkRunResult {
     pub savings_percent: f64,
     pub efficiency_score: f64,
     pub timestamp: String,
-    #[serde(default)]
     pub method_version: Option<String>,
 }
 
-/// Unbiased estimator for Pass@k (Chen et al. 2021)
-/// n: total trials, c: number of passing trials, k: target k
 pub fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
-    if n == 0 || k == 0 || k > n {
-        return 0.0;
-    }
-    if c >= n {
-        return 1.0;
-    }
-    if c == 0 {
+    if n == 0 || c == 0 || k == 0 || c > n || k > n {
+        if n > 0 && c == n {
+            return 1.0;
+        }
         return 0.0;
     }
     if n - c < k {
         return 1.0;
     }
-
     let mut prod = 1.0;
     for i in 0..k {
         prod *= (n - c - i) as f64 / (n - i) as f64;
     }
-    (1.0 - prod).clamp(0.0, 1.0)
+    1.0 - prod
 }
 
 pub struct LeaderboardManager;
 
 impl LeaderboardManager {
     pub fn detect_language(workdir: &Path) -> String {
-        let mut counts = std::collections::HashMap::new();
-        Self::count_lang_files_recursive(workdir, 0, &mut counts);
-        counts
-            .into_iter()
-            .max_by_key(|&(_, count)| count)
-            .map(|(lang, _)| lang.to_string())
-            .unwrap_or_else(|| "Unknown".to_string())
+        let mut has_c = false;
+        let mut has_rust = false;
+        let mut has_go = false;
+        let mut has_py = false;
+        let mut has_js = false;
+
+        Self::scan_extensions(workdir, &mut has_c, &mut has_rust, &mut has_go, &mut has_py, &mut has_js);
+
+        if has_rust {
+            "Rust".to_string()
+        } else if has_go {
+            "Go".to_string()
+        } else if has_c {
+            "C/C++".to_string()
+        } else if has_js {
+            "Node.js".to_string()
+        } else if has_py {
+            "Python".to_string()
+        } else {
+            "Unknown".to_string()
+        }
     }
 
-    fn count_lang_files_recursive(dir: &Path, depth: u32, counts: &mut std::collections::HashMap<&'static str, usize>) {
-        if depth > 4 {
-            return;
-        }
+    fn scan_extensions(
+        dir: &Path,
+        has_c: &mut bool,
+        has_rust: &mut bool,
+        has_go: &mut bool,
+        has_py: &mut bool,
+        has_js: &mut bool,
+    ) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
-
-                if name.starts_with('.') || name == "target" || name == "node_modules" {
-                    continue;
-                }
-
                 if path.is_dir() {
-                    Self::count_lang_files_recursive(&path, depth + 1, counts);
-                } else if path.is_file() {
-                    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                    match ext {
-                        "rs" => *counts.entry("Rust").or_insert(0) += 2,
-                        "go" => *counts.entry("Go").or_insert(0) += 2,
-                        "py" => *counts.entry("Python").or_insert(0) += 2,
-                        "js" | "mjs" | "cjs" => *counts.entry("Node.js").or_insert(0) += 2,
-                        "ts" => *counts.entry("TypeScript").or_insert(0) += 2,
-                        "c" | "cpp" | "cc" | "h" | "hpp" => *counts.entry("C/C++").or_insert(0) += 2,
-                        _ => {}
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.starts_with('.') && name != "target" && name != "node_modules" {
+                        Self::scan_extensions(&path, has_c, has_rust, has_go, has_py, has_js);
                     }
-
-                    if name == "Cargo.toml" { *counts.entry("Rust").or_insert(0) += 5; }
-                    if name == "go.mod" { *counts.entry("Go").or_insert(0) += 5; }
-                    if name == "package.json" { *counts.entry("Node.js").or_insert(0) += 5; }
-                    if name == "requirements.txt" || name == "pyproject.toml" { *counts.entry("Python").or_insert(0) += 5; }
+                } else if path.is_file() {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name == "Cargo.toml" || name.ends_with(".rs") {
+                        *has_rust = true;
+                    } else if name == "go.mod" || name.ends_with(".go") {
+                        *has_go = true;
+                    } else if name.ends_with(".c") || name.ends_with(".cpp") || name.ends_with(".cc") {
+                        *has_c = true;
+                    } else if name.ends_with(".py") || name == "requirements.txt" {
+                        *has_py = true;
+                    } else if name.ends_with(".js") || name.ends_with(".ts") || name == "package.json" {
+                        *has_js = true;
+                    }
                 }
             }
         }
     }
 
     pub fn save_result(results_dir: &str, result: &BenchmarkRunResult) -> Result<()> {
-        fs::create_dir_all(results_dir)?;
-        let path = Path::new(results_dir).join(format!("{}.json", result.id));
+        let path = Path::new(results_dir);
+        fs::create_dir_all(path)?;
+
+        let filename = format!("{}.json", result.id);
+        let filepath = path.join(filename);
+
         let data = serde_json::to_string_pretty(result)?;
-        fs::write(path, data)?;
+        fs::write(filepath, data)?;
         Ok(())
     }
 
     pub fn load_all(results_dir: &str) -> Vec<BenchmarkRunResult> {
-        let mut list = Vec::new();
         let path = Path::new(results_dir);
+        let mut list = Vec::new();
+
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -126,7 +133,21 @@ impl LeaderboardManager {
                 }
             }
         }
-        list.sort_by(|a, b| b.efficiency_score.partial_cmp(&a.efficiency_score).unwrap_or(std::cmp::Ordering::Equal));
+        list.sort_by(|a, b| {
+            b.pass_rate
+                .partial_cmp(&a.pass_rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    b.efficiency_score
+                        .partial_cmp(&a.efficiency_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    a.total_cost_usd
+                        .partial_cmp(&b.total_cost_usd)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        });
         list
     }
 
@@ -285,8 +306,9 @@ mod tests {
         let temp = std::env::temp_dir().join(format!("test_lb_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp);
 
+        // r1 has lower pass rate (50%), but high efficiency score (300.0) due to low cost
         let r1 = BenchmarkRunResult {
-            id: "run_low_score".to_string(),
+            id: "run_partial_pass".to_string(),
             model: "model_b".to_string(),
             task: "redis".to_string(),
             language: "Python".to_string(),
@@ -298,15 +320,16 @@ mod tests {
             prompt_tokens: 1000,
             cached_tokens: 500,
             completion_tokens: 200,
-            total_cost_usd: 0.01,
+            total_cost_usd: 0.001,
             savings_percent: 25.0,
-            efficiency_score: 50.0,
+            efficiency_score: 300.0,
             timestamp: "2026-09-04T06:00:00Z".to_string(),
             method_version: Some("0.1.0".to_string()),
         };
 
+        // r2 has 100% pass rate, efficiency score (200.0)
         let r2 = BenchmarkRunResult {
-            id: "run_high_score".to_string(),
+            id: "run_full_pass".to_string(),
             model: "model_a".to_string(),
             task: "redis".to_string(),
             language: "Go".to_string(),
@@ -330,8 +353,9 @@ mod tests {
 
         let list = LeaderboardManager::load_all(temp.to_str().unwrap());
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].id, "run_high_score");
-        assert_eq!(list[1].id, "run_low_score");
+        // Full pass (100%) must rank higher than partial pass (50%) regardless of efficiency score!
+        assert_eq!(list[0].id, "run_full_pass");
+        assert_eq!(list[1].id, "run_partial_pass");
 
         let _ = fs::remove_dir_all(&temp);
     }

@@ -3,6 +3,17 @@ use std::path::Path;
 
 pub struct ComplianceChecker;
 
+const FORBIDDEN_BASE_IMAGES: &[&str] = &[
+    "redis", "valkey", "keydb", "dragonfly", "nginx", "caddy", "coredns",
+    "bind9", "named", "dnsmasq", "apache", "httpd", "envoy", "traefik",
+    "haproxy", "lighttpd", "memcached",
+];
+
+const FORBIDDEN_DAEMONS: &[&str] = &[
+    "redis-server", "valkey-server", "keydb-server", "dragonfly", "nginx", "caddy",
+    "coredns", "dnsmasq", "named", "bind9", "lighttpd", "apache2", "httpd", "memcached",
+];
+
 impl ComplianceChecker {
     /// Scans the candidate workspace to ensure no prohibited server frameworks, prebuilt server daemons,
     /// or built-in high-level protocol modules are used.
@@ -40,6 +51,48 @@ impl ComplianceChecker {
         }
     }
 
+    /// Normalizes lines by concatenating trailing `\` line continuations into unified logical lines.
+    pub fn normalize_lines(content: &str) -> Vec<String> {
+        let mut logical_lines = Vec::new();
+        let mut current = String::new();
+
+        for raw_line in content.lines() {
+            let trimmed = raw_line.trim();
+            if current.is_empty() && trimmed.starts_with('#') {
+                logical_lines.push(trimmed.to_string());
+                continue;
+            }
+
+            if let Some(stripped) = trimmed.strip_suffix('\\') {
+                current.push_str(stripped.trim_end());
+                current.push(' ');
+            } else {
+                current.push_str(trimmed);
+                if !current.trim().is_empty() {
+                    logical_lines.push(current.trim().to_string());
+                }
+                current.clear();
+            }
+        }
+        if !current.trim().is_empty() {
+            logical_lines.push(current.trim().to_string());
+        }
+        logical_lines
+    }
+
+    /// Tokenizes shell or Dockerfile commands by splitting on shell word/operator delimiters.
+    pub fn tokenize_command(cmd: &str) -> Vec<String> {
+        let cleaned: String = cmd
+            .chars()
+            .map(|c| match c {
+                '[' | ']' | '(' | ')' | '{' | '}' | '"' | '\'' | '`' | '$' | ';' | '&' | '|'
+                | ',' | '=' | '!' | '<' | '>' | '\t' => ' ',
+                _ => c,
+            })
+            .collect();
+        cleaned.split_whitespace().map(|s| s.to_string()).collect()
+    }
+
     fn inspect_file(path: &Path, filename: &str, violations: &mut Vec<String>) {
         let content = match fs::read_to_string(path) {
             Ok(c) => c,
@@ -48,22 +101,13 @@ impl ComplianceChecker {
 
         // 1. Dockerfile base-image and RUN/CMD/ENTRYPOINT daemon inspection
         if filename.eq_ignore_ascii_case("Dockerfile") || filename.contains("Dockerfile") {
-            let forbidden_base_images = [
-                "redis", "valkey", "keydb", "nginx", "caddy", "coredns",
-                "bind9", "named", "dnsmasq", "apache", "httpd", "envoy",
-                "traefik", "haproxy", "lighttpd", "memcached",
-            ];
-            let forbidden_daemons = [
-                "redis-server", "valkey-server", "keydb-server", "nginx", "caddy",
-                "coredns", "dnsmasq", "named", "bind9", "lighttpd", "apache2", "httpd", "memcached",
-            ];
-            for line in content.lines() {
-                let trimmed = line.trim();
-                let lower = trimmed.to_lowercase();
+            let logical_lines = Self::normalize_lines(&content);
+            for line in logical_lines {
+                let lower = line.to_lowercase();
                 if lower.starts_with("from ") {
-                    for forbidden in forbidden_base_images {
+                    for forbidden in FORBIDDEN_BASE_IMAGES {
                         if lower.contains(forbidden) {
-                            violations.push(format!("Dockerfile uses forbidden base image '{}'", trimmed));
+                            violations.push(format!("Dockerfile uses forbidden base image '{}'", line));
                             break;
                         }
                     }
@@ -73,16 +117,10 @@ impl ComplianceChecker {
                     || lower.starts_with("entrypoint ")
                     || lower.starts_with("entrypoint[")
                 {
-                    let cleaned = lower
-                        .replace('[', " ")
-                        .replace(']', " ")
-                        .replace('"', " ")
-                        .replace('\'', " ")
-                        .replace(',', " ");
-                    let tokens: Vec<&str> = cleaned.split_whitespace().collect();
-                    for daemon in forbidden_daemons {
-                        if tokens.iter().any(|&t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
-                            violations.push(format!("Dockerfile: executes or installs forbidden server daemon '{}' in '{}'", daemon, trimmed));
+                    let tokens = Self::tokenize_command(&lower);
+                    for daemon in FORBIDDEN_DAEMONS {
+                        if tokens.iter().any(|t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
+                            violations.push(format!("Dockerfile: executes or installs forbidden server daemon '{}' in '{}'", daemon, line));
                             break;
                         }
                     }
@@ -92,18 +130,15 @@ impl ComplianceChecker {
 
         // 2. Shell script daemon execution inspection
         if filename.ends_with(".sh") || filename.ends_with(".bash") || filename == "start.sh" {
-            let forbidden_daemons = [
-                "redis-server", "valkey-server", "keydb-server", "nginx", "caddy",
-                "coredns", "dnsmasq", "named", "bind9", "lighttpd", "apache2", "httpd",
-            ];
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with('#') {
+            let logical_lines = Self::normalize_lines(&content);
+            for line in logical_lines {
+                if line.starts_with('#') {
                     continue;
                 }
-                for daemon in forbidden_daemons {
-                    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-                    if tokens.iter().any(|&t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
+                let lower = line.to_lowercase();
+                let tokens = Self::tokenize_command(&lower);
+                for daemon in FORBIDDEN_DAEMONS {
+                    if tokens.iter().any(|t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
                         violations.push(format!("{}: executes forbidden server daemon '{}'", filename, daemon));
                         break;
                     }
@@ -119,72 +154,65 @@ impl ComplianceChecker {
             ];
             for f in forbidden {
                 if content.contains(f) {
-                    violations.push(format!("package.json specifies forbidden dependency {}", f));
+                    violations.push(format!("package.json: uses forbidden dependency {}", f));
                 }
             }
         }
 
         // 4. Python requirements.txt or pyproject.toml
-        if filename == "requirements.txt" || filename == "pyproject.toml" || filename == "Pipfile" {
+        if filename == "requirements.txt" || filename == "pyproject.toml" {
             let forbidden = [
-                "flask", "fastapi", "django", "tornado", "sanic", "starlette",
-                "bottle", "aiohttp", "gunicorn", "uvicorn", "redis", "dnspython",
+                "flask", "fastapi", "django", "tornado", "aiohttp", "sanic",
+                "redis", "valkey", "redis-py", "twisted",
             ];
             for line in content.lines() {
-                let lower = line.to_lowercase();
+                let trimmed = line.trim().to_lowercase();
                 for f in forbidden {
-                    if lower.starts_with(f) || lower.contains(&format!("\"{}\"", f)) {
-                        violations.push(format!("{} specifies forbidden dependency {}", filename, f));
+                    if trimmed.starts_with(f) || trimmed.contains(&format!("\"{}\"", f)) || trimmed.contains(&format!("'{}'", f)) {
+                        violations.push(format!("{}: uses forbidden dependency '{}'", filename, f));
                     }
                 }
             }
         }
 
-        // 5. Go go.mod
-        if filename == "go.mod" {
+        // 5. Rust Cargo.toml
+        if filename == "Cargo.toml" {
             let forbidden = [
-                "github.com/gin-gonic/gin",
-                "github.com/gofiber/fiber",
-                "github.com/labstack/echo",
-                "github.com/gorilla/mux",
-                "github.com/go-chi/chi",
-                "github.com/redis/go-redis",
-                "github.com/miekg/dns",
+                "actix-web", "axum", "warp", "rocket", "tide", "hyper",
+                "redis", "fred",
             ];
             for f in forbidden {
                 if content.contains(f) {
-                    violations.push(format!("go.mod specifies forbidden dependency {}", f));
+                    violations.push(format!("Cargo.toml: uses forbidden dependency '{}'", f));
                 }
             }
         }
 
-        // 6. Rust Cargo.toml
-        if filename == "Cargo.toml" {
+        // 6. Go go.mod
+        if filename == "go.mod" {
             let forbidden = [
-                "axum", "actix-web", "warp", "rocket", "tide", "poem", "salvo",
-                "redis", "fred", "trust-dns", "hickory-dns",
+                "github.com/gin-gonic/gin", "github.com/labstack/echo",
+                "github.com/gofiber/fiber", "github.com/go-redis/redis",
+                "github.com/redis/go-redis",
             ];
-            for line in content.lines() {
-                let trimmed = line.trim();
-                for f in forbidden {
-                    if trimmed.starts_with(f) || trimmed.starts_with(&format!("\"{}\"", f)) {
-                        violations.push(format!("Cargo.toml specifies forbidden dependency {}", f));
-                    }
+            for f in forbidden {
+                if content.contains(f) {
+                    violations.push(format!("go.mod: uses forbidden dependency '{}'", f));
                 }
             }
         }
 
-        // 7. Source code inspection (.py, .go, .rs, .js, .ts, .c, .cpp, .h)
-        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        // 7. Source Code inspection (Python, Go, JS, TS, Rust, C)
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
             "py" => {
-                if content.contains("import http.server") || content.contains("from http.server") {
+                if content.contains("http.server") {
                     violations.push(format!("{}: imports built-in http.server", filename));
                 }
-                if content.contains("from flask import") || content.contains("import flask") {
+                if content.contains("import flask") || content.contains("from flask") {
                     violations.push(format!("{}: imports flask", filename));
                 }
-                if content.contains("from fastapi import") || content.contains("import fastapi") {
+                if content.contains("import fastapi") || content.contains("from fastapi") {
                     violations.push(format!("{}: imports fastapi", filename));
                 }
             }
@@ -236,6 +264,51 @@ mod tests {
         fs::write(temp_dir.join("start.sh"), "#!/bin/bash\n./server\n").unwrap();
 
         assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_compliance_checker_catches_continuation_line_and_delimiters() {
+        let temp_dir = std::env::temp_dir().join(format!("test_compliance_cont_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        // 1. Dockerfile with line continuations
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM ubuntu:24.04\nRUN apt-get update && \\\n    apt-get install -y \\\n    redis-server\n",
+        ).unwrap();
+        let res1 = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res1.is_err());
+        assert!(res1.unwrap_err().contains("redis-server"));
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 2. Dockerfile with continuation in FROM
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM \\\n  redis:alpine\n",
+        ).unwrap();
+        let res2 = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res2.is_err());
+        assert!(res2.unwrap_err().contains("redis"));
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 3. Shell script with delimiter variants (;, &, quotes, $())
+        let bad_scripts = [
+            "#!/bin/bash\nredis-server;\n",
+            "#!/bin/bash\nredis-server&\n",
+            "#!/bin/bash\n\"redis-server\"\n",
+            "#!/bin/bash\n$(redis-server)\n",
+            "#!/bin/bash\n`redis-server`\n",
+            "#!/bin/bash\necho starting && \\\n  redis-server\n",
+        ];
+        for script in bad_scripts {
+            fs::write(temp_dir.join("start.sh"), script).unwrap();
+            let res = ComplianceChecker::check_no_frameworks(&temp_dir);
+            assert!(res.is_err(), "Failed to catch script: {}", script);
+            assert!(res.unwrap_err().contains("redis-server"));
+            let _ = fs::remove_file(temp_dir.join("start.sh"));
+        }
+
         let _ = fs::remove_dir_all(&temp_dir);
     }
 

@@ -187,7 +187,7 @@ impl RunPublisher {
             let err = s.error.as_deref().unwrap_or("-");
             md.push_str(&format!("| {} | {} | {} | {} |\n", s.stage, s.name, status, err));
         }
-        md.push_str("\n");
+        md.push('\n');
 
         md.push_str("## 📁 Generated Project Files\n\n");
         md.push_str("Candidate code snapshot in [`workspace/`](workspace/):\n\n");
@@ -196,7 +196,7 @@ impl RunPublisher {
         for f in &m.files {
             md.push_str(&format!("| [`{}`](workspace/{}) | {} |\n", f.name, f.name, f.size_bytes));
         }
-        md.push_str("\n");
+        md.push('\n');
 
         md.push_str("## 🖥️ Execution Environment\n\n");
         md.push_str(&env.to_markdown_table());

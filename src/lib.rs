@@ -5,3 +5,4 @@ pub mod report;
 pub mod sandbox;
 pub mod verifier;
 pub mod web;
+pub mod pipeline;

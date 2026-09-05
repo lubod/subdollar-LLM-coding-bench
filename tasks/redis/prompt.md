@@ -52,7 +52,7 @@ Your server must accept TCP connections on port 6379 and parse the Redis Seriali
    - **Error Handling**: If `INCR` or `DECR` is called on a key whose value cannot be parsed as a 64-bit signed integer, return a standard RESP error: `-ERR value is not an integer or out of range\r\n` (any RESP error line starting with `-ERR`).
 
 ### Verification Criteria
-1. Your server will be tested by a test harness sending raw TCP protocol commands and comparing responses against real Redis.
+1. Your server will be tested by an automated raw TCP byte-exact RESP2 protocol verification test suite and compared against real Redis.
 2. Your server will undergo a concurrency and throughput test using `redis-benchmark -p 6379 -n 5000 -c 10 -t get,set -q`.
 
 Test your server thoroughly with `redis-cli -p 6379` before finishing!

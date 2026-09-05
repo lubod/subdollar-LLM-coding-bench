@@ -23,7 +23,7 @@ pub enum Commands {
         task: TaskType,
 
         /// Reasoning effort / thinking level (auto, off, low, medium, high, max)
-        #[arg(long, default_value = "auto")]
+        #[arg(short = 'e', long, default_value = "auto")]
         effort: String,
 
         /// Maximum turns/steps allowed for OMP
@@ -31,7 +31,7 @@ pub enum Commands {
         max_turns: u32,
 
         /// Maximum cost budget in USD (e.g. 0.20 for 20 cents)
-        #[arg(long, default_value_t = 0.50)]
+        #[arg(short = 'b', long, default_value_t = 0.50)]
         budget_usd: f64,
 
         /// Maximum execution time in minutes before stopping agent (e.g. 15 for 15m)
@@ -167,6 +167,18 @@ pub fn get_repo_root() -> PathBuf {
         }
     }
 
+    // 1. Check current executable ancestor directory first
+    if let Ok(exe) = std::env::current_exe() {
+        let mut cur = exe.parent();
+        while let Some(p) = cur {
+            if p.join("Cargo.toml").exists() && p.join("tasks").exists() {
+                return p.to_path_buf();
+            }
+            cur = p.parent();
+        }
+    }
+
+    // 2. Check current working directory and its parent
     if let Ok(cur) = std::env::current_dir() {
         if cur.join("Cargo.toml").exists() && cur.join("tasks").exists() {
             return cur;
@@ -175,16 +187,6 @@ pub fn get_repo_root() -> PathBuf {
             if parent.join("Cargo.toml").exists() && parent.join("tasks").exists() {
                 return parent.to_path_buf();
             }
-        }
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        let mut cur = exe.parent();
-        while let Some(p) = cur {
-            if p.join("Cargo.toml").exists() && p.join("tasks").exists() {
-                return p.to_path_buf();
-            }
-            cur = p.parent();
         }
     }
 
@@ -291,6 +293,18 @@ mod tests {
             _ => panic!("Expected Run command"),
         }
         std::env::remove_var("OPENROUTER_API_KEY");
+
+        let args_short = ["subdollar-bench", "run", "-m", "test-model-3", "-t", "http", "-e", "max", "-b", "0.20"];
+        let cli_short = Cli::try_parse_from(args_short).unwrap();
+        match cli_short.command {
+            Commands::Run { model, task, effort, budget_usd, .. } => {
+                assert_eq!(model, "test-model-3");
+                assert_eq!(task, TaskType::Http);
+                assert_eq!(effort, "max");
+                assert_eq!(budget_usd, 0.20);
+            }
+            _ => panic!("Expected Run command"),
+        }
     }
 
     #[test]

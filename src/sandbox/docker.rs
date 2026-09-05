@@ -4,17 +4,56 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{info, warn};
 
-pub struct SandboxManager;
+pub struct SandboxManager {
+    pub instance_id: String,
+}
+
+impl Default for SandboxManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SandboxManager {
     pub fn new() -> Self {
-        Self
+        Self::with_id("default")
+    }
+
+    pub fn with_id(id: &str) -> Self {
+        let safe_id: String = id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .collect();
+        Self {
+            instance_id: if safe_id.is_empty() {
+                "default".to_string()
+            } else {
+                safe_id
+            },
+        }
+    }
+
+    pub fn candidate_container_name(&self) -> String {
+        format!("subdollar-candidate-{}", self.instance_id)
+    }
+
+    pub fn ref_redis_name(&self) -> String {
+        format!("subdollar-ref-redis-{}", self.instance_id)
+    }
+
+    pub fn ref_http_name(&self) -> String {
+        format!("subdollar-ref-http-{}", self.instance_id)
+    }
+
+    pub fn ref_dns_name(&self) -> String {
+        format!("subdollar-ref-dns-{}", self.instance_id)
     }
 
     pub fn start_reference_redis(&self, port: u16) -> Result<()> {
-        info!("Starting ground-truth reference Redis in Docker on port {}", port);
+        let name = self.ref_redis_name();
+        info!("Starting ground-truth reference Redis in Docker on port {} ({})", port, name);
         let _ = Command::new("docker")
-            .args(["rm", "-f", "subdollar-ref-redis"])
+            .args(["rm", "-f", &name])
             .output();
 
         let _ = Command::new("docker")
@@ -23,7 +62,7 @@ impl SandboxManager {
                 "-d",
                 "--rm",
                 "--name",
-                "subdollar-ref-redis",
+                &name,
                 "-p",
                 &format!("{}:6379", port),
                 "redis:alpine",
@@ -34,9 +73,10 @@ impl SandboxManager {
     }
 
     pub fn start_reference_http(&self, port: u16) -> Result<()> {
-        info!("Starting reference Nginx in Docker on port {}", port);
+        let name = self.ref_http_name();
+        info!("Starting reference Nginx in Docker on port {} ({})", port, name);
         let _ = Command::new("docker")
-            .args(["rm", "-f", "subdollar-ref-http"])
+            .args(["rm", "-f", &name])
             .output();
 
         let _ = Command::new("docker")
@@ -45,7 +85,7 @@ impl SandboxManager {
                 "-d",
                 "--rm",
                 "--name",
-                "subdollar-ref-http",
+                &name,
                 "--memory=512m",
                 "--cpus=1.0",
                 "-p",
@@ -58,9 +98,10 @@ impl SandboxManager {
     }
 
     pub fn start_reference_dns(&self, port: u16) -> Result<()> {
-        info!("Starting reference DNS server in Docker on UDP port {}", port);
+        let name = self.ref_dns_name();
+        info!("Starting reference DNS server in Docker on UDP port {} ({})", port, name);
         let _ = Command::new("docker")
-            .args(["rm", "-f", "subdollar-ref-dns"])
+            .args(["rm", "-f", &name])
             .output();
 
         let _ = Command::new("docker")
@@ -69,7 +110,7 @@ impl SandboxManager {
                 "-d",
                 "--rm",
                 "--name",
-                "subdollar-ref-dns",
+                &name,
                 "--memory=512m",
                 "--cpus=1.0",
                 "-p",
@@ -153,11 +194,14 @@ impl SandboxManager {
 
     /// Start the candidate server container with resource limits
     pub fn start_candidate_in_docker(&self, workdir: &Path, port: u16) -> Result<()> {
-        info!("Starting candidate server in isolated Docker container for port {}", port);
+        let name = self.candidate_container_name();
+        info!("Starting candidate server in isolated Docker container for port {} ({})", port, name);
 
         let _ = Command::new("docker")
-            .args(["rm", "-f", "subdollar-candidate"])
+            .args(["rm", "-f", &name])
             .output();
+
+        let _ = fs::create_dir_all(workdir);
 
         let canonical_workdir = if workdir.is_absolute() {
             workdir.to_path_buf()
@@ -168,30 +212,29 @@ impl SandboxManager {
                     .unwrap_or_else(|_| crate::config::get_repo_root().join(workdir))
             })
         };
-        let port_tcp = format!("{}:{}/tcp", port, port);
+
+        let port_tcp = format!("{}:{}", port, port);
         let port_udp = format!("{}:{}/udp", port, port);
 
-        // Ensure runnable (detects nested start.sh / Dockerfile)
-        let _ = self.ensure_runnable_candidate(&canonical_workdir);
-
-        // CASE A: Dockerfile exists -> Build and run custom Docker container
-        let dockerfile_path = canonical_workdir.join("Dockerfile");
-        if dockerfile_path.exists() {
-            info!("Detected Dockerfile in candidate workspace! Building candidate Docker image...");
-            let build_status = Command::new("docker")
-                .args(["build", "-t", "subdollar-candidate-custom", "."])
+        // CASE A: Candidate provided their own Dockerfile
+        let dockerfile = canonical_workdir.join("Dockerfile");
+        if dockerfile.exists() {
+            info!("Candidate provided custom Dockerfile. Building image...");
+            let image_tag = format!("subdollar-candidate-{}", self.instance_id);
+            let build_res = Command::new("docker")
+                .args(["build", "-t", &image_tag, "."])
                 .current_dir(&canonical_workdir)
                 .output();
 
-            match build_status {
+            match build_res {
                 Ok(out) if out.status.success() => {
-                    info!("Successfully built custom Docker image 'subdollar-candidate-custom'");
+                    info!("Custom Dockerfile build succeeded. Running container...");
                     let run_res = Command::new("docker")
                         .args([
                             "run",
                             "-d",
                             "--name",
-                            "subdollar-candidate",
+                            &name,
                             "--memory=2g",
                             "--cpus=2.0",
                             "--pids-limit=256",
@@ -199,7 +242,7 @@ impl SandboxManager {
                             &port_tcp,
                             "-p",
                             &port_udp,
-                            "subdollar-candidate-custom",
+                            &image_tag,
                         ])
                         .output();
                     if let Ok(run_out) = run_res {
@@ -228,7 +271,7 @@ impl SandboxManager {
                 "run",
                 "-d",
                 "--name",
-                "subdollar-candidate",
+                &name,
                 "--memory=2g",
                 "--cpus=2.0",
                 "--pids-limit=256",
@@ -264,8 +307,9 @@ impl SandboxManager {
     }
 
     pub fn get_candidate_logs(&self) -> String {
+        let name = self.candidate_container_name();
         let output = Command::new("docker")
-            .args(["logs", "--tail", "100", "subdollar-candidate"])
+            .args(["logs", "--tail", "100", &name])
             .output();
         match output {
             Ok(out) => {
@@ -288,8 +332,12 @@ impl SandboxManager {
     }
 
     pub fn cleanup(&self) {
+        let cand = self.candidate_container_name();
+        let ref_redis = self.ref_redis_name();
+        let ref_http = self.ref_http_name();
+        let ref_dns = self.ref_dns_name();
         let _ = Command::new("docker")
-            .args(["rm", "-f", "subdollar-ref-redis", "subdollar-ref-http", "subdollar-candidate", "subdollar-omp-agent"])
+            .args(["rm", "-f", &cand, &ref_redis, &ref_http, &ref_dns, "subdollar-ref-redis", "subdollar-ref-http", "subdollar-ref-dns", "subdollar-candidate", "subdollar-omp-agent"])
             .output();
     }
 }
@@ -308,32 +356,32 @@ mod tests {
         let sm = SandboxManager::new();
 
         // 1. Empty dir
-        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), false);
+        assert!(!sm.ensure_runnable_candidate(&temp_dir).unwrap());
 
         // 2. Root Dockerfile
         fs::write(temp_dir.join("Dockerfile"), "FROM alpine").unwrap();
-        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        assert!(sm.ensure_runnable_candidate(&temp_dir).unwrap());
         let _ = fs::remove_file(temp_dir.join("Dockerfile"));
 
         // 3. Nested Dockerfile
         let nested = temp_dir.join("subdir/nested");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("Dockerfile"), "FROM alpine").unwrap();
-        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        assert!(sm.ensure_runnable_candidate(&temp_dir).unwrap());
         assert!(temp_dir.join("Dockerfile").exists());
         let _ = fs::remove_file(temp_dir.join("Dockerfile"));
         let _ = fs::remove_dir_all(&nested);
 
         // 4. Root start.sh
         fs::write(temp_dir.join("start.sh"), "#!/bin/bash\necho ok").unwrap();
-        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        assert!(sm.ensure_runnable_candidate(&temp_dir).unwrap());
         let _ = fs::remove_file(temp_dir.join("start.sh"));
 
         // 5. Nested start.sh
         let nested_sh = temp_dir.join("project");
         fs::create_dir_all(&nested_sh).unwrap();
         fs::write(nested_sh.join("start.sh"), "#!/bin/bash\necho nested").unwrap();
-        assert_eq!(sm.ensure_runnable_candidate(&temp_dir).unwrap(), true);
+        assert!(sm.ensure_runnable_candidate(&temp_dir).unwrap());
         assert!(temp_dir.join("start.sh").exists());
         let root_content = fs::read_to_string(temp_dir.join("start.sh")).unwrap();
         assert!(root_content.contains("/workspace/project"));
@@ -358,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_docker_cleanup_and_logs() {
-        let sm = SandboxManager::new();
+        let sm = SandboxManager::with_id("test-cleanup");
         sm.cleanup();
         let logs = sm.get_candidate_logs();
         assert!(!logs.is_empty());
@@ -366,11 +414,13 @@ mod tests {
 
     #[test]
     fn test_start_and_cleanup_reference_containers() {
-        let sm = SandboxManager::new();
+        let sm = SandboxManager::with_id("test-ref");
         let res_redis = sm.start_reference_redis(59994);
         assert!(res_redis.is_ok());
         let res_http = sm.start_reference_http(59993);
         assert!(res_http.is_ok());
+        let res_dns = sm.start_reference_dns(59992);
+        assert!(res_dns.is_ok());
         sm.cleanup();
     }
 
@@ -380,7 +430,7 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        let sm = SandboxManager::new();
+        let sm = SandboxManager::with_id("test-cand");
 
         // 1. start.sh case
         fs::write(temp_dir.join("start.sh"), "#!/bin/bash\necho candidate running\n").unwrap();

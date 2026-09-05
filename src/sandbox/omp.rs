@@ -39,6 +39,20 @@ pub struct OmpSessionStats {
     pub steps_taken: u32,
 }
 
+#[derive(Clone)]
+pub struct TailSessionContext {
+    pub start_time: SystemTime,
+    pub existing: HashSet<PathBuf>,
+    pub active_file: Arc<Mutex<Option<PathBuf>>>,
+    pub running: Arc<AtomicBool>,
+    pub tx: mpsc::Sender<String>,
+    pub limits: AgentExecutionLimits,
+    pub turn_counter: Arc<std::sync::atomic::AtomicU32>,
+    pub accumulated_cost: Arc<Mutex<f64>>,
+    pub limit_reached: Arc<AtomicBool>,
+    pub limit_reason: Arc<Mutex<Option<String>>>,
+}
+
 pub struct OmpRunner;
 
 impl OmpRunner {
@@ -70,11 +84,11 @@ impl OmpRunner {
         info!("Launching OMP agent in Docker sandbox with model: {}, effort: {:?}, limits: {:?}", model, effort, limits);
 
         let start_time = SystemTime::now();
-        let container_name = "subdollar-omp-agent";
+        let container_name = format!("subdollar-omp-agent-{}", std::process::id());
 
         // Pre-clean any stale agent container
         let _ = Command::new("docker")
-            .args(["rm", "-f", container_name])
+            .args(["rm", "-f", &container_name])
             .output();
 
         let canonical_workdir = if workdir.is_absolute() {
@@ -98,7 +112,7 @@ impl OmpRunner {
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&host_omp_dir, std::fs::Permissions::from_mode(0o777));
-            let _ = std::fs::set_permissions(&host_omp_dir.join("agent"), std::fs::Permissions::from_mode(0o777));
+            let _ = std::fs::set_permissions(host_omp_dir.join("agent"), std::fs::Permissions::from_mode(0o777));
             let _ = std::fs::set_permissions(&host_sessions_dir, std::fs::Permissions::from_mode(0o777));
         }
         let mount_omp = format!("{}:/home/ubuntu/.omp", host_omp_dir.display());
@@ -107,7 +121,7 @@ impl OmpRunner {
         cmd.arg("run")
             .arg("--rm")
             .arg("--name")
-            .arg(container_name)
+            .arg(&container_name)
             .arg("--memory=3g")
             .arg("--cpus=3.0")
             .arg("--pids-limit=512")
@@ -171,28 +185,21 @@ impl OmpRunner {
         let limit_reason = Arc::new(Mutex::new(Option::<String>::None));
 
         // Spawn thread to tail the active session .jsonl file in real-time
-        let running_tailer = running.clone();
-        let tx_tailer = tx.clone();
-        let active_file_tailer = active_file.clone();
-        let turn_counter_tailer = turn_counter.clone();
-        let accumulated_cost_tailer = accumulated_cost.clone();
-        let limit_reached_tailer = limit_reached.clone();
-        let limit_reason_tailer = limit_reason.clone();
-        let limits_tailer = limits;
+        let tail_ctx = TailSessionContext {
+            start_time,
+            existing: existing_files,
+            active_file: active_file.clone(),
+            running: running.clone(),
+            tx: tx.clone(),
+            limits,
+            turn_counter: turn_counter.clone(),
+            accumulated_cost: accumulated_cost.clone(),
+            limit_reached: limit_reached.clone(),
+            limit_reason: limit_reason.clone(),
+        };
 
         let tailer_handle = thread::spawn(move || {
-            Self::tail_session_file(
-                start_time,
-                existing_files,
-                active_file_tailer,
-                running_tailer,
-                tx_tailer,
-                limits_tailer,
-                turn_counter_tailer,
-                accumulated_cost_tailer,
-                limit_reached_tailer,
-                limit_reason_tailer,
-            );
+            Self::tail_session_file(tail_ctx);
         });
 
         // Spawn thread to read stdout
@@ -200,7 +207,7 @@ impl OmpRunner {
             let tx_out = tx.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         let _ = tx_out.send(trimmed.to_string());
@@ -214,7 +221,7 @@ impl OmpRunner {
             let tx_err = tx.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         let _ = tx_err.send(format!("[STDERR] {}", trimmed));
@@ -224,9 +231,10 @@ impl OmpRunner {
         }
         drop(tx);
 
-        let kill_agent = || {
-            let _ = Command::new("docker").args(["kill", container_name]).output();
-            let _ = Command::new("docker").args(["rm", "-f", container_name]).output();
+        let kill_container = container_name.clone();
+        let kill_agent = move || {
+            let _ = Command::new("docker").args(["kill", &kill_container]).output();
+            let _ = Command::new("docker").args(["rm", "-f", &kill_container]).output();
         };
 
         let start_instant = std::time::Instant::now();
@@ -321,27 +329,16 @@ impl OmpRunner {
         set
     }
 
-    fn tail_session_file(
-        start_time: SystemTime,
-        existing: HashSet<PathBuf>,
-        active_file: Arc<Mutex<Option<PathBuf>>>,
-        running: Arc<AtomicBool>,
-        tx: mpsc::Sender<String>,
-        limits: AgentExecutionLimits,
-        turn_counter: Arc<std::sync::atomic::AtomicU32>,
-        accumulated_cost: Arc<Mutex<f64>>,
-        limit_reached: Arc<AtomicBool>,
-        limit_reason: Arc<Mutex<Option<String>>>,
-    ) {
+    fn tail_session_file(ctx: TailSessionContext) {
         let dirs = Self::get_sessions_dirs();
 
         // Check if active_file already has a pre-set file
-        let mut session_file: Option<PathBuf> = active_file.lock().ok().and_then(|l| l.clone());
+        let mut session_file: Option<PathBuf> = ctx.active_file.lock().ok().and_then(|l| l.clone());
 
         // Poll continuously for the new session file to appear while agent is running
         if session_file.is_none() {
-            while running.load(Ordering::SeqCst) {
-                if let Some(f) = Self::find_new_session_file(&dirs, &existing, start_time) {
+            while ctx.running.load(Ordering::SeqCst) {
+                if let Some(f) = Self::find_new_session_file(&dirs, &ctx.existing, ctx.start_time) {
                     session_file = Some(f);
                     break;
                 }
@@ -349,7 +346,7 @@ impl OmpRunner {
             }
 
             if session_file.is_none() {
-                session_file = Self::find_new_session_file(&dirs, &existing, start_time);
+                session_file = Self::find_new_session_file(&dirs, &ctx.existing, ctx.start_time);
             }
         }
 
@@ -361,7 +358,7 @@ impl OmpRunner {
             }
         };
 
-        if let Ok(mut lock) = active_file.lock() {
+        if let Ok(mut lock) = ctx.active_file.lock() {
             *lock = Some(session_path.clone());
         }
 
@@ -373,7 +370,7 @@ impl OmpRunner {
         let mut reader = BufReader::new(file);
         let mut line_buf = String::new();
 
-        while running.load(Ordering::SeqCst) {
+        while ctx.running.load(Ordering::SeqCst) {
             line_buf.clear();
             match reader.read_line(&mut line_buf) {
                 Ok(0) => {
@@ -385,27 +382,27 @@ impl OmpRunner {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line_buf.trim()) {
                             // 1. Assistant turn check
                             if val.pointer("/message/role").and_then(|r| r.as_str()) == Some("assistant") {
-                                let c = turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
-                                if let Some(max_t) = limits.max_turns {
+                                let c = ctx.turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
+                                if let Some(max_t) = ctx.limits.max_turns {
                                     if c >= max_t {
                                         let msg = format!("[LIMIT] Reached turn limit ({} / {} turns). Concluding agent run...", c, max_t);
-                                        *limit_reason.lock().unwrap() = Some(msg.clone());
-                                        limit_reached.store(true, Ordering::SeqCst);
-                                        let _ = tx.send(msg);
+                                        *ctx.limit_reason.lock().unwrap() = Some(msg.clone());
+                                        ctx.limit_reached.store(true, Ordering::SeqCst);
+                                        let _ = ctx.tx.send(msg);
                                     }
                                 }
                             }
                             // 2. Budget check
                             if let Some(cost) = val.pointer("/message/usage/cost/total").and_then(|c| c.as_f64()) {
-                                if let Ok(mut c_lock) = accumulated_cost.lock() {
+                                if let Ok(mut c_lock) = ctx.accumulated_cost.lock() {
                                     *c_lock += cost;
                                     let current_spend = *c_lock;
-                                    if let Some(max_b) = limits.max_budget_usd {
+                                    if let Some(max_b) = ctx.limits.max_budget_usd {
                                         if current_spend >= max_b {
                                             let msg = format!("[LIMIT] Reached budget cap (${:.4} / ${:.2} USD). Concluding agent run...", current_spend, max_b);
-                                            *limit_reason.lock().unwrap() = Some(msg.clone());
-                                            limit_reached.store(true, Ordering::SeqCst);
-                                            let _ = tx.send(msg);
+                                            *ctx.limit_reason.lock().unwrap() = Some(msg.clone());
+                                            ctx.limit_reached.store(true, Ordering::SeqCst);
+                                            let _ = ctx.tx.send(msg);
                                         }
                                     }
                                 }
@@ -414,11 +411,11 @@ impl OmpRunner {
 
                         if let Some(events) = Self::format_session_line(&line_buf) {
                             for ev in events {
-                                let _ = tx.send(ev);
+                                let _ = ctx.tx.send(ev);
                             }
                         }
                     } else {
-                        let len = line_buf.as_bytes().len() as i64;
+                        let len = line_buf.len() as i64;
                         let _ = reader.seek(SeekFrom::Current(-len));
                         thread::sleep(Duration::from_millis(150));
                     }
@@ -438,7 +435,7 @@ impl OmpRunner {
                     if line_buf.ends_with('\n') {
                         if let Some(events) = Self::format_session_line(&line_buf) {
                             for ev in events {
-                                let _ = tx.send(ev);
+                                let _ = ctx.tx.send(ev);
                             }
                         }
                     } else {
@@ -754,7 +751,7 @@ mod tests {
         assert_eq!(stats.total_tokens, 6850);
         assert_eq!(stats.steps_taken, 2);
 
-        let found = OmpRunner::find_newest_session_file_across(&[temp_dir.clone()]);
+        let found = OmpRunner::find_newest_session_file_across(std::slice::from_ref(&temp_dir));
         assert_eq!(found, Some(session_file));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -796,19 +793,20 @@ mod tests {
         };
 
         let running_tailer = running.clone();
+        let tail_ctx = TailSessionContext {
+            start_time: SystemTime::now(),
+            existing: HashSet::new(),
+            active_file,
+            running: running_tailer,
+            tx,
+            limits,
+            turn_counter,
+            accumulated_cost,
+            limit_reached,
+            limit_reason,
+        };
         let handle = std::thread::spawn(move || {
-            OmpRunner::tail_session_file(
-                SystemTime::now(),
-                HashSet::new(),
-                active_file,
-                running_tailer,
-                tx,
-                limits,
-                turn_counter,
-                accumulated_cost,
-                limit_reached,
-                limit_reason,
-            );
+            OmpRunner::tail_session_file(tail_ctx);
         });
 
         // Verify initial line received
@@ -929,19 +927,20 @@ mod tests {
         let running_tailer = running.clone();
         let turn_c = turn_counter.clone();
         let lim_reached = limit_reached.clone();
+        let tail_ctx = TailSessionContext {
+            start_time: SystemTime::now() - Duration::from_secs(5),
+            existing: HashSet::new(),
+            active_file,
+            running: running_tailer,
+            tx,
+            limits,
+            turn_counter: turn_c,
+            accumulated_cost,
+            limit_reached: lim_reached,
+            limit_reason,
+        };
         let handle = std::thread::spawn(move || {
-            OmpRunner::tail_session_file(
-                SystemTime::now() - Duration::from_secs(5),
-                HashSet::new(),
-                active_file,
-                running_tailer,
-                tx,
-                limits,
-                turn_c,
-                accumulated_cost,
-                lim_reached,
-                limit_reason,
-            );
+            OmpRunner::tail_session_file(tail_ctx);
         });
 
         std::thread::sleep(Duration::from_millis(300));

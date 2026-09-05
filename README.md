@@ -76,7 +76,7 @@ Instead of evaluating trivial single-function code snippets ([HumanEval](https:/
 | Task | Description | Stages Verified | Concurrency Stress Test |
 | :--- | :--- | :--- | :--- |
 | **`redis`** | In-memory key-value database implementing the RESP2 wire protocol | 1. `PING` / `ECHO` Handshake<br>2. `SET`, `GET`, `DEL`, `EXISTS`<br>3. `SET ... PX <ms>` (TTL expiration & passive eviction)<br>4. `INCR` / `DECR` Atomic Counters | `redis-benchmark -p 6379 -t set,get -n 5000 -c 10 -q` |
-| **`http`** | RFC 7230 / RFC 7231 compliant HTTP/1.1 web server | 1. Root `GET /` (200 OK)<br>2. 404 Not Found Handling<br>3. `GET /echo/{str}` with dynamic `Content-Length`<br>4. `GET /user-agent` Header Reflection<br>5. `POST` & `GET /files/{name}` File Persistence | `wrk -t4 -c20 -d5s http://127.0.0.1:8080/` |
+| **`http`** | RFC 7230 / RFC 7231 compliant HTTP/1.1 web server | 1. Root `GET /` (200 OK)<br>2. 404 Not Found Handling<br>3. `GET /echo/{str}` with dynamic `Content-Length`<br>4. `GET /user-agent` Header Reflection<br>5. `POST` & `GET /files/{name}` File Persistence | `wrk -t2 -c20 -d3s http://127.0.0.1:8080/` |
 
 ---
 

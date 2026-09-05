@@ -18,19 +18,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio::time::sleep;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-
-use crate::bench::BenchmarkRunner;
 use crate::config::TaskType;
-use crate::cost::ModelPricing;
 use crate::report::{
     BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, PublishResult, RunArchiver,
-    RunManifest, RunPublisher, RunTokenUsage, SummaryGenerator,
+    RunManifest, RunPublisher, SummaryGenerator,
 };
-use crate::sandbox::{AgentExecutionLimits, OmpRunner, OmpSessionStats, SandboxManager};
-use crate::verifier::{ComplianceChecker, DnsVerifier, HttpVerifier, RedisVerifier};
+use crate::sandbox::SandboxManager;
+use crate::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ActiveRunInfo {
@@ -234,8 +230,11 @@ fn resolve_results_dir() -> PathBuf {
     crate::config::get_repo_root().join("results")
 }
 
+#[allow(dead_code)]
 fn resolve_workspace_dir() -> PathBuf {
-    crate::config::get_repo_root().join("workspace")
+    let ws = crate::config::get_repo_root().join("workspace");
+    let _ = std::fs::create_dir_all(&ws);
+    ws
 }
 
 pub struct UiServer;
@@ -305,13 +304,13 @@ async fn get_models(
     let header_key = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
-        .and_then(|h| {
+        .map(|h| {
             if let Some(tok) = h.strip_prefix("Bearer ") {
-                Some(tok)
+                tok
             } else if let Some(tok) = h.strip_prefix("bearer ") {
-                Some(tok)
+                tok
             } else {
-                Some(h)
+                h
             }
         })
         .map(|s| s.trim().to_string())
@@ -688,13 +687,12 @@ async fn start_run(
                 break;
             }
 
-            let start_time = std::time::Instant::now();
             let started_at = Utc::now().to_rfc3339();
             let run_id = if total_trials > 1 {
                 format!(
                     "{}_{}_trial{}_{}",
                     req.task,
-                    req.model.replace('/', "_").replace(':', "_"),
+                    req.model.replace(['/', ':'], "_"),
                     trial_idx,
                     Utc::now().format("%Y%m%d_%H%M%S")
                 )
@@ -702,7 +700,7 @@ async fn start_run(
                 format!(
                     "{}_{}_{}",
                     req.task,
-                    req.model.replace('/', "_").replace(':', "_"),
+                    req.model.replace(['/', ':'], "_"),
                     Utc::now().format("%Y%m%d_%H%M%S")
                 )
             };
@@ -714,567 +712,86 @@ async fn start_run(
                 model: req.model.clone(),
                 task: req.task.clone(),
                 effort: effort_setting.clone(),
-                started_at: started_at.clone(),
+                started_at,
             });
             if trial_idx == 1 {
                 state_clone.log_buffer.write().unwrap().clear();
             }
 
-            let log_buf_arc = state_clone.log_buffer.clone();
-            let tx_log = tx.clone();
-            let mut console_buffer: Vec<String> = Vec::new();
-            let log = move |buf: &mut Vec<String>, msg: String| {
-                let ts = Utc::now().format("%H:%M:%S").to_string();
-                let formatted = format!("[{}] {}", ts, msg);
-                buf.push(formatted.clone());
-                log_buf_arc.write().unwrap().push(formatted.clone());
-                let _ = tx_log.send(formatted);
-            };
-
-            let timeout_m = req.timeout_min.unwrap_or(15);
-            let limits = AgentExecutionLimits {
-                max_turns: if req.max_turns > 0 {
-                    Some(req.max_turns)
-                } else {
-                    None
-                },
-                max_budget_usd: if req.budget_usd > 0.0 {
-                    Some(req.budget_usd)
-                } else {
-                    None
-                },
-                timeout_seconds: if timeout_m > 0 {
-                    Some(timeout_m * 60)
-                } else {
-                    None
-                },
-            };
-
-            log(
-                &mut console_buffer,
-                "=========================================================".to_string(),
-            );
-            if total_trials > 1 {
-                log(
-                    &mut console_buffer,
-                    format!(">>> Benchmark Run: {} (Trial {}/{})", run_id, trial_idx, total_trials),
-                );
-            } else {
-                log(&mut console_buffer, format!(">>> Benchmark Run: {}", run_id));
+            struct WebLogger {
+                tx: broadcast::Sender<String>,
+                log_buf: Arc<RwLock<Vec<String>>>,
             }
-            log(&mut console_buffer, format!("    Model:   {}", req.model));
-            log(&mut console_buffer, format!("    Effort:  {}", effort_setting));
-            log(&mut console_buffer, format!("    Task:    {}", req.task));
-            log(
-                &mut console_buffer,
-                format!(
-                    "    Budget:  ${:.2} USD | Max Turns: {} | Timeout: {} min",
-                    req.budget_usd, req.max_turns, timeout_m
-                ),
-            );
-            log(
-                &mut console_buffer,
-                "=========================================================".to_string(),
-            );
-
-            let effective_api_key = req
-                .api_key
-                .as_ref()
-                .filter(|k| !k.trim().is_empty())
-                .cloned()
-                .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|k| !k.trim().is_empty()));
-
-            if let Some(ref k) = effective_api_key {
-                std::env::set_var("OPENROUTER_API_KEY", k);
+            impl PipelineLogger for WebLogger {
+                fn log(&self, msg: &str) {
+                    let ts = Utc::now().format("%H:%M:%S").to_string();
+                    let formatted = format!("[{}] {}", ts, msg);
+                    self.log_buf.write().unwrap().push(formatted.clone());
+                    let _ = self.tx.send(formatted);
+                }
             }
 
-            let initial_spend = if let Some(ref key) = effective_api_key {
-                ModelPricing::query_openrouter_key_usage(key).await
-            } else {
-                None
-            };
-            if let Some(init) = initial_spend {
-                log(
-                    &mut console_buffer,
-                    format!("[ACCOUNT] OpenRouter initial key spend: ${:.4} USD", init),
-                );
-            }
+            let logger = Arc::new(WebLogger {
+                tx: tx.clone(),
+                log_buf: state_clone.log_buffer.clone(),
+            });
 
             let task_type = match req.task.as_str() {
+                "redis" => TaskType::Redis,
                 "http" => TaskType::Http,
                 "dns" => TaskType::Dns,
                 _ => TaskType::Redis,
             };
 
-            let work_path_buf = resolve_workspace_dir();
-            let work_path = work_path_buf.as_path();
-            if !req.eval_only {
-                let _ = fs::remove_dir_all(work_path);
-            }
-            let _ = fs::create_dir_all(work_path);
+            let repo_root = crate::config::get_repo_root();
+            let work_path = repo_root.join("workspace");
 
-            let sandbox = SandboxManager::new();
-
-            // 1. Reference ground truth in Docker
-            log(
-                &mut console_buffer,
-                "[SETUP] Starting official reference server in Docker...".to_string(),
-            );
-            match task_type {
-                TaskType::Redis => {
-                    let _ = sandbox.start_reference_redis(6380);
-                }
-                TaskType::Http => {
-                    let _ = sandbox.start_reference_http(8081);
-                }
-                TaskType::Dns => {
-                    let _ = sandbox.start_reference_dns(5354);
-                }
-            }
-
-            // 2. Read prompt
-            let prompt_path = resolve_task_path(&req.task);
-            let prompt_content = fs::read_to_string(&prompt_path).unwrap_or_default();
-
-            // Check cancellation before agent execution
-            if state_clone.cancel_requested.load(Ordering::SeqCst) {
-                sandbox.cleanup();
-                break;
-            }
-
-            // 3. Run OMP Agent
-            let mut agent_failed = false;
-            let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !req.eval_only {
-                log(
-                    &mut console_buffer,
-                    format!(
-                        "[OMP] Spawning OMP agent inside isolated Docker sandbox ('subdollar-sandbox') with model '{}' (Effort: {})...",
-                        req.model, effort_setting
-                    ),
-                );
-                let tx_sub = tx.clone();
-                let log_buf_sub = state_clone.log_buffer.clone();
-                let model_c = req.model.clone();
-                let prompt_c = prompt_content.clone();
-                let work_path_buf = work_path.to_path_buf();
-                let api_key_c = effective_api_key.clone();
-                let effort_c = effort_setting.clone();
-
-                let omp_result = tokio::task::spawn_blocking(move || {
-                    OmpRunner::run_agent_with_logger(
-                        &model_c,
-                        &prompt_c,
-                        &work_path_buf,
-                        api_key_c.as_deref(),
-                        limits,
-                        Some(&effort_c),
-                        move |line| {
-                            let ts = Utc::now().format("%H:%M:%S").to_string();
-                            let formatted = format!("[{}] [OMP] {}", ts, line);
-                            log_buf_sub.write().unwrap().push(formatted.clone());
-                            let _ = tx_sub.send(formatted);
-                        },
-                    )
-                })
-                .await;
-
-                match omp_result {
-                    Ok(Ok(stats)) => {
-                        log(
-                            &mut console_buffer,
-                            format!(
-                                "[OMP] Finished! Tokens: prompt={}, cached={}, completion={}",
-                                stats.prompt_tokens, stats.cached_tokens, stats.completion_tokens
-                            ),
-                        );
-                        let p = stats.prompt_tokens;
-                        let c = stats.cached_tokens;
-                        let comp = stats.completion_tokens;
-                        (stats, p, c, comp)
-                    }
-                    Ok(Err(e)) => {
-                        log(
-                            &mut console_buffer,
-                            format!("[OMP ERROR] Agent execution failed: {}", e),
-                        );
-                        agent_failed = true;
-                        let partial_stats = OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
-                        let p = partial_stats.prompt_tokens;
-                        let c = partial_stats.cached_tokens;
-                        let comp = partial_stats.completion_tokens;
-                        (partial_stats, p, c, comp)
-                    }
-                    Err(join_err) => {
-                        log(
-                            &mut console_buffer,
-                            format!("[OMP ERROR] Task execution error: {}", join_err),
-                        );
-                        agent_failed = true;
-                        let partial_stats = OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
-                        let p = partial_stats.prompt_tokens;
-                        let c = partial_stats.cached_tokens;
-                        let comp = partial_stats.completion_tokens;
-                        (partial_stats, p, c, comp)
-                    }
-                }
-            } else {
-                log(
-                    &mut console_buffer,
-                    "[OMP] Skipped (--eval-only)".to_string(),
-                );
-                (OmpSessionStats::default(), 0, 0, 0)
+            let pipe_config = BenchmarkConfig {
+                model: req.model.clone(),
+                task: task_type,
+                effort: effort_setting.clone(),
+                max_turns: req.max_turns,
+                budget_usd: req.budget_usd,
+                timeout_min: req.timeout_min.unwrap_or(15),
+                api_key: req.api_key.clone(),
+                workdir: work_path,
+                eval_only: req.eval_only,
+                run_id: Some(run_id.clone()),
+                save_results: true,
             };
 
-            if state_clone.cancel_requested.load(Ordering::SeqCst) {
-                sandbox.cleanup();
-                break;
-            }
+            let pipe_res = BenchmarkPipeline::execute(
+                pipe_config,
+                logger.clone(),
+                Some(state_clone.cancel_requested.clone()),
+            )
+            .await;
 
-            // Anti-cheat compliance check
-            log(
-                &mut console_buffer,
-                "[COMPLIANCE] Scanning workspace for forbidden frameworks...".to_string(),
-            );
-            let mut disqualified = false;
-            let mut disqualification_reason = None;
-            if let Err(violation) = ComplianceChecker::check_no_frameworks(work_path) {
-                log(
-                    &mut console_buffer,
-                    format!("  [DISQUALIFIED] Anti-cheat compliance violation: {}", violation),
-                );
-                disqualified = true;
-                disqualification_reason = Some(violation);
-            } else {
-                log(
-                    &mut console_buffer,
-                    "  [PASS] Anti-cheat check passed (no forbidden frameworks detected).".to_string(),
-                );
-            }
-
-            // Check if candidate produced start.sh or Dockerfile
-            let has_runnable = sandbox.ensure_runnable_candidate(work_path).unwrap_or(false);
-            if !agent_failed && !has_runnable {
-                log(
-                    &mut console_buffer,
-                    "[SANDBOX] Candidate did not create 'start.sh' or 'Dockerfile' in workspace. Skipping verification.".to_string(),
-                );
-                agent_failed = true;
-            }
-
-            let target_port = task_type.default_port();
-            let mut throughput = None;
-
-            let (pass_rate, passed_stages, total_stages, stage_results) = if disqualified {
-                let reason = disqualification_reason.unwrap_or_else(|| "Anti-cheat compliance violation".to_string());
-                let stages = vec![crate::verifier::StageResult {
-                    stage: 0,
-                    name: "Anti-Cheat Compliance".to_string(),
-                    passed: false,
-                    error: Some(reason),
-                }];
-                (0.0, 0, task_type.total_stages(), stages)
-            } else if agent_failed && !has_runnable {
-                log(
-                    &mut console_buffer,
-                    "[TEST] Skipped: agent did not produce an executable server.".to_string(),
-                );
-                (0.0, 0, task_type.total_stages(), Vec::new())
-            } else {
-                if state_clone.cancel_requested.load(Ordering::SeqCst) {
-                    sandbox.cleanup();
+            match pipe_res {
+                Ok(output) => {
+                    if output.benchmark_result.pass_rate == 100.0 {
+                        passing_trials += 1;
+                    }
+                    logger.log(&format!(
+                        "[PIPELINE] Completed trial {}/{} with pass rate: {:.1}%",
+                        trial_idx, total_trials, output.benchmark_result.pass_rate
+                    ));
+                }
+                Err(e) => {
+                    if state_clone.cancel_requested.load(Ordering::SeqCst) {
+                        logger.log("[PIPELINE] Run cancelled by user.");
+                        break;
+                    }
+                    logger.log(&format!("[PIPELINE ERROR] {}", e));
                     break;
                 }
-                // 4. Start candidate container
-                log(
-                    &mut console_buffer,
-                    "[SANDBOX] Launching candidate clone in isolated Docker container...".to_string(),
-                );
-                let _ = sandbox.start_candidate_in_docker(work_path, target_port);
-
-                // Active TCP Port Health Check
-                if task_type != TaskType::Dns {
-                    log(
-                        &mut console_buffer,
-                        format!(
-                            "[SETUP] Polling port {} for candidate readiness (timeout: 30s)...",
-                            target_port
-                        ),
-                    );
-                    let ready = sandbox.wait_for_port(target_port, 30).await;
-                    if ready {
-                        log(
-                            &mut console_buffer,
-                            format!(
-                                "[SETUP] Candidate server is online and accepting connections on port {}!",
-                                target_port
-                            ),
-                        );
-                    } else {
-                        log(
-                            &mut console_buffer,
-                            format!(
-                                "[WARN] Candidate port {} did not respond within 30s. Proceeding to tests...",
-                                target_port
-                            ),
-                        );
-                    }
-                } else {
-                    sleep(Duration::from_millis(1500)).await;
-                }
-
-                // 5. Verification Test Suite
-                log(
-                    &mut console_buffer,
-                    "[TEST] Running Protocol Verification Test Suite...".to_string(),
-                );
-                let (pr, ps, ts, sr) = match task_type {
-                    TaskType::Redis => {
-                        let verifier = RedisVerifier::new(6379, Some(6380));
-                        let summary = verifier.run_all().await;
-                        for s in &summary.stages {
-                            if s.passed {
-                                log(&mut console_buffer, format!("  [PASS] {}", s.name));
-                            } else {
-                                let err_msg = s.error.as_deref().unwrap_or("unknown error");
-                                log(
-                                    &mut console_buffer,
-                                    format!("  [FAIL] {} - Error: {}", s.name, err_msg),
-                                );
-                            }
-                        }
-                        (
-                            summary.pass_rate,
-                            summary.passed_count,
-                            summary.total_stages,
-                            summary.stages,
-                        )
-                    }
-                    TaskType::Http => {
-                        let verifier = HttpVerifier::new(8080);
-                        let summary = verifier.run_all().await;
-                        for s in &summary.stages {
-                            if s.passed {
-                                log(&mut console_buffer, format!("  [PASS] {}", s.name));
-                            } else {
-                                let err_msg = s.error.as_deref().unwrap_or("unknown error");
-                                log(
-                                    &mut console_buffer,
-                                    format!("  [FAIL] {} - Error: {}", s.name, err_msg),
-                                );
-                            }
-                        }
-                        (
-                            summary.pass_rate,
-                            summary.passed_count,
-                            summary.total_stages,
-                            summary.stages,
-                        )
-                    }
-                    TaskType::Dns => {
-                        let verifier = DnsVerifier::new(5353);
-                        let summary = verifier.run_all().await;
-                        for s in &summary.stages {
-                            if s.passed {
-                                log(&mut console_buffer, format!("  [PASS] {}", s.name));
-                            } else {
-                                let err_msg = s.error.as_deref().unwrap_or("unknown error");
-                                log(
-                                    &mut console_buffer,
-                                    format!("  [FAIL] {} - Error: {}", s.name, err_msg),
-                                );
-                            }
-                        }
-                        (
-                            summary.pass_rate,
-                            summary.passed_count,
-                            summary.total_stages,
-                            summary.stages,
-                        )
-                    }
-                };
-
-                if pr < 100.0 {
-                    let container_logs = sandbox.get_candidate_logs();
-                    log(
-                        &mut console_buffer,
-                        "[DIAGNOSTICS] Candidate container runtime output:".to_string(),
-                    );
-                    for l in container_logs.lines() {
-                        log(&mut console_buffer, format!("  | {}", l));
-                    }
-                }
-
-                // 6. Concurrency stress test in Docker
-                if pr >= 75.0 {
-                    log(
-                        &mut console_buffer,
-                        "[BENCH] Running Stress & Concurrency Benchmark in Docker...".to_string(),
-                    );
-                    match task_type {
-                        TaskType::Redis => {
-                            if let Ok(tp) = BenchmarkRunner::run_redis_benchmark(6379) {
-                                log(&mut console_buffer, format!("  Throughput: {:.0} req/sec", tp));
-                                throughput = Some(tp);
-                            }
-                        }
-                        TaskType::Http => {
-                            if let Ok(tp) = BenchmarkRunner::run_wrk_benchmark(8080) {
-                                log(&mut console_buffer, format!("  Throughput: {:.0} req/sec", tp));
-                                throughput = Some(tp);
-                            }
-                        }
-                        TaskType::Dns => {
-                            // DNS resolution benchmark is integrated into stage 6
-                        }
-                    }
-                }
-
-                (pr, ps, ts, sr)
-            };
-
-            if pass_rate == 100.0 {
-                passing_trials += 1;
             }
-
-            // 7. Cost & Metrics Accounting
-            let pricing = ModelPricing::for_model_async(&req.model).await;
-            let breakdown = pricing.compute_cost_with_cache(
-                prompt_tokens,
-                cached_tokens,
-                completion_tokens,
-            );
-
-            let mut live_spend_delta = None;
-            if let (Some(key), Some(init)) = (&effective_api_key, initial_spend) {
-                sleep(Duration::from_millis(1500)).await;
-                if let Some(fin) = ModelPricing::query_openrouter_key_usage(key).await {
-                    if fin >= init {
-                        live_spend_delta = Some(fin - init);
-                    }
-                }
-            }
-
-            let cost_usd = live_spend_delta.unwrap_or(breakdown.total_cost_usd);
-            let cost_cents = (cost_usd * 100.0).max(0.01);
-            let efficiency_score = pass_rate / cost_cents;
-            let lang = LeaderboardManager::detect_language(work_path);
-
-            if let Some(delta) = live_spend_delta {
-                log(
-                    &mut console_buffer,
-                    format!("[BILLING] OpenRouter live verified cost: ${:.4} USD", delta),
-                );
-            } else {
-                log(
-                    &mut console_buffer,
-                    format!(
-                        "[BILLING] Formula Cost: ${:.4} USD (Prompt Cache Savings: {:.1}%)",
-                        breakdown.total_cost_usd, breakdown.savings_percent
-                    ),
-                );
-            }
-
-            let completed_at = Utc::now().to_rfc3339();
-            let duration_seconds = start_time.elapsed().as_secs_f64();
-            let scanned_files = RunArchiver::scan_workspace_files(work_path);
-
-            let manifest = RunManifest {
-                run_id: run_id.clone(),
-                model: req.model.clone(),
-                task: req.task.clone(),
-                status: if disqualified {
-                    "disqualified_cheat".to_string()
-                } else if pass_rate == 100.0 {
-                    if agent_failed {
-                        "agent_killed".to_string()
-                    } else {
-                        "completed".to_string()
-                    }
-                } else if agent_failed {
-                    "agent_failed".to_string()
-                } else {
-                    "failed_tests".to_string()
-                },
-                language: lang.clone(),
-                effort: Some(effort_setting.clone()),
-                started_at,
-                completed_at: completed_at.clone(),
-                duration_seconds,
-                pass_rate,
-                passed_stages,
-                total_stages,
-                stages: stage_results,
-                throughput_req_sec: throughput,
-                tokens: RunTokenUsage {
-                    prompt_tokens,
-                    cached_tokens,
-                    completion_tokens,
-                    total_tokens: omp_stats.total_tokens.max(prompt_tokens + completion_tokens),
-                },
-                cost_usd,
-                savings_percent: breakdown.savings_percent,
-                efficiency_score,
-                files: scanned_files,
-                env: None,
-                git_commit: None,
-                is_published: None,
-                method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            };
-
-            // Archive complete run
-            let runs_dir = RunArchiver::resolve_runs_dir();
-            let full_console_log = state_clone.log_buffer.read().unwrap().join("\n");
-            let _ = RunArchiver::archive_run(&runs_dir, &manifest, work_path, &full_console_log);
-            log(
-                &mut console_buffer,
-                format!(
-                    "[ARCHIVE] Run trace, workspace files & manifest archived to runs/{}/",
-                    run_id
-                ),
-            );
-
-            // Save to leaderboard
-            let result = BenchmarkRunResult {
-                id: run_id,
-                model: req.model.clone(),
-                task: req.task.clone(),
-                language: lang.clone(),
-                effort: Some(effort_setting.clone()),
-                pass_rate,
-                passed_stages,
-                total_stages,
-                throughput_req_sec: throughput,
-                prompt_tokens,
-                cached_tokens,
-                completion_tokens,
-                total_cost_usd: cost_usd,
-                savings_percent: breakdown.savings_percent,
-                efficiency_score,
-                timestamp: completed_at,
-                method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            };
-
-            let r_dir = resolve_results_dir();
-            let _ = LeaderboardManager::save_result(r_dir.to_str().unwrap_or("./results"), &result);
-
-            log(
-                &mut console_buffer,
-                "=========================================================".to_string(),
-            );
-            log(
-                &mut console_buffer,
-                format!(
-                    "Results: Lang={}, Effort={}, Pass Rate={:.1}%, Cost=${:.4}, Savings={:.1}%, Efficiency={:.1}",
-                    lang, effort_setting, pass_rate, cost_usd, breakdown.savings_percent, efficiency_score
-                ),
-            );
-            log(
-                &mut console_buffer,
-                "=========================================================".to_string(),
-            );
-
-            sandbox.cleanup();
         }
+
+        // Publish summary
+        let runs_dir = RunArchiver::resolve_runs_dir();
+        let repo_root = crate::config::get_repo_root();
+        let _ = SummaryGenerator::update_summary_file(&repo_root, &runs_dir);
 
         if total_trials > 1 {
             let pass_at_1 = compute_pass_at_k(total_trials as usize, passing_trials, 1) * 100.0;
@@ -1320,6 +837,7 @@ async fn stream_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::report::RunTokenUsage;
     use tokio::net::TcpListener;
 
     fn create_test_state() -> AppState {

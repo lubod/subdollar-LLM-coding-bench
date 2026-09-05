@@ -86,7 +86,7 @@ impl SummaryGenerator {
                     rank, r.model, eff_str, task_display, r.language, pass_str, tp_str, cost_str, score_str, link_str
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("---\n\n");
@@ -116,7 +116,7 @@ impl SummaryGenerator {
                     r.run_id
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("---\n\n");
@@ -124,7 +124,7 @@ impl SummaryGenerator {
         md.push_str("The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server from scratch.\n");
         md.push_str("- **Features**: `GET /` (200 OK), `404 Not Found Handling`, `GET /echo/{str}` with dynamic `Content-Length`, `GET /user-agent` header reflection, `POST` and `GET /files/{filename}` file persistence, HTTP/1.1 socket keep-alive reuse.\n");
         md.push_str("- **Packaging Freedom**: Working `Dockerfile` or executable `./start.sh`.\n");
-        md.push_str("- **Verification**: 5-stage automated conformance suite + `wrk -t4 -c20 -d5s http://127.0.0.1:8080/`.\n\n");
+        md.push_str("- **Verification**: 5-stage automated conformance suite + `wrk -t2 -c20 -d3s http://127.0.0.1:8080/`.\n\n");
 
         let http_runs: Vec<&RunManifest> = runs.iter().filter(|r| r.task == "http").collect();
         if !http_runs.is_empty() {
@@ -145,7 +145,7 @@ impl SummaryGenerator {
                     r.run_id
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("---\n\n");

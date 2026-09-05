@@ -16,11 +16,39 @@ pub struct DnsTestSummary {
 
 pub struct DnsVerifier {
     pub target_port: u16,
+    pub run_seed: Option<String>,
 }
 
 impl DnsVerifier {
-    pub fn new(target_port: u16) -> Self {
-        Self { target_port }
+    pub fn new(target_port: u16, seed: Option<&str>) -> Self {
+        Self {
+            target_port,
+            run_seed: seed.map(|s| s.to_string()),
+        }
+    }
+
+    /// Dynamically probes the candidate DNS UDP server port until it responds or times out.
+    pub async fn wait_for_ready(&self, timeout_secs: u64) -> bool {
+        let start = std::time::Instant::now();
+        let timeout_dur = Duration::from_secs(timeout_secs);
+        while start.elapsed() < timeout_dur {
+            if let Ok(socket) = UdpSocket::bind("127.0.0.1:0").await {
+                let target: Result<SocketAddr, _> = format!("127.0.0.1:{}", self.target_port).parse();
+                if let Ok(target_addr) = target {
+                    let query = Self::build_query(0x9999, "localhost", 1);
+                    if socket.send_to(&query, target_addr).await.is_ok() {
+                        let mut buf = [0u8; 512];
+                        if let Ok(Ok((len, _))) = timeout(Duration::from_millis(300), socket.recv_from(&mut buf)).await {
+                            if len >= 12 {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        false
     }
 
     pub async fn run_all(&self) -> DnsTestSummary {
@@ -134,7 +162,7 @@ impl DnsVerifier {
                     StageResult { stage: 3, name, passed: false, error: Some(format!("ancount={}, expected IP 127.0.0.1", ancount)) }
                 }
             }
-            Ok(_) => StageResult { stage: 3, name, passed: false, error: Some("Response truncated".to_string()) },
+            Ok(_) => StageResult { stage: 2, name, passed: false, error: Some("Response truncated".to_string()) },
             Err(e) => StageResult { stage: 3, name, passed: false, error: Some(e) },
         }
     }
@@ -180,7 +208,7 @@ impl DnsVerifier {
         for i in 0..10 {
             let port = self.target_port;
             tasks.push(tokio::spawn(async move {
-                let v = DnsVerifier::new(port);
+                let v = DnsVerifier::new(port, None);
                 v.send_query(0x6000 + i, "example.com", 1).await
             }));
         }
@@ -248,7 +276,7 @@ mod tests {
                         // example.com -> 93.184.216.34
                         resp.extend_from_slice(&[0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
                         resp.extend_from_slice(&buf[12..len]);
-                        resp.extend_from_slice(&[0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2c, 0x00, 0x04, 93, 184, 216, 34]);
+                        resp.extend_from_slice(&[0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 93, 184, 216, 34]);
                     }
 
                     let _ = socket.send_to(&resp, src).await;
@@ -260,21 +288,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dns_verifier_full_suite() {
+    async fn test_dns_verifier_all_stages_pass() {
         let port = start_mock_dns_server().await;
-        let verifier = DnsVerifier::new(port);
+        let verifier = DnsVerifier::new(port, None);
+        assert!(verifier.wait_for_ready(5).await);
         let summary = verifier.run_all().await;
-
-        assert_eq!(summary.passed_count, 6);
+        assert_eq!(summary.passed_count, 6, "Stages failed: {:?}", summary.stages);
         assert_eq!(summary.total_stages, 6);
         assert_eq!(summary.pass_rate, 100.0);
     }
 
     #[tokio::test]
-    async fn test_dns_verifier_unbound_port_failure() {
-        let verifier = DnsVerifier::new(59989);
-        let summary = verifier.run_all().await;
-        assert_eq!(summary.passed_count, 0);
-        assert_eq!(summary.pass_rate, 0.0);
+    async fn test_dns_verifier_unreachable() {
+        let verifier = DnsVerifier::new(59989, None);
+        let res = verifier.test_stage1_handshake().await;
+        assert!(!res.passed);
+        assert!(!verifier.wait_for_ready(1).await);
     }
 }
