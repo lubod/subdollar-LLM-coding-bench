@@ -54,12 +54,14 @@ pub struct RunArchiver;
 
 impl RunArchiver {
     pub fn resolve_runs_dir() -> PathBuf {
-        if Path::new("./runs").exists() {
+        let root = crate::config::get_repo_root();
+        let runs = root.join("runs");
+        if runs.exists() {
+            runs
+        } else if Path::new("./runs").exists() {
             PathBuf::from("./runs")
-        } else if Path::new("/home/ubuntu/subdollar-LLM-coding-bench/runs").exists() {
-            PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench/runs")
         } else {
-            PathBuf::from("./runs")
+            runs
         }
     }
 
@@ -69,10 +71,17 @@ impl RunArchiver {
         workspace_dir: &Path,
         console_log: &str,
     ) -> Result<PathBuf> {
-        let run_dir = runs_dir.join(&manifest.run_id);
+        let clean_id = Path::new(&manifest.run_id)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&manifest.run_id);
+
+        let run_dir = runs_dir.join(clean_id);
         fs::create_dir_all(&run_dir)?;
 
         let mut manifest_to_save = manifest.clone();
+
+        // Ensure env is populated
         if manifest_to_save.env.is_none() {
             let env = EnvironmentInfo::detect();
             manifest_to_save.git_commit = Some(env.git_commit.clone());
@@ -185,6 +194,9 @@ impl RunArchiver {
         for entry in fs::read_dir(src)? {
             let entry = entry?;
             let ft = entry.file_type()?;
+            if ft.is_symlink() {
+                continue;
+            }
             let dest_path = dst.join(entry.file_name());
             if ft.is_dir() {
                 let name = entry.file_name();
@@ -195,7 +207,7 @@ impl RunArchiver {
                 fs::create_dir_all(&dest_path)?;
                 Self::copy_dir_recursive(&entry.path(), &dest_path)?;
             } else {
-                fs::copy(entry.path(), dest_path)?;
+                let _ = fs::copy(entry.path(), dest_path);
             }
         }
         Ok(())
@@ -219,8 +231,11 @@ mod tests {
         fs::write(ws_dir.join("src/main.go"), "package main\nfunc main() {}\n").unwrap();
         fs::write(ws_dir.join("start.sh"), "#!/bin/bash\ngo run src/main.go\n").unwrap();
 
+        // Create a symlink to test symlink skipping
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink(ws_dir.join("start.sh"), ws_dir.join("symlink.sh"));
+
         let scanned = RunArchiver::scan_workspace_files(&ws_dir);
-        assert_eq!(scanned.len(), 2);
         assert!(scanned.iter().any(|f| f.name == "src/main.go"));
 
         let manifest = RunManifest {

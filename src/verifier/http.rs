@@ -50,7 +50,7 @@ impl HttpVerifier {
         let url = format!("http://127.0.0.1:{}/", self.target_port);
         match self.client.get(&url).send().await {
             Ok(resp) => {
-                if resp.status().is_success() {
+                if resp.status() == reqwest::StatusCode::OK {
                     StageResult { stage: 1, name, passed: true, error: None }
                 } else {
                     StageResult { stage: 1, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) }
@@ -81,11 +81,11 @@ impl HttpVerifier {
         let url = format!("http://127.0.0.1:{}/echo/{}", self.target_port, word);
         match self.client.get(&url).send().await {
             Ok(resp) => {
-                if !resp.status().is_success() {
+                if resp.status() != reqwest::StatusCode::OK {
                     return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) };
                 }
                 match resp.text().await {
-                    Ok(text) if text.contains(word) => StageResult { stage: 3, name, passed: true, error: None },
+                    Ok(text) if text.trim() == word => StageResult { stage: 3, name, passed: true, error: None },
                     Ok(text) => StageResult { stage: 3, name, passed: false, error: Some(format!("Body didn't match '{}', got: '{}'", word, text)) },
                     Err(e) => StageResult { stage: 3, name, passed: false, error: Some(e.to_string()) },
                 }
@@ -100,8 +100,11 @@ impl HttpVerifier {
         let url = format!("http://127.0.0.1:{}/user-agent", self.target_port);
         match self.client.get(&url).header("User-Agent", ua).send().await {
             Ok(resp) => {
+                if resp.status() != reqwest::StatusCode::OK {
+                    return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) };
+                }
                 match resp.text().await {
-                    Ok(text) if text.contains(ua) => StageResult { stage: 4, name, passed: true, error: None },
+                    Ok(text) if text.trim() == ua => StageResult { stage: 4, name, passed: true, error: None },
                     Ok(text) => StageResult { stage: 4, name, passed: false, error: Some(format!("Expected UA '{}', got '{}'", ua, text)) },
                     Err(e) => StageResult { stage: 4, name, passed: false, error: Some(e.to_string()) },
                 }
@@ -128,11 +131,11 @@ impl HttpVerifier {
 
         match self.client.get(&get_url).send().await {
             Ok(resp) => {
-                if !resp.status().is_success() {
+                if resp.status() != reqwest::StatusCode::OK {
                     return StageResult { stage: 5, name, passed: false, error: Some(format!("GET /files failed with status: {}", resp.status())) };
                 }
                 match resp.text().await {
-                    Ok(text) if text == content => StageResult { stage: 5, name, passed: true, error: None },
+                    Ok(text) if text.trim() == content => StageResult { stage: 5, name, passed: true, error: None },
                     Ok(text) => StageResult { stage: 5, name, passed: false, error: Some(format!("File content mismatch! Expected '{}', got '{}'", content, text)) },
                     Err(e) => StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
                 }

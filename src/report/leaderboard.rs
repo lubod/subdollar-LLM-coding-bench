@@ -29,6 +29,29 @@ pub struct BenchmarkRunResult {
     pub timestamp: String,
 }
 
+/// Unbiased estimator for Pass@k (Chen et al. 2021)
+/// n: total trials, c: number of passing trials, k: target k
+pub fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
+    if n == 0 || k == 0 || k > n {
+        return 0.0;
+    }
+    if c >= n {
+        return 1.0;
+    }
+    if c == 0 {
+        return 0.0;
+    }
+    if n - c < k {
+        return 1.0;
+    }
+
+    let mut prod = 1.0;
+    for i in 0..k {
+        prod *= (n - c - i) as f64 / (n - i) as f64;
+    }
+    (1.0 - prod).clamp(0.0, 1.0)
+}
+
 pub struct LeaderboardManager;
 
 impl LeaderboardManager {
@@ -49,37 +72,30 @@ impl LeaderboardManager {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = entry.file_name();
-                let s = name.to_string_lossy();
-                if s == ".git" || s == "target" || s == "node_modules" {
+                let name = entry.file_name().to_string_lossy().to_string();
+
+                if name.starts_with('.') || name == "target" || name == "node_modules" {
                     continue;
                 }
-                if path.is_file() {
-                    if s == "Cargo.toml" {
-                        *counts.entry("Rust").or_insert(0) += 5;
-                    }
-                    if s == "go.mod" {
-                        *counts.entry("Go").or_insert(0) += 5;
-                    }
-                    if s == "package.json" {
-                        *counts.entry("Node.js").or_insert(0) += 5;
-                    }
-                    if s == "requirements.txt" || s == "pyproject.toml" {
-                        *counts.entry("Python").or_insert(0) += 5;
+
+                if path.is_dir() {
+                    Self::count_lang_files_recursive(&path, depth + 1, counts);
+                } else if path.is_file() {
+                    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    match ext {
+                        "rs" => *counts.entry("Rust").or_insert(0) += 2,
+                        "go" => *counts.entry("Go").or_insert(0) += 2,
+                        "py" => *counts.entry("Python").or_insert(0) += 2,
+                        "js" | "mjs" | "cjs" => *counts.entry("Node.js").or_insert(0) += 2,
+                        "ts" => *counts.entry("TypeScript").or_insert(0) += 2,
+                        "c" | "cpp" | "cc" | "h" | "hpp" => *counts.entry("C/C++").or_insert(0) += 2,
+                        _ => {}
                     }
 
-                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                        match ext {
-                            "go" => *counts.entry("Go").or_insert(0) += 1,
-                            "py" => *counts.entry("Python").or_insert(0) += 1,
-                            "rs" => *counts.entry("Rust").or_insert(0) += 1,
-                            "js" | "ts" => *counts.entry("Node.js").or_insert(0) += 1,
-                            "c" | "cpp" => *counts.entry("C/C++").or_insert(0) += 1,
-                            _ => {}
-                        }
-                    }
-                } else if path.is_dir() {
-                    Self::count_lang_files_recursive(&path, depth + 1, counts);
+                    if name == "Cargo.toml" { *counts.entry("Rust").or_insert(0) += 5; }
+                    if name == "go.mod" { *counts.entry("Go").or_insert(0) += 5; }
+                    if name == "package.json" { *counts.entry("Node.js").or_insert(0) += 5; }
+                    if name == "requirements.txt" || name == "pyproject.toml" { *counts.entry("Python").or_insert(0) += 5; }
                 }
             }
         }
@@ -159,6 +175,17 @@ impl LeaderboardManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_compute_pass_at_k() {
+        assert_eq!(compute_pass_at_k(0, 0, 1), 0.0);
+        assert_eq!(compute_pass_at_k(5, 0, 1), 0.0);
+        assert_eq!(compute_pass_at_k(5, 5, 1), 1.0);
+        assert_eq!(compute_pass_at_k(5, 5, 5), 1.0);
+        assert_eq!(compute_pass_at_k(3, 1, 3), 1.0);
+        let p1 = compute_pass_at_k(3, 1, 1);
+        assert!((p1 - 0.3333).abs() < 0.01);
+    }
 
     #[test]
     fn test_language_detection() {

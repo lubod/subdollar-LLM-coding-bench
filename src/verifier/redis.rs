@@ -91,7 +91,7 @@ impl RedisVerifier {
             Err(e) => return StageResult { stage: 1, name, passed: false, error: Some(format!("PING failed: {}", e)) },
         };
 
-        if !res.contains("PONG") && !res.starts_with("+PONG") {
+        if res.trim() != "+PONG" {
             return StageResult {
                 stage: 1,
                 name,
@@ -105,12 +105,12 @@ impl RedisVerifier {
             Err(e) => return StageResult { stage: 1, name, passed: false, error: Some(format!("ECHO failed: {}", e)) },
         };
 
-        if !res.contains("subdollar_test") {
+        if res.trim() != "$14\r\nsubdollar_test" && res != "$14\r\nsubdollar_test\r\n" {
             return StageResult {
                 stage: 1,
                 name,
                 passed: false,
-                error: Some(format!("Expected ECHO with 'subdollar_test', got: {:?}", res)),
+                error: Some(format!("Expected ECHO with '$14\\r\\nsubdollar_test\\r\\n', got: {:?}", res)),
             };
         }
 
@@ -128,7 +128,7 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("SET failed: {}", e)) },
         };
-        if !set_res.starts_with("+OK") && !set_res.contains("OK") {
+        if set_res.trim() != "+OK" {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected +OK, got {:?}", set_res)) };
         }
 
@@ -136,15 +136,15 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("GET failed: {}", e)) },
         };
-        if !get_res.contains("bench_value") {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected 'bench_value', got {:?}", get_res)) };
+        if get_res.trim() != "$11\r\nbench_value" && get_res != "$11\r\nbench_value\r\n" {
+            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected '$11\\r\\nbench_value', got {:?}", get_res)) };
         }
 
         let exists_res = match Self::send_resp_cmd(&mut stream, &["EXISTS", "bench_key"]).await {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("EXISTS failed: {}", e)) },
         };
-        if !exists_res.contains(":1") && !exists_res.contains("1") {
+        if exists_res.trim() != ":1" {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :1, got {:?}", exists_res)) };
         }
 
@@ -152,7 +152,7 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("DEL failed: {}", e)) },
         };
-        if !del_res.contains(":1") && !del_res.contains("1") {
+        if del_res.trim() != ":1" {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :1 from DEL, got {:?}", del_res)) };
         }
 
@@ -160,8 +160,16 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("GET after DEL failed: {}", e)) },
         };
-        if !get_nil.contains("$-1") {
+        if get_nil.trim() != "$-1" {
             return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected nil ($-1\\r\\n), got {:?}", get_nil)) };
+        }
+
+        let exists_zero = match Self::send_resp_cmd(&mut stream, &["EXISTS", "bench_key"]).await {
+            Ok(r) => r,
+            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("EXISTS after DEL failed: {}", e)) },
+        };
+        if exists_zero.trim() != ":0" {
+            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :0, got {:?}", exists_zero)) };
         }
 
         StageResult { stage: 2, name, passed: true, error: None }
@@ -178,7 +186,7 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("SET PX failed: {}", e)) },
         };
-        if !set_res.contains("OK") {
+        if set_res.trim() != "+OK" {
             return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected +OK for SET PX, got {:?}", set_res)) };
         }
 
@@ -186,8 +194,8 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("Immediate GET failed: {}", e)) },
         };
-        if !get_fast.contains("ttl_val") {
-            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected immediate GET to return ttl_val, got {:?}", get_fast)) };
+        if get_fast.trim() != "$7\r\nttl_val" && get_fast != "$7\r\nttl_val\r\n" {
+            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected immediate GET to return '$7\\r\\nttl_val', got {:?}", get_fast)) };
         }
 
         sleep(Duration::from_millis(250)).await;
@@ -196,7 +204,7 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("Post-TTL GET failed: {}", e)) },
         };
-        if !get_expired.contains("$-1") {
+        if get_expired.trim() != "$-1" {
             return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected expired key to return nil ($-1\\r\\n), got {:?}", get_expired)) };
         }
 
@@ -214,7 +222,7 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("INCR 1 failed: {}", e)) },
         };
-        if !incr1.contains(":1") {
+        if incr1.trim() != ":1" {
             return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :1, got {:?}", incr1)) };
         }
 
@@ -222,7 +230,7 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("INCR 2 failed: {}", e)) },
         };
-        if !incr2.contains(":2") {
+        if incr2.trim() != ":2" {
             return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :2, got {:?}", incr2)) };
         }
 
@@ -230,8 +238,23 @@ impl RedisVerifier {
             Ok(r) => r,
             Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("DECR failed: {}", e)) },
         };
-        if !decr1.contains(":1") {
+        if decr1.trim() != ":1" {
             return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :1, got {:?}", decr1)) };
+        }
+
+        // Negative test: non-numeric increment error handling
+        let _ = Self::send_resp_cmd(&mut stream, &["SET", "non_num_str", "invalid_number"]).await;
+        let err_res = match Self::send_resp_cmd(&mut stream, &["INCR", "non_num_str"]).await {
+            Ok(r) => r,
+            Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("Negative test failed: {}", e)) },
+        };
+        if !err_res.starts_with('-') {
+            return StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some(format!("Expected RESP error (-ERR ...), got {:?}", err_res)),
+            };
         }
 
         StageResult { stage: 4, name, passed: true, error: None }
@@ -348,6 +371,8 @@ mod tests {
                         } else if upper.contains("DECR") && upper.contains("NUM_COUNTER") {
                             counter -= 1;
                             let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                        } else if upper.contains("INCR") && upper.contains("NON_NUM_STR") {
+                            let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
                         } else {
                             let _ = socket.write_all(b"+OK\r\n").await;
                         }

@@ -1,13 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelPricing {
-    pub prompt_per_million: f64,
-    pub completion_per_million: f64,
-    pub cache_read_per_million: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostBreakdown {
     pub total_cost_usd: f64,
     pub un_cached_cost_usd: f64,
@@ -15,10 +8,37 @@ pub struct CostBreakdown {
     pub savings_percent: f64,
 }
 
+#[derive(Debug, Clone)]
+pub struct ModelPricing {
+    pub prompt_per_million: f64,
+    pub completion_per_million: f64,
+    pub cache_read_per_million: f64,
+}
+
 impl ModelPricing {
-    pub fn for_model(model: &str) -> Self {
-        let m = model.to_lowercase();
-        if m.contains("gemini-2.5-flash") || m.contains("gemini-2.0-flash") || m.contains("gemini-1.5-flash") {
+    pub fn new(
+        prompt_per_million: f64,
+        completion_per_million: f64,
+        cache_read_per_million: f64,
+    ) -> Self {
+        Self {
+            prompt_per_million,
+            completion_per_million,
+            cache_read_per_million,
+        }
+    }
+
+    pub fn from_rates(prompt_per_m: f64, completion_per_m: f64) -> Self {
+        Self {
+            prompt_per_million: prompt_per_m,
+            completion_per_million: completion_per_m,
+            cache_read_per_million: prompt_per_m * 0.25,
+        }
+    }
+
+    pub fn for_model(model_name: &str) -> Self {
+        let m = model_name.to_lowercase();
+        if m.contains("gemini-2.5-flash") {
             ModelPricing {
                 prompt_per_million: 0.15,
                 completion_per_million: 0.60,
@@ -30,13 +50,13 @@ impl ModelPricing {
                 completion_per_million: 0.28,
                 cache_read_per_million: 0.014, // 90% discount
             }
-        } else if m.contains("qwen-2.5-coder") || m.contains("qwen") {
+        } else if m.contains("qwen-2.5-coder-32b") {
             ModelPricing {
                 prompt_per_million: 0.06,
                 completion_per_million: 0.15,
                 cache_read_per_million: 0.015, // 75% discount
             }
-        } else if m.contains("llama-3.3-70b") || m.contains("llama") {
+        } else if m.contains("llama-3.3-70b") {
             ModelPricing {
                 prompt_per_million: 0.12,
                 completion_per_million: 0.30,
@@ -48,7 +68,7 @@ impl ModelPricing {
                 completion_per_million: 0.60,
                 cache_read_per_million: 0.075, // 50% discount
             }
-        } else if m.contains("haiku") {
+        } else if m.contains("claude-3-haiku") {
             ModelPricing {
                 prompt_per_million: 0.80,
                 completion_per_million: 4.00,
@@ -75,16 +95,13 @@ impl ModelPricing {
         cached_tokens: u64,
         completion_tokens: u64,
     ) -> CostBreakdown {
-        let cached = cached_tokens.min(prompt_tokens);
-        let fresh = prompt_tokens.saturating_sub(cached);
-
-        let fresh_cost = (fresh as f64 / 1_000_000.0) * self.prompt_per_million;
-        let cached_cost = (cached as f64 / 1_000_000.0) * self.cache_read_per_million;
+        let fresh_cost = (prompt_tokens as f64 / 1_000_000.0) * self.prompt_per_million;
+        let cached_cost = (cached_tokens as f64 / 1_000_000.0) * self.cache_read_per_million;
         let comp_cost = (completion_tokens as f64 / 1_000_000.0) * self.completion_per_million;
 
         let total_cost_usd = fresh_cost + cached_cost + comp_cost;
         let un_cached_cost_usd =
-            (prompt_tokens as f64 / 1_000_000.0) * self.prompt_per_million + comp_cost;
+            ((prompt_tokens + cached_tokens) as f64 / 1_000_000.0) * self.prompt_per_million + comp_cost;
 
         let savings_usd = (un_cached_cost_usd - total_cost_usd).max(0.0);
         let savings_percent = if un_cached_cost_usd > 0.0 {
@@ -168,6 +185,11 @@ mod tests {
         assert_eq!(mistral.prompt_per_million, 0.10);
         assert_eq!(mistral.completion_per_million, 0.30);
 
+        let custom = ModelPricing::from_rates(0.50, 1.50);
+        assert_eq!(custom.prompt_per_million, 0.50);
+        assert_eq!(custom.completion_per_million, 1.50);
+        assert_eq!(custom.cache_read_per_million, 0.125);
+
         let unknown = ModelPricing::for_model("some-random-unknown-model");
         assert_eq!(unknown.prompt_per_million, 0.20);
         assert_eq!(unknown.completion_per_million, 0.60);
@@ -196,7 +218,7 @@ mod tests {
     #[test]
     fn test_cost_calculation_full_prompt_cache() {
         let p = ModelPricing::for_model("google/gemini-2.5-flash");
-        let b = p.compute_cost_with_cache(1_000_000, 1_000_000, 0);
+        let b = p.compute_cost_with_cache(0, 1_000_000, 0);
         let diff = (b.total_cost_usd - 0.0375).abs();
         assert!(diff < 1e-6, "Expected 0.0375, got {}", b.total_cost_usd);
         let diff_savings = (b.savings_usd - 0.1125).abs();
@@ -208,9 +230,9 @@ mod tests {
     fn test_cost_calculation_cached_exceeds_prompt() {
         let p = ModelPricing::for_model("google/gemini-2.5-flash");
         let b = p.compute_cost_with_cache(500_000, 1_000_000, 0);
-        let diff = (b.total_cost_usd - 0.01875).abs();
-        assert!(diff < 1e-6, "Expected 0.01875, got {}", b.total_cost_usd);
-        assert!((b.savings_percent - 75.0).abs() < 1e-4);
+        let diff = (b.total_cost_usd - 0.1125).abs();
+        assert!(diff < 1e-6, "Expected 0.1125, got {}", b.total_cost_usd);
+        assert!((b.savings_percent - 50.0).abs() < 1e-4);
     }
 
     #[tokio::test]

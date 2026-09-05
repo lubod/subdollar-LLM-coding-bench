@@ -103,51 +103,47 @@ impl SandboxManager {
         None
     }
 
-    /// Check if candidate has either a Dockerfile or start.sh (root or nested)
+    /// Recursively check if directory contains a runnable candidate.
+    /// If found in a subdirectory, creates a forwarding root start.sh.
     pub fn ensure_runnable_candidate(&self, workdir: &Path) -> Result<bool> {
-        let canonical_workdir = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
+        if !workdir.exists() {
+            return Ok(false);
+        }
 
-        // 1. Check if root Dockerfile exists
-        if canonical_workdir.join("Dockerfile").exists() {
+        let root_dockerfile = workdir.join("Dockerfile");
+        if root_dockerfile.exists() {
             return Ok(true);
         }
 
-        // 2. Check if nested Dockerfile exists
-        if let Some(nested_dockerfile) = Self::find_file_recursive(&canonical_workdir, "Dockerfile") {
-            info!("Found nested Dockerfile at: {}", nested_dockerfile.display());
-            let root_df = canonical_workdir.join("Dockerfile");
-            if !root_df.exists() {
-                let _ = fs::copy(&nested_dockerfile, &root_df);
+        let root_start_sh = workdir.join("start.sh");
+        if root_start_sh.exists() {
+            return Ok(true);
+        }
+
+        // Search for Dockerfile in subdirectories
+        if let Some(found_df) = Self::find_file_recursive(workdir, "Dockerfile") {
+            if found_df != root_dockerfile {
+                info!("Found nested Dockerfile at {:?}. Hoisting to root workspace...", found_df);
+                let _ = fs::copy(&found_df, &root_dockerfile);
+                return Ok(true);
             }
-            return Ok(true);
         }
 
-        // 3. Check if root start.sh exists
-        if canonical_workdir.join("start.sh").exists() {
-            return Ok(true);
-        }
-
-        // 4. Search for nested start.sh and generate wrapper
-        if let Some(nested_start) = Self::find_file_recursive(&canonical_workdir, "start.sh") {
-            info!("Found nested start.sh at: {}", nested_start.display());
-            if let Ok(rel) = nested_start.strip_prefix(&canonical_workdir) {
-                if let Some(parent) = rel.parent() {
-                    let parent_str = parent.display().to_string();
-                    if !parent_str.is_empty() {
-                        let wrapper_content = format!(
-                            "#!/bin/bash\ncd \"/workspace/{}\"\nchmod +x start.sh 2>/dev/null || true\nexec ./start.sh\n",
-                            parent_str
-                        );
-                        let root_start = canonical_workdir.join("start.sh");
-                        let _ = fs::write(&root_start, wrapper_content);
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ = fs::set_permissions(&root_start, fs::Permissions::from_mode(0o755));
-                        }
-                        info!("Created root start.sh forwarding to subfolder: {}", parent_str);
-                        return Ok(true);
-                    }
+        // Search for start.sh in subdirectories
+        if let Some(found_sh) = Self::find_file_recursive(workdir, "start.sh") {
+            if found_sh != root_start_sh {
+                info!("Found nested start.sh at {:?}. Creating root bridge start.sh...", found_sh);
+                if let Ok(rel_path) = found_sh.strip_prefix(workdir) {
+                    let parent_dir = rel_path.parent().unwrap_or(Path::new(""));
+                    let script_name = rel_path.file_name().unwrap_or_default().to_string_lossy();
+                    let bridge_content = format!(
+                        "#!/bin/bash\ncd /workspace/{}\nchmod +x ./{}\nexec ./{}\n",
+                        parent_dir.display(),
+                        script_name,
+                        script_name
+                    );
+                    let _ = fs::write(&root_start_sh, bridge_content);
+                    return Ok(true);
                 }
             }
         }
@@ -155,8 +151,10 @@ impl SandboxManager {
         Ok(false)
     }
 
+    /// Start the candidate server container with resource limits
     pub fn start_candidate_in_docker(&self, workdir: &Path, port: u16) -> Result<()> {
-        info!("Starting candidate clone in Docker on port {}", port);
+        info!("Starting candidate server in isolated Docker container for port {}", port);
+
         let _ = Command::new("docker")
             .args(["rm", "-f", "subdollar-candidate"])
             .output();
@@ -167,10 +165,11 @@ impl SandboxManager {
             workdir.canonicalize().unwrap_or_else(|_| {
                 std::env::current_dir()
                     .map(|c| c.join(workdir))
-                    .unwrap_or_else(|_| PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench").join(workdir))
+                    .unwrap_or_else(|_| crate::config::get_repo_root().join(workdir))
             })
         };
-        let port_arg = format!("{}:{}", port, port);
+        let port_tcp = format!("{}:{}/tcp", port, port);
+        let port_udp = format!("{}:{}/udp", port, port);
 
         // Ensure runnable (detects nested start.sh / Dockerfile)
         let _ = self.ensure_runnable_candidate(&canonical_workdir);
@@ -197,7 +196,9 @@ impl SandboxManager {
                             "--cpus=2.0",
                             "--pids-limit=256",
                             "-p",
-                            &port_arg,
+                            &port_tcp,
+                            "-p",
+                            &port_udp,
                             "subdollar-candidate-custom",
                         ])
                         .output();
@@ -234,7 +235,9 @@ impl SandboxManager {
                 "-v",
                 &mount_arg,
                 "-p",
-                &port_arg,
+                &port_tcp,
+                "-p",
+                &port_udp,
                 "subdollar-sandbox",
                 "/bin/bash",
                 "-c",

@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "subdollar-bench")]
@@ -38,10 +39,10 @@ pub enum Commands {
         timeout_min: u64,
 
         /// OpenRouter API Key (optional, defaults to OPENROUTER_API_KEY env var)
-        #[arg(long, env = "OPENROUTER_API_KEY")]
+        #[arg(long)]
         api_key: Option<String>,
 
-        /// Path to workspace directory for the generated project
+        /// Directory for candidate workspace
         #[arg(long, default_value = "./workspace")]
         workdir: String,
 
@@ -113,7 +114,7 @@ pub enum Commands {
         port: u16,
 
         /// Host address to bind
-        #[arg(long, default_value = "0.0.0.0")]
+        #[arg(long, default_value = "127.0.0.1")]
         host: String,
     },
 }
@@ -126,6 +127,28 @@ pub enum TaskType {
     Dns,
 }
 
+impl TaskType {
+    pub fn total_stages(&self) -> u32 {
+        match self {
+            TaskType::Redis => 4,
+            TaskType::Http => 5,
+            TaskType::Dns => 6,
+        }
+    }
+
+    pub fn default_port(&self) -> u16 {
+        match self {
+            TaskType::Redis => 6379,
+            TaskType::Http => 8080,
+            TaskType::Dns => 5353,
+        }
+    }
+
+    pub fn is_udp(&self) -> bool {
+        matches!(self, TaskType::Dns)
+    }
+}
+
 impl std::fmt::Display for TaskType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -134,6 +157,43 @@ impl std::fmt::Display for TaskType {
             TaskType::Dns => write!(f, "dns"),
         }
     }
+}
+
+pub fn get_repo_root() -> PathBuf {
+    if let Ok(sdb_home) = std::env::var("SDB_HOME").or_else(|_| std::env::var("SUBDOLLAR_BENCH_HOME")) {
+        let p = PathBuf::from(sdb_home);
+        if p.exists() {
+            return p;
+        }
+    }
+
+    if let Ok(cur) = std::env::current_dir() {
+        if cur.join("Cargo.toml").exists() && cur.join("tasks").exists() {
+            return cur;
+        }
+        if let Some(parent) = cur.parent() {
+            if parent.join("Cargo.toml").exists() && parent.join("tasks").exists() {
+                return parent.to_path_buf();
+            }
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        let mut cur = exe.parent();
+        while let Some(p) = cur {
+            if p.join("Cargo.toml").exists() && p.join("tasks").exists() {
+                return p.to_path_buf();
+            }
+            cur = p.parent();
+        }
+    }
+
+    let default_vm = PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench");
+    if default_vm.exists() {
+        return default_vm;
+    }
+
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 #[cfg(test)]
@@ -145,6 +205,18 @@ mod tests {
         assert_eq!(format!("{}", TaskType::Redis), "redis");
         assert_eq!(format!("{}", TaskType::Http), "http");
         assert_eq!(format!("{}", TaskType::Dns), "dns");
+
+        assert_eq!(TaskType::Redis.total_stages(), 4);
+        assert_eq!(TaskType::Http.total_stages(), 5);
+        assert_eq!(TaskType::Dns.total_stages(), 6);
+
+        assert_eq!(TaskType::Redis.default_port(), 6379);
+        assert_eq!(TaskType::Http.default_port(), 8080);
+        assert_eq!(TaskType::Dns.default_port(), 5353);
+
+        assert!(!TaskType::Redis.is_udp());
+        assert!(!TaskType::Http.is_udp());
+        assert!(TaskType::Dns.is_udp());
 
         let json_redis = serde_json::to_string(&TaskType::Redis).unwrap();
         assert_eq!(json_redis, "\"redis\"");
@@ -160,6 +232,12 @@ mod tests {
         assert_eq!(json_http, "\"http\"");
         let de_http: TaskType = serde_json::from_str(&json_http).unwrap();
         assert_eq!(de_http, TaskType::Http);
+    }
+
+    #[test]
+    fn test_get_repo_root() {
+        let root = get_repo_root();
+        assert!(root.exists());
     }
 
     #[test]
@@ -266,6 +344,16 @@ mod tests {
         match cli.command {
             Commands::Ui { port, host } => {
                 assert_eq!(port, 8080);
+                assert_eq!(host, "127.0.0.1");
+            }
+            _ => panic!("Expected Ui command"),
+        }
+
+        let args_default = ["subdollar-bench", "ui"];
+        let cli_default = Cli::try_parse_from(args_default).unwrap();
+        match cli_default.command {
+            Commands::Ui { port, host } => {
+                assert_eq!(port, 3000);
                 assert_eq!(host, "127.0.0.1");
             }
             _ => panic!("Expected Ui command"),

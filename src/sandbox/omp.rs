@@ -83,14 +83,14 @@ impl OmpRunner {
             workdir.canonicalize().unwrap_or_else(|_| {
                 std::env::current_dir()
                     .map(|c| c.join(workdir))
-                    .unwrap_or_else(|_| PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench").join(workdir))
+                    .unwrap_or_else(|_| crate::config::get_repo_root().join(workdir))
             })
         };
         let mount_workdir = format!("{}:/workspace", canonical_workdir.display());
 
         let host_omp_dir = std::env::var("HOME")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/home/ubuntu"))
+            .unwrap_or_else(|_| crate::config::get_repo_root())
             .join(".omp");
         let host_sessions_dir = host_omp_dir.join("agent").join("sessions");
         let _ = std::fs::create_dir_all(&host_sessions_dir);
@@ -299,6 +299,9 @@ impl OmpRunner {
             let p = PathBuf::from(home).join(".omp/agent/sessions");
             if p.exists() { dirs.push(p); }
         }
+        let root = crate::config::get_repo_root();
+        let r_omp = root.join(".omp/agent/sessions");
+        if r_omp.exists() && !dirs.contains(&r_omp) { dirs.push(r_omp); }
         let u = PathBuf::from("/home/ubuntu/.omp/agent/sessions");
         if u.exists() && !dirs.contains(&u) { dirs.push(u); }
         let r = PathBuf::from("/root/.omp/agent/sessions");
@@ -615,7 +618,7 @@ impl OmpRunner {
         }
     }
 
-    fn extract_latest_session_stats(preferred_file: Option<&Path>) -> Result<OmpSessionStats> {
+    pub fn extract_latest_session_stats(preferred_file: Option<&Path>) -> Result<OmpSessionStats> {
         let session_file = match preferred_file {
             Some(p) if p.exists() => p.to_path_buf(),
             _ => {
@@ -641,17 +644,16 @@ impl OmpRunner {
 
                 if let Some(usage) = usage_opt {
                     if let Some(pt) = usage.get("input").or_else(|| usage.get("prompt_tokens")).and_then(|x| x.as_u64()) {
-                        prompt_tokens = prompt_tokens.max(pt);
+                        prompt_tokens += pt;
                     }
                     if let Some(ct) = usage.get("output").or_else(|| usage.get("completion_tokens")).and_then(|x| x.as_u64()) {
                         completion_tokens += ct;
                     }
                     if let Some(cr) = usage.get("cacheRead").or_else(|| usage.get("cache_read_input_tokens")).and_then(|x| x.as_u64()) {
-                        cached_tokens = cached_tokens.max(cr);
-                    }
-                    if let Some(details) = usage.get("prompt_tokens_details") {
+                        cached_tokens += cr;
+                    } else if let Some(details) = usage.get("prompt_tokens_details") {
                         if let Some(c) = details.get("cached_tokens").and_then(|x| x.as_u64()) {
-                            cached_tokens = cached_tokens.max(c);
+                            cached_tokens += c;
                         }
                     }
                 }
@@ -662,7 +664,7 @@ impl OmpRunner {
             prompt_tokens,
             completion_tokens,
             cached_tokens,
-            total_tokens: prompt_tokens + completion_tokens,
+            total_tokens: prompt_tokens + cached_tokens + completion_tokens,
             steps_taken: steps,
         })
     }
@@ -746,10 +748,10 @@ mod tests {
         std::fs::write(&session_file, content).unwrap();
 
         let stats = OmpRunner::extract_latest_session_stats(Some(&session_file)).unwrap();
-        assert_eq!(stats.prompt_tokens, 2500);
+        assert_eq!(stats.prompt_tokens, 4500);
         assert_eq!(stats.completion_tokens, 350);
-        assert_eq!(stats.cached_tokens, 1200);
-        assert_eq!(stats.total_tokens, 2850);
+        assert_eq!(stats.cached_tokens, 2000);
+        assert_eq!(stats.total_tokens, 6850);
         assert_eq!(stats.steps_taken, 2);
 
         let found = OmpRunner::find_newest_session_file_across(&[temp_dir.clone()]);

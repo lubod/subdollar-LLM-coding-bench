@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-04 15:31:11 UTC*
+*Last Updated: 2026-09-05 09:06:57 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -15,7 +15,10 @@
 
 ## 📊 Global Leaderboard
 
-*No benchmark runs recorded yet. Run a benchmark to populate the leaderboard!*
+| Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
+|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🥇 1 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | HTTP/1.1 | `Go` | 100% (5/5) | 46252 req/s | $0.0047 | **214.1** pts/¢ | [Inspect](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_155710/) |
+| 🥈 2 | `openrouter/meta/muse-spark-1.3-contributor` | `low` | HTTP/1.1 | `Go` | 0% (0/4) | N/A | $0.0025 | **0.0** pts/¢ | [Inspect](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_160605/) |
 
 ---
 
@@ -36,6 +39,11 @@ The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server fr
 - **Packaging Freedom**: Working `Dockerfile` or executable `./start.sh`.
 - **Verification**: 5-stage automated conformance suite + `wrk -t4 -c20 -d5s http://127.0.0.1:8080/`.
 
+| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Go` | 100% | 46252 req/s | $0.0047 | 214.1 pts/¢ | [runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_155710/](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_155710/) |
+| `openrouter/meta/muse-spark-1.3-contributor` | `low` | `Go` | 0% | N/A | $0.0025 | 0.0 pts/¢ | [runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_160605/](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260904_160605/) |
+
 ---
 
 ## 🖥️ Benchmark Testbed Environment Specs
@@ -52,8 +60,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `6b36a11` (branch `master`) |
-| **Benchmark Captured** | 2026-09-04T15:31:11.423232757+00:00 |
+| **Git Baseline** | Commit `32fb2a2` (branch `master`) |
+| **Benchmark Captured** | 2026-09-05T09:06:57.531120608+00:00 |
 
 ---
 

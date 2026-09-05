@@ -4,7 +4,8 @@ use std::path::Path;
 pub struct ComplianceChecker;
 
 impl ComplianceChecker {
-    /// Scans the candidate workspace to ensure no prohibited HTTP frameworks or built-in HTTP server modules are used.
+    /// Scans the candidate workspace to ensure no prohibited server frameworks, prebuilt server daemons,
+    /// or built-in high-level protocol modules are used.
     pub fn check_no_frameworks(workdir: &Path) -> Result<(), String> {
         let mut violations = Vec::new();
         Self::scan_dir(workdir, &mut violations);
@@ -13,7 +14,7 @@ impl ComplianceChecker {
             Ok(())
         } else {
             Err(format!(
-                "Anti-Cheat Violation: Found forbidden HTTP framework/module usage: {}",
+                "Anti-Cheat Violation: Found forbidden framework/daemon usage: {}",
                 violations.join("; ")
             ))
         }
@@ -45,9 +46,54 @@ impl ComplianceChecker {
             Err(_) => return, // Ignore binary or unreadable files
         };
 
-        // 1. Node.js package.json
+        // 1. Dockerfile base-image inspection
+        if filename.eq_ignore_ascii_case("Dockerfile") || filename.contains("Dockerfile") {
+            let forbidden_base_images = [
+                "redis", "valkey", "keydb", "nginx", "caddy", "coredns",
+                "bind9", "named", "dnsmasq", "apache", "httpd", "envoy",
+                "traefik", "haproxy", "lighttpd", "memcached",
+            ];
+            for line in content.lines() {
+                let trimmed = line.trim();
+                let lower = trimmed.to_lowercase();
+                if lower.starts_with("from ") {
+                    for forbidden in forbidden_base_images {
+                        if lower.contains(forbidden) {
+                            violations.push(format!("Dockerfile uses forbidden base image '{}'", trimmed));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Shell script daemon execution inspection
+        if filename.ends_with(".sh") || filename.ends_with(".bash") || filename == "start.sh" {
+            let forbidden_daemons = [
+                "redis-server", "valkey-server", "keydb-server", "nginx", "caddy",
+                "coredns", "dnsmasq", "named", "bind9", "lighttpd", "apache2", "httpd",
+            ];
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') {
+                    continue;
+                }
+                for daemon in forbidden_daemons {
+                    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+                    if tokens.iter().any(|&t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
+                        violations.push(format!("{}: executes forbidden server daemon '{}'", filename, daemon));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 3. Node.js package.json
         if filename == "package.json" {
-            let forbidden = ["\"express\"", "\"fastify\"", "\"koa\"", "\"hapi\"", "\"nest\"", "\"sails\"", "\"connect\""];
+            let forbidden = [
+                "\"express\"", "\"fastify\"", "\"koa\"", "\"hapi\"", "\"nest\"",
+                "\"sails\"", "\"connect\"", "\"ioredis\"", "\"redis\"",
+            ];
             for f in forbidden {
                 if content.contains(f) {
                     violations.push(format!("package.json specifies forbidden dependency {}", f));
@@ -55,9 +101,12 @@ impl ComplianceChecker {
             }
         }
 
-        // 2. Python requirements.txt or pyproject.toml
+        // 4. Python requirements.txt or pyproject.toml
         if filename == "requirements.txt" || filename == "pyproject.toml" || filename == "Pipfile" {
-            let forbidden = ["flask", "fastapi", "django", "tornado", "sanic", "starlette", "bottle", "aiohttp", "gunicorn", "uvicorn"];
+            let forbidden = [
+                "flask", "fastapi", "django", "tornado", "sanic", "starlette",
+                "bottle", "aiohttp", "gunicorn", "uvicorn", "redis", "dnspython",
+            ];
             for line in content.lines() {
                 let lower = line.to_lowercase();
                 for f in forbidden {
@@ -68,7 +117,7 @@ impl ComplianceChecker {
             }
         }
 
-        // 3. Go go.mod
+        // 5. Go go.mod
         if filename == "go.mod" {
             let forbidden = [
                 "github.com/gin-gonic/gin",
@@ -76,6 +125,8 @@ impl ComplianceChecker {
                 "github.com/labstack/echo",
                 "github.com/gorilla/mux",
                 "github.com/go-chi/chi",
+                "github.com/redis/go-redis",
+                "github.com/miekg/dns",
             ];
             for f in forbidden {
                 if content.contains(f) {
@@ -84,9 +135,12 @@ impl ComplianceChecker {
             }
         }
 
-        // 4. Rust Cargo.toml
+        // 6. Rust Cargo.toml
         if filename == "Cargo.toml" {
-            let forbidden = ["axum", "actix-web", "warp", "rocket", "tide", "poem", "salvo"];
+            let forbidden = [
+                "axum", "actix-web", "warp", "rocket", "tide", "poem", "salvo",
+                "redis", "fred", "trust-dns", "hickory-dns",
+            ];
             for line in content.lines() {
                 let trimmed = line.trim();
                 for f in forbidden {
@@ -97,7 +151,7 @@ impl ComplianceChecker {
             }
         }
 
-        // 5. Source code inspection (.py, .go, .rs, .js, .ts)
+        // 7. Source code inspection (.py, .go, .rs, .js, .ts, .c, .cpp, .h)
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         match ext {
             "py" => {
@@ -129,6 +183,14 @@ impl ComplianceChecker {
                     violations.push(format!("{}: references web framework", filename));
                 }
             }
+            "c" | "cpp" | "cc" | "h" | "hpp" => {
+                if content.contains("<microhttpd.h>") {
+                    violations.push(format!("{}: includes forbidden library <microhttpd.h>", filename));
+                }
+                if content.contains("<event2/http.h>") {
+                    violations.push(format!("{}: includes forbidden library <event2/http.h>", filename));
+                }
+            }
             _ => {}
         }
     }
@@ -147,6 +209,8 @@ mod tests {
             temp_dir.join("main.go"),
             "package main\nimport \"net\"\nfunc main() { listener, _ := net.Listen(\"tcp\", \":8080\") }\n",
         ).unwrap();
+        fs::write(temp_dir.join("Dockerfile"), "FROM golang:1.22-alpine\nCOPY . /app\n").unwrap();
+        fs::write(temp_dir.join("start.sh"), "#!/bin/bash\n./server\n").unwrap();
 
         assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
         let _ = fs::remove_dir_all(&temp_dir);
@@ -213,7 +277,28 @@ mod tests {
         assert!(res_app.unwrap_err().contains("flask"));
         let _ = fs::remove_file(temp_dir.join("app.py"));
 
-        // 9. Hidden folder ignore
+        // 9. Dockerfile FROM redis cheat
+        fs::write(temp_dir.join("Dockerfile"), "FROM redis:alpine\nEXPOSE 6379\n").unwrap();
+        let res_df = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res_df.is_err());
+        assert!(res_df.unwrap_err().contains("redis"));
+        let _ = fs::remove_file(temp_dir.join("Dockerfile"));
+
+        // 10. start.sh redis-server cheat
+        fs::write(temp_dir.join("start.sh"), "#!/bin/bash\nredis-server --port 6379\n").unwrap();
+        let res_sh = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res_sh.is_err());
+        assert!(res_sh.unwrap_err().contains("redis-server"));
+        let _ = fs::remove_file(temp_dir.join("start.sh"));
+
+        // 11. C/C++ microhttpd
+        fs::write(temp_dir.join("server.c"), "#include <microhttpd.h>\n").unwrap();
+        let res_c = ComplianceChecker::check_no_frameworks(&temp_dir);
+        assert!(res_c.is_err());
+        assert!(res_c.unwrap_err().contains("microhttpd"));
+        let _ = fs::remove_file(temp_dir.join("server.c"));
+
+        // 12. Hidden folder ignore
         let hidden = temp_dir.join(".git");
         let _ = fs::create_dir_all(&hidden);
         fs::write(hidden.join("server.py"), "import http.server\n").unwrap();

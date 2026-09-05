@@ -83,9 +83,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 let work_path_buf = if Path::new(&workdir).is_absolute() {
                     PathBuf::from(&workdir)
                 } else {
-                    std::env::current_dir()
-                        .map(|c| c.join(&workdir))
-                        .unwrap_or_else(|_| PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench").join(&workdir))
+                    subdollar_bench::config::get_repo_root().join(&workdir)
                 };
                 let work_path = work_path_buf.as_path();
                 if !eval_only {
@@ -119,11 +117,15 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 }
 
                 // 2. Read task prompt
-                let prompt_file = format!("tasks/{}/prompt.md", task);
+                let prompt_file = subdollar_bench::config::get_repo_root()
+                    .join("tasks")
+                    .join(task.to_string())
+                    .join("prompt.md");
                 let prompt_content = fs::read_to_string(&prompt_file)
-                    .map_err(|_| anyhow!("Could not read prompt file: {}", prompt_file))?;
+                    .map_err(|_| anyhow!("Could not read prompt file: {}", prompt_file.display()))?;
 
                 // 3. Run OMP Agent (unless eval_only)
+                let mut agent_failed = false;
                 let (omp_stats, prompt_tokens, cached_tokens, completion_tokens) = if !eval_only {
                     println!(
                         "\n{}",
@@ -148,18 +150,30 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                             None
                         },
                     };
-                    let stats = OmpRunner::run_agent(
+                    match OmpRunner::run_agent(
                         &model,
                         &prompt_content,
                         work_path,
                         api_key.as_deref(),
                         limits,
                         Some(&effort),
-                    )?;
-                    let p = stats.prompt_tokens;
-                    let c = stats.cached_tokens;
-                    let comp = stats.completion_tokens;
-                    (stats, p, c, comp)
+                    ) {
+                        Ok(stats) => {
+                            let p = stats.prompt_tokens;
+                            let c = stats.cached_tokens;
+                            let comp = stats.completion_tokens;
+                            (stats, p, c, comp)
+                        }
+                        Err(e) => {
+                            eprintln!("  [ERROR] OMP Agent execution failed: {}", e);
+                            agent_failed = true;
+                            let partial_stats = OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
+                            let p = partial_stats.prompt_tokens;
+                            let c = partial_stats.cached_tokens;
+                            let comp = partial_stats.completion_tokens;
+                            (partial_stats, p, c, comp)
+                        }
+                    }
                 } else {
                     println!(
                         "\n{}",
@@ -170,136 +184,150 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
 
                 // Anti-cheat compliance check
                 println!("\n{}", ">>> Checking Anti-Cheat Framework Compliance...".bold().cyan());
+                let mut disqualified = false;
+                let mut disqualification_reason = None;
                 match ComplianceChecker::check_no_frameworks(work_path) {
                     Ok(()) => {
                         println!("  [PASS] {}", "No forbidden frameworks detected.".green());
                     }
                     Err(violation) => {
-                        println!("  [WARN] Compliance alert: {}", violation.yellow());
+                        println!("  [DISQUALIFIED] Anti-cheat compliance violation: {}", violation.to_string().red());
+                        disqualified = true;
+                        disqualification_reason = Some(violation);
                     }
                 }
 
                 // 4. Start candidate server inside Docker
-                let target_port = match task {
-                    TaskType::Redis => 6379,
-                    TaskType::Http => 8080,
-                    TaskType::Dns => 5353,
-                };
-
+                let target_port = task.default_port();
                 let has_runnable = sandbox.ensure_runnable_candidate(work_path).unwrap_or(false);
-                if !has_runnable {
-                    println!(
-                        "{}",
-                        ">>> [ERROR] No runnable start.sh or Dockerfile found in ./workspace!"
-                            .bold()
-                            .red()
-                    );
+
+                // 5. Run Verification
+                let (pass_rate, passed_stages, total_stages, stages) = if disqualified {
+                    let reason = disqualification_reason.unwrap_or_else(|| "Anti-cheat compliance violation".to_string());
+                    let stages = vec![subdollar_bench::verifier::StageResult {
+                        stage: 0,
+                        name: "Anti-Cheat Compliance".to_string(),
+                        passed: false,
+                        error: Some(reason),
+                    }];
+                    (0.0, 0, task.total_stages(), stages)
+                } else if agent_failed && !has_runnable {
+                    println!("{}", ">>> Candidate did not produce runnable code. Skipping verification.".yellow());
+                    (0.0, 0, task.total_stages(), Vec::new())
                 } else {
-                    println!(
-                        "{}",
-                        ">>> Starting candidate container inside isolated Docker sandbox..."
-                            .bold()
-                            .cyan()
-                    );
-                    let _ = sandbox.start_candidate_in_docker(work_path, target_port);
-                    if task != TaskType::Dns {
+                    if !has_runnable {
                         println!(
                             "{}",
-                            format!(
-                                ">>> Waiting for candidate port {} readiness (timeout: 30s)...",
-                                target_port
-                            )
-                            .cyan()
+                            ">>> [ERROR] No runnable start.sh or Dockerfile found in ./workspace!"
+                                .bold()
+                                .red()
                         );
-                        let ready = sandbox.wait_for_port(target_port, 30).await;
-                        if ready {
-                            println!(
-                                "{}",
-                                format!(">>> Candidate server online on port {}!", target_port)
-                                    .green()
-                            );
-                        } else {
+                    } else {
+                        println!(
+                            "{}",
+                            ">>> Starting candidate container inside isolated Docker sandbox..."
+                                .bold()
+                                .cyan()
+                        );
+                        let _ = sandbox.start_candidate_in_docker(work_path, target_port);
+                        if task != TaskType::Dns {
                             println!(
                                 "{}",
                                 format!(
-                                    ">>> [WARN] Candidate port {} not responding after 30s. Proceeding to tests...",
+                                    ">>> Waiting for candidate port {} readiness (timeout: 30s)...",
                                     target_port
                                 )
-                                .yellow()
+                                .cyan()
                             );
+                            let ready = sandbox.wait_for_port(target_port, 30).await;
+                            if ready {
+                                println!(
+                                    "{}",
+                                    format!(">>> Candidate server online on port {}!", target_port)
+                                        .green()
+                                );
+                            } else {
+                                println!(
+                                    "{}",
+                                    format!(
+                                        ">>> [WARN] Candidate port {} not responding after 30s. Proceeding to tests...",
+                                        target_port
+                                    )
+                                    .yellow()
+                                );
+                            }
+                        } else {
+                            sleep(Duration::from_millis(1500)).await;
                         }
-                    } else {
-                        sleep(Duration::from_millis(1500)).await;
                     }
-                }
 
-                // 5. Run Verification
-                println!(
-                    "\n{}",
-                    ">>> Running Protocol Verification Test Suite..."
-                        .bold()
-                        .cyan()
-                );
-                let (pass_rate, passed_stages, total_stages, stages) = match task {
-                    TaskType::Redis => {
-                        let verifier = RedisVerifier::new(6379, Some(6380));
-                        let summary = verifier.run_all().await;
-                        for stage in &summary.stages {
-                            if stage.passed {
-                                println!("  [PASS] {}", stage.name.green());
-                            } else {
-                                println!("  [FAIL] {}", stage.name.red());
-                                if let Some(err) = &stage.error {
-                                    println!("         Error: {}", err.dimmed());
+                    println!(
+                        "\n{}",
+                        ">>> Running Protocol Verification Test Suite..."
+                            .bold()
+                            .cyan()
+                    );
+                    match task {
+                        TaskType::Redis => {
+                            let verifier = RedisVerifier::new(6379, Some(6380));
+                            let summary = verifier.run_all().await;
+                            for stage in &summary.stages {
+                                if stage.passed {
+                                    println!("  [PASS] {}", stage.name.green());
+                                } else {
+                                    println!("  [FAIL] {}", stage.name.red());
+                                    if let Some(err) = &stage.error {
+                                        println!("         Error: {}", err.dimmed());
+                                    }
                                 }
                             }
+                            (
+                                summary.pass_rate,
+                                summary.passed_count,
+                                summary.total_stages,
+                                summary.stages,
+                            )
                         }
-                        (
-                            summary.pass_rate,
-                            summary.passed_count,
-                            summary.total_stages,
-                            summary.stages,
-                        )
-                    }
-                    TaskType::Http => {
-                        let verifier = HttpVerifier::new(8080);
-                        let summary = verifier.run_all().await;
-                        for stage in &summary.stages {
-                            if stage.passed {
-                                println!("  [PASS] {}", stage.name.green());
-                            } else {
-                                println!("  [FAIL] {}", stage.name.red());
-                                if let Some(err) = &stage.error {
-                                    println!("         Error: {}", err.dimmed());
+                        TaskType::Http => {
+                            let verifier = HttpVerifier::new(8080);
+                            let summary = verifier.run_all().await;
+                            for stage in &summary.stages {
+                                if stage.passed {
+                                    println!("  [PASS] {}", stage.name.green());
+                                } else {
+                                    println!("  [FAIL] {}", stage.name.red());
+                                    if let Some(err) = &stage.error {
+                                        println!("         Error: {}", err.dimmed());
+                                    }
                                 }
                             }
+                            (
+                                summary.pass_rate,
+                                summary.passed_count,
+                                summary.total_stages,
+                                summary.stages,
+                            )
                         }
-                        (
-                            summary.pass_rate,
-                            summary.passed_count,
-                            summary.total_stages,
-                            summary.stages,
-                        )
-                    }
-                    TaskType::Dns => {
-                        let verifier = DnsVerifier::new(5353);
-                        let summary = verifier.run_all().await;
-                        for stage in &summary.stages {
-                            if stage.passed {
-                                println!("  [PASS] {}", stage.name.green());
-                            } else {
-                                println!("  [FAIL] {}", stage.name.red());
-                                if let Some(err) = &stage.error {
-                                    println!("         Error: {}", err.dimmed());
+                        TaskType::Dns => {
+                            let verifier = DnsVerifier::new(5353);
+                            let summary = verifier.run_all().await;
+                            for stage in &summary.stages {
+                                if stage.passed {
+                                    println!("  [PASS] {}", stage.name.green());
+                                } else {
+                                    println!("  [FAIL] {}", stage.name.red());
+                                    if let Some(err) = &stage.error {
+                                        println!("         Error: {}", err.dimmed());
+                                    }
                                 }
                             }
+                            (
+                                summary.pass_rate,
+                                summary.passed_count,
+                                summary.total_stages,
+                                summary.stages,
+                            )
                         }
-                        (
-                            summary.pass_rate,
-                            summary.passed_count,
-                            summary.total_stages,
-                            summary.stages,
-                        )
                     }
                 };
 
@@ -394,8 +422,16 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                     run_id: run_id.clone(),
                     model: model.clone(),
                     task: task.to_string(),
-                    status: if pass_rate == 100.0 {
-                        "completed".to_string()
+                    status: if disqualified {
+                        "disqualified_cheat".to_string()
+                    } else if pass_rate == 100.0 {
+                        if agent_failed {
+                            "agent_killed".to_string()
+                        } else {
+                            "completed".to_string()
+                        }
+                    } else if agent_failed {
+                        "agent_failed".to_string()
                     } else {
                         "failed_tests".to_string()
                     },
@@ -446,7 +482,9 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                     timestamp: completed_at,
                 };
 
-                let _ = LeaderboardManager::save_result("./results", &result);
+                let results_dir_buf = subdollar_bench::config::get_repo_root().join("results");
+                let results_dir_str = results_dir_buf.to_str().unwrap_or("./results");
+                let _ = LeaderboardManager::save_result(results_dir_str, &result);
 
                 println!(
                     "{}",
@@ -531,7 +569,9 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 );
             }
 
-            let all = LeaderboardManager::load_all("./results");
+            let results_dir_buf = subdollar_bench::config::get_repo_root().join("results");
+            let results_dir_str = results_dir_buf.to_str().unwrap_or("./results");
+            let all = LeaderboardManager::load_all(results_dir_str);
             LeaderboardManager::print_table(&all);
         }
 
@@ -735,8 +775,8 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("test_main_pub_{}", std::process::id()));
         let repo_root = temp_dir.join("repo");
-        let runs_dir = temp_dir.join("runs");
-        let results_dir = temp_dir.join("results");
+        let runs_dir = repo_root.join("runs");
+        let results_dir = repo_root.join("results");
         let _ = fs::create_dir_all(&repo_root);
         let _ = fs::create_dir_all(&runs_dir);
         let _ = fs::create_dir_all(&results_dir);
@@ -900,7 +940,54 @@ mod tests {
                 }
             }
         }
-        if let Ok(entries) = fs::read_dir("./results") {
+        let res_dir = subdollar_bench::config::get_repo_root().join("results");
+        if let Ok(entries) = fs::read_dir(&res_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_main_cli_compliance_disqualification() {
+        let temp_workdir =
+            std::env::temp_dir().join(format!("test_main_run_cheat_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_workdir);
+        let start_sh = temp_workdir.join("start.sh");
+        fs::write(&start_sh, "#!/bin/sh\nredis-server --port 6379\n").unwrap();
+
+        let cli_run = Cli {
+            command: Commands::Run {
+                model: "google/gemini-2.5-flash".to_string(),
+                task: TaskType::Redis,
+                effort: "low".to_string(),
+                max_turns: 1,
+                budget_usd: 0.10,
+                timeout_min: 1,
+                api_key: None,
+                workdir: temp_workdir.to_string_lossy().to_string(),
+                eval_only: true,
+                trials: 1,
+            },
+        };
+        assert!(run_cli(cli_run).await.is_ok());
+
+        let _ = fs::remove_dir_all(&temp_workdir);
+
+        let runs_dir = RunArchiver::resolve_runs_dir();
+        if let Ok(entries) = fs::read_dir(&runs_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("gemini-2.5-flash") || name.starts_with("test_") {
+                    let _ = fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+        let res_dir = subdollar_bench::config::get_repo_root().join("results");
+        if let Ok(entries) = fs::read_dir(&res_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.contains("gemini-2.5-flash") || name.starts_with("test_") {

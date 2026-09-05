@@ -115,29 +115,42 @@ impl RunPublisher {
             "SUMMARY.md".to_string(),
         ];
 
-        // git add
+        // git add -f to ensure gitignored runs/ and results/ directories are force-staged
         let mut add_cmd = Command::new("git");
-        add_cmd.current_dir(repo_root).arg("add");
+        add_cmd.current_dir(repo_root).arg("add").arg("-f");
         for f in &files_to_add {
             add_cmd.arg(f);
         }
-        let _ = add_cmd.output();
+        let add_out = add_cmd.output()?;
+        if !add_out.status.success() {
+            let stderr = String::from_utf8_lossy(&add_out.stderr);
+            return Err(anyhow!("git add -f failed: {}", stderr));
+        }
 
         // git commit
-        let _ = Command::new("git")
+        let commit_out = Command::new("git")
             .current_dir(repo_root)
             .args(["commit", "-m", &commit_msg])
-            .output();
+            .output()?;
+        if !commit_out.status.success() {
+            let stdout = String::from_utf8_lossy(&commit_out.stdout);
+            let stderr = String::from_utf8_lossy(&commit_out.stderr);
+            let combined = format!("{}\n{}", stdout, stderr);
+            if !combined.contains("nothing to commit") && !combined.contains("working tree clean") {
+                return Err(anyhow!("git commit failed: {}", combined));
+            }
+        }
 
         // Read current commit hash
         let hash_output = Command::new("git")
             .current_dir(repo_root)
             .args(["rev-parse", "--short", "HEAD"])
-            .output();
-        let commit_hash = hash_output
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
+            .output()?;
+        let commit_hash = if hash_output.status.success() {
+            String::from_utf8_lossy(&hash_output.stdout).trim().to_string()
+        } else {
+            "unknown".to_string()
+        };
 
         Ok(PublishResult {
             success: true,
@@ -280,6 +293,11 @@ mod tests {
         let _ = Command::new("git").current_dir(&temp_dir).args(["config", "user.name", "Bench Tester"]).output();
         let _ = Command::new("git").current_dir(&temp_dir).args(["config", "user.email", "tester@bench.test"]).output();
 
+        // Write .gitignore ignoring runs/ and results/ to verify force add
+        fs::write(temp_dir.join(".gitignore"), "runs/\nresults/\n").unwrap();
+        let _ = Command::new("git").current_dir(&temp_dir).args(["add", ".gitignore"]).output();
+        let _ = Command::new("git").current_dir(&temp_dir).args(["commit", "-m", "chore: initial commit"]).output();
+
         let runs_dir = temp_dir.join("runs");
         let results_dir = temp_dir.join("results");
         let run_id = "test_publish_run_42";
@@ -329,6 +347,11 @@ mod tests {
         assert!(temp_dir.join("SUMMARY.md").exists());
         assert!(run_dir.join("env.json").exists());
         assert!(run_dir.join("README.md").exists());
+
+        // Verify git status in temp repo - runs and results must be committed, not untracked or ignored
+        let status_out = Command::new("git").current_dir(&temp_dir).args(["status", "--porcelain"]).output().unwrap();
+        let status_str = String::from_utf8_lossy(&status_out.stdout);
+        assert_eq!(status_str.trim(), "", "Working tree should be clean after publish");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

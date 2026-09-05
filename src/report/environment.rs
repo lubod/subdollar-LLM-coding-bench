@@ -112,7 +112,8 @@ impl EnvironmentInfo {
         if out != "N/A" && !out.is_empty() {
             out
         } else {
-            Self::cmd_output_su("cd /home/ubuntu/subdollar-LLM-coding-bench && git rev-parse --short HEAD")
+            let repo = crate::config::get_repo_root();
+            Self::cmd_output_su(&format!("cd {} && git rev-parse --short HEAD", repo.display()))
         }
     }
 
@@ -121,7 +122,8 @@ impl EnvironmentInfo {
         if out != "N/A" && !out.is_empty() {
             out
         } else {
-            Self::cmd_output_su("cd /home/ubuntu/subdollar-LLM-coding-bench && git rev-parse --abbrev-ref HEAD")
+            let repo = crate::config::get_repo_root();
+            Self::cmd_output_su(&format!("cd {} && git rev-parse --abbrev-ref HEAD", repo.display()))
         }
     }
 

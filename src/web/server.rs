@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path as AxumPath, Query, State},
+    http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         Html, IntoResponse, Response,
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::convert::Infallible;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -47,6 +48,7 @@ pub struct AppState {
     pub cancel_requested: Arc<AtomicBool>,
     pub current_run: Arc<RwLock<Option<ActiveRunInfo>>>,
     pub log_buffer: Arc<RwLock<Vec<String>>>,
+    pub task_handle: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -158,19 +160,7 @@ pub struct FileDiffEntry {
     pub content_b: Option<String>,
 }
 
-pub fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
-    if n == 0 || k == 0 || n < k {
-        return 0.0;
-    }
-    if n - c < k {
-        return 1.0;
-    }
-    let mut prod = 1.0;
-    for i in 0..k {
-        prod *= (n - c - i) as f64 / (n - i) as f64;
-    }
-    1.0 - prod
-}
+pub use crate::report::leaderboard::compute_pass_at_k;
 
 pub fn generate_unified_diff(path: &str, text_a: &str, text_b: &str) -> String {
     let lines_a: Vec<&str> = text_a.lines().collect();
@@ -224,41 +214,28 @@ pub fn generate_unified_diff(path: &str, text_a: &str, text_b: &str) -> String {
     out
 }
 
-fn resolve_task_path(task: &str) -> PathBuf {
-    let local = Path::new("tasks").join(task).join("prompt.md");
-    if local.exists() {
-        return local;
+fn validate_task_name(task: &str) -> Result<&str, StatusCode> {
+    if task.is_empty()
+        || task.contains('/')
+        || task.contains('\\')
+        || task.contains("..")
+        || !task.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(StatusCode::BAD_REQUEST);
     }
-    let system = Path::new("/home/ubuntu/subdollar-LLM-coding-bench/tasks")
-        .join(task)
-        .join("prompt.md");
-    if system.exists() {
-        return system;
-    }
-    local
+    Ok(task)
 }
 
-fn resolve_results_dir() -> String {
-    if Path::new("./results").exists() {
-        "./results".to_string()
-    } else if Path::new("/home/ubuntu/subdollar-LLM-coding-bench/results").exists() {
-        "/home/ubuntu/subdollar-LLM-coding-bench/results".to_string()
-    } else {
-        "./results".to_string()
-    }
+fn resolve_task_path(task: &str) -> PathBuf {
+    crate::config::get_repo_root().join("tasks").join(task).join("prompt.md")
+}
+
+fn resolve_results_dir() -> PathBuf {
+    crate::config::get_repo_root().join("results")
 }
 
 fn resolve_workspace_dir() -> PathBuf {
-    if let Ok(cur) = std::env::current_dir() {
-        if cur.join("Cargo.toml").exists() {
-            return cur.join("workspace");
-        }
-    }
-    let system = Path::new("/home/ubuntu/subdollar-LLM-coding-bench/workspace");
-    if system.parent().map(|p| p.exists()).unwrap_or(false) {
-        return system.to_path_buf();
-    }
-    PathBuf::from("./workspace")
+    crate::config::get_repo_root().join("workspace")
 }
 
 pub struct UiServer;
@@ -288,11 +265,9 @@ impl UiServer {
     }
 
     pub async fn start(host: &str, port: u16) -> anyhow::Result<()> {
-        if !Path::new("Cargo.toml").exists() {
-            let repo = Path::new("/home/ubuntu/subdollar-LLM-coding-bench");
-            if repo.exists() {
-                let _ = std::env::set_current_dir(repo);
-            }
+        let repo = crate::config::get_repo_root();
+        if repo.exists() {
+            let _ = std::env::set_current_dir(&repo);
         }
         let (log_sender, _) = broadcast::channel(500);
         let state = AppState {
@@ -301,14 +276,16 @@ impl UiServer {
             cancel_requested: Arc::new(AtomicBool::new(false)),
             current_run: Arc::new(RwLock::new(None)),
             log_buffer: Arc::new(RwLock::new(Vec::new())),
+            task_handle: Arc::new(std::sync::Mutex::new(None)),
         };
 
         let app = Self::build_app(state);
 
         let addr = format!("{}:{}", host, port);
         println!("🚀 SubDollarBench GUI listening on: http://{}", addr);
-        println!("   Local URL:  http://localhost:{}", port);
-        println!("   Remote URL: http://192.168.1.197:3001");
+        if host == "0.0.0.0" || host == "127.0.0.1" {
+            println!("   Local URL:  http://localhost:{}", port);
+        }
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
@@ -321,12 +298,34 @@ async fn serve_index() -> Html<&'static str> {
     Html(include_str!("index.html"))
 }
 
-async fn get_models(Query(params): Query<HashMap<String, String>>) -> Json<Vec<SubDollarModel>> {
-    let api_key = params
-        .get("key")
-        .filter(|k| !k.trim().is_empty())
-        .cloned()
-        .or_else(|| std::env::var("OPENROUTER_API_KEY").ok());
+async fn get_models(
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> Json<Vec<SubDollarModel>> {
+    let header_key = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| {
+            if let Some(tok) = h.strip_prefix("Bearer ") {
+                Some(tok)
+            } else if let Some(tok) = h.strip_prefix("bearer ") {
+                Some(tok)
+            } else {
+                Some(h)
+            }
+        })
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-api-key")
+                .and_then(|h| h.to_str().ok())
+                .map(|s| s.trim().to_string())
+        });
+
+    let api_key = header_key
+        .filter(|k| !k.is_empty())
+        .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|k| !k.trim().is_empty()))
+        .or_else(|| params.get("key").filter(|k| !k.trim().is_empty()).cloned());
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -383,25 +382,27 @@ async fn get_models(Query(params): Query<HashMap<String, String>>) -> Json<Vec<S
     Json(models)
 }
 
-async fn get_prompt(AxumPath(task): AxumPath<String>) -> String {
+async fn get_prompt(AxumPath(task): AxumPath<String>) -> Result<String, StatusCode> {
+    validate_task_name(&task)?;
     let path = resolve_task_path(&task);
-    fs::read_to_string(path).unwrap_or_else(|_| "# Task prompt not found".to_string())
+    Ok(fs::read_to_string(path).unwrap_or_else(|_| "# Task prompt not found".to_string()))
 }
 
-async fn save_prompt(AxumPath(task): AxumPath<String>, body: String) -> &'static str {
+async fn save_prompt(AxumPath(task): AxumPath<String>, body: String) -> Result<&'static str, StatusCode> {
+    validate_task_name(&task)?;
     let path = resolve_task_path(&task);
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     match fs::write(path, body) {
-        Ok(_) => "Prompt saved successfully",
-        Err(_) => "Failed to save prompt",
+        Ok(_) => Ok("Prompt saved successfully"),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
 async fn get_leaderboard() -> Json<Vec<BenchmarkRunResult>> {
     let r_dir = resolve_results_dir();
-    let list = LeaderboardManager::load_all(&r_dir);
+    let list = LeaderboardManager::load_all(r_dir.to_str().unwrap_or("./results"));
     Json(list)
 }
 
@@ -456,13 +457,13 @@ async fn publish_run(
     AxumPath(run_id): AxumPath<String>,
     payload: Option<Json<PublishRequest>>,
 ) -> Result<Json<PublishResult>, Response> {
-    let repo_root = Path::new(".");
+    let repo_root = crate::config::get_repo_root();
     let runs_dir = RunArchiver::resolve_runs_dir();
-    let results_dir = PathBuf::from(resolve_results_dir());
+    let results_dir = resolve_results_dir();
     let custom_msg = payload.and_then(|Json(p)| p.message);
 
     match RunPublisher::publish_run(
-        repo_root,
+        &repo_root,
         &runs_dir,
         &results_dir,
         &run_id,
@@ -478,33 +479,23 @@ async fn publish_run(
 }
 
 async fn get_summary() -> Response {
-    let summary_path = Path::new("SUMMARY.md");
-    let fallback = Path::new("/home/ubuntu/subdollar-LLM-coding-bench/SUMMARY.md");
-    let target = if summary_path.exists() {
-        summary_path
-    } else if fallback.exists() {
-        fallback
-    } else {
-        let repo_root = Path::new(".");
+    let repo_root = crate::config::get_repo_root();
+    let summary_path = repo_root.join("SUMMARY.md");
+    if !summary_path.exists() {
         let runs_dir = RunArchiver::resolve_runs_dir();
-        let _ = SummaryGenerator::update_summary_file(repo_root, &runs_dir);
-        if summary_path.exists() {
-            summary_path
-        } else {
-            fallback
-        }
-    };
+        let _ = SummaryGenerator::update_summary_file(&repo_root, &runs_dir);
+    }
 
-    match fs::read_to_string(target) {
+    match fs::read_to_string(&summary_path) {
         Ok(content) => content.into_response(),
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "SUMMARY.md not found").into_response(),
     }
 }
 
 async fn regenerate_summary() -> Response {
-    let repo_root = Path::new(".");
+    let repo_root = crate::config::get_repo_root();
     let runs_dir = RunArchiver::resolve_runs_dir();
-    match SummaryGenerator::update_summary_file(repo_root, &runs_dir) {
+    match SummaryGenerator::update_summary_file(&repo_root, &runs_dir) {
         Ok(p) => match fs::read_to_string(p) {
             Ok(content) => content.into_response(),
             Err(e) => (
@@ -537,6 +528,11 @@ async fn stop_run(State(state): State<AppState>) -> Response {
     state.cancel_requested.store(true, Ordering::SeqCst);
     let tx = state.log_sender.clone();
     let _ = tx.send("[USER ACTION] Cancellation requested. Terminating sandbox containers...".to_string());
+
+    let maybe_handle = state.task_handle.lock().unwrap().take();
+    if let Some(handle) = maybe_handle {
+        handle.abort();
+    }
 
     let sandbox = SandboxManager::new();
     sandbox.cleanup();
@@ -682,7 +678,7 @@ async fn start_run(
     let tx = state.log_sender.clone();
     let state_clone = state.clone();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let total_trials = req.trials.max(1);
         let mut passing_trials = 0;
 
@@ -891,7 +887,11 @@ async fn start_run(
                             format!("[OMP ERROR] Agent execution failed: {}", e),
                         );
                         agent_failed = true;
-                        (OmpSessionStats::default(), 0, 0, 0)
+                        let partial_stats = OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
+                        let p = partial_stats.prompt_tokens;
+                        let c = partial_stats.cached_tokens;
+                        let comp = partial_stats.completion_tokens;
+                        (partial_stats, p, c, comp)
                     }
                 }
             } else {
@@ -912,11 +912,15 @@ async fn start_run(
                 &mut console_buffer,
                 "[COMPLIANCE] Scanning workspace for forbidden frameworks...".to_string(),
             );
+            let mut disqualified = false;
+            let mut disqualification_reason = None;
             if let Err(violation) = ComplianceChecker::check_no_frameworks(work_path) {
                 log(
                     &mut console_buffer,
-                    format!("  [WARN] Compliance alert: {}", violation),
+                    format!("  [DISQUALIFIED] Anti-cheat compliance violation: {}", violation),
                 );
+                disqualified = true;
+                disqualification_reason = Some(violation);
             } else {
                 log(
                     &mut console_buffer,
@@ -934,24 +938,29 @@ async fn start_run(
                 agent_failed = true;
             }
 
-            let target_port = match task_type {
-                TaskType::Redis => 6379,
-                TaskType::Http => 8080,
-                TaskType::Dns => 5353,
-            };
+            let target_port = task_type.default_port();
             let mut throughput = None;
 
-            let (pass_rate, passed_stages, total_stages, stage_results) = if agent_failed {
+            let (pass_rate, passed_stages, total_stages, stage_results) = if disqualified {
+                let reason = disqualification_reason.unwrap_or_else(|| "Anti-cheat compliance violation".to_string());
+                let stages = vec![crate::verifier::StageResult {
+                    stage: 0,
+                    name: "Anti-Cheat Compliance".to_string(),
+                    passed: false,
+                    error: Some(reason),
+                }];
+                (0.0, 0, task_type.total_stages(), stages)
+            } else if agent_failed && !has_runnable {
                 log(
                     &mut console_buffer,
                     "[TEST] Skipped: agent did not produce an executable server.".to_string(),
                 );
-                let total = match task_type {
-                    TaskType::Redis | TaskType::Http => 4,
-                    TaskType::Dns => 6,
-                };
-                (0.0, 0, total, Vec::new())
+                (0.0, 0, task_type.total_stages(), Vec::new())
             } else {
+                if state_clone.cancel_requested.load(Ordering::SeqCst) {
+                    sandbox.cleanup();
+                    break;
+                }
                 // 4. Start candidate container
                 log(
                     &mut console_buffer,
@@ -1150,8 +1159,14 @@ async fn start_run(
                 run_id: run_id.clone(),
                 model: req.model.clone(),
                 task: req.task.clone(),
-                status: if pass_rate == 100.0 {
-                    "completed".to_string()
+                status: if disqualified {
+                    "disqualified_cheat".to_string()
+                } else if pass_rate == 100.0 {
+                    if agent_failed {
+                        "agent_killed".to_string()
+                    } else {
+                        "completed".to_string()
+                    }
                 } else if agent_failed {
                     "agent_failed".to_string()
                 } else {
@@ -1215,7 +1230,7 @@ async fn start_run(
             };
 
             let r_dir = resolve_results_dir();
-            let _ = LeaderboardManager::save_result(&r_dir, &result);
+            let _ = LeaderboardManager::save_result(r_dir.to_str().unwrap_or("./results"), &result);
 
             log(
                 &mut console_buffer,
@@ -1246,9 +1261,11 @@ async fn start_run(
         }
 
         *state_clone.current_run.write().unwrap() = None;
+        *state_clone.task_handle.lock().unwrap() = None;
         state_clone.is_running.store(false, Ordering::SeqCst);
         let _ = tx.send("[DONE]".to_string());
     });
+    *state.task_handle.lock().unwrap() = Some(handle);
 
     Ok("Benchmark started".to_string())
 }
@@ -1288,6 +1305,7 @@ mod tests {
             cancel_requested: Arc::new(AtomicBool::new(false)),
             current_run: Arc::new(RwLock::new(None)),
             log_buffer: Arc::new(RwLock::new(Vec::new())),
+            task_handle: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -1375,6 +1393,32 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), 200);
         assert_eq!(res.text().await.unwrap(), "Prompt saved successfully");
+
+        // 5a. GET /api/prompt with traversal rejected (S3)
+        let res = client
+            .get(format!("{}/api/prompt/..%2Fetc", base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 400);
+
+        // 5b. POST /api/prompt with traversal rejected (S3)
+        let res = client
+            .post(format!("{}/api/prompt/..%2Fbad", base))
+            .body("evil")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 400);
+
+        // 5c. GET /api/models with Bearer header (S4)
+        let res = client
+            .get(format!("{}/api/models", base))
+            .header("Authorization", "Bearer dummy-test-token")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
 
         // 6. GET /api/leaderboard
         let res = client
@@ -1674,8 +1718,8 @@ mod tests {
         assert_eq!(res.status(), 500);
 
         // 22. POST /api/run with runnable start.sh to test Docker candidate branch with DNS task
-        let ws_dir = Path::new("./workspace");
-        let _ = fs::create_dir_all(ws_dir);
+        let ws_dir = resolve_workspace_dir();
+        let _ = fs::create_dir_all(&ws_dir);
         fs::write(ws_dir.join("start.sh"), "#!/bin/sh\nexit 0\n").unwrap();
         #[cfg(unix)]
         {
@@ -1714,7 +1758,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir_b);
         let _ = fs::remove_dir_all(ws_dir);
         let _ = fs::remove_dir_all("tasks/test_task");
-        let _ = fs::remove_dir_all("/home/ubuntu/subdollar-LLM-coding-bench/tasks/test_task");
+        let _ = fs::remove_dir_all(crate::config::get_repo_root().join("tasks/test_task"));
 
         // Clean any gemini/test artifacts from runs/ and results/
         if let Ok(entries) = fs::read_dir(&runs_dir) {
@@ -1725,7 +1769,7 @@ mod tests {
                 }
             }
         }
-        let r_dir = PathBuf::from(resolve_results_dir());
+        let r_dir = resolve_results_dir();
         if let Ok(entries) = fs::read_dir(&r_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -1741,8 +1785,11 @@ mod tests {
         let task_p = resolve_task_path("redis");
         assert!(task_p.to_string_lossy().contains("redis"));
         let res_dir = resolve_results_dir();
-        assert!(res_dir.contains("results"));
+        assert!(res_dir.to_string_lossy().contains("results"));
         let ws_dir = resolve_workspace_dir();
         assert!(ws_dir.is_absolute(), "resolve_workspace_dir must be absolute");
+        assert_eq!(validate_task_name("redis").unwrap(), "redis");
+        assert!(validate_task_name("../bad").is_err());
+        assert!(validate_task_name("bad/slash").is_err());
     }
 }
