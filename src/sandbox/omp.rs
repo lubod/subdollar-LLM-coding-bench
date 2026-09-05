@@ -1,13 +1,13 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashSet;
 use std::fs::File;
-use std::sync::Mutex;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
@@ -81,7 +81,10 @@ impl OmpRunner {
     where
         F: FnMut(String) + Send + 'static,
     {
-        info!("Launching OMP agent in Docker sandbox with model: {}, effort: {:?}, limits: {:?}", model, effort, limits);
+        info!(
+            "Launching OMP agent in Docker sandbox with model: {}, effort: {:?}, limits: {:?}",
+            model, effort, limits
+        );
 
         let start_time = SystemTime::now();
         let container_name = format!("subdollar-omp-agent-{}", std::process::id());
@@ -112,8 +115,14 @@ impl OmpRunner {
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&host_omp_dir, std::fs::Permissions::from_mode(0o777));
-            let _ = std::fs::set_permissions(host_omp_dir.join("agent"), std::fs::Permissions::from_mode(0o777));
-            let _ = std::fs::set_permissions(&host_sessions_dir, std::fs::Permissions::from_mode(0o777));
+            let _ = std::fs::set_permissions(
+                host_omp_dir.join("agent"),
+                std::fs::Permissions::from_mode(0o777),
+            );
+            let _ = std::fs::set_permissions(
+                &host_sessions_dir,
+                std::fs::Permissions::from_mode(0o777),
+            );
         }
         let mount_omp = format!("{}:/home/ubuntu/.omp", host_omp_dir.display());
 
@@ -167,14 +176,19 @@ impl OmpRunner {
             cmd.arg("--print-thoughts");
         }
 
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let existing_files = Self::collect_all_session_files();
         let active_file: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
 
-        info!("Executing OMP agent container '{}' with workdir: {}", container_name, canonical_workdir.display());
-        let mut child = cmd.spawn().map_err(|e| anyhow!("Failed to spawn omp in docker: {}", e))?;
+        info!(
+            "Executing OMP agent container '{}' with workdir: {}",
+            container_name,
+            canonical_workdir.display()
+        );
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| anyhow!("Failed to spawn omp in docker: {}", e))?;
 
         let (tx, rx) = mpsc::channel();
         let running = Arc::new(AtomicBool::new(true));
@@ -233,8 +247,12 @@ impl OmpRunner {
 
         let kill_container = container_name.clone();
         let kill_agent = move || {
-            let _ = Command::new("docker").args(["kill", &kill_container]).output();
-            let _ = Command::new("docker").args(["rm", "-f", &kill_container]).output();
+            let _ = Command::new("docker")
+                .args(["kill", &kill_container])
+                .output();
+            let _ = Command::new("docker")
+                .args(["rm", "-f", &kill_container])
+                .output();
         };
 
         let start_instant = std::time::Instant::now();
@@ -267,12 +285,17 @@ impl OmpRunner {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(line) => log_fn(line),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if let Some(s) = child.try_wait().map_err(|e| anyhow!("Failed to check omp status: {}", e))? {
+                    if let Some(s) = child
+                        .try_wait()
+                        .map_err(|e| anyhow!("Failed to check omp status: {}", e))?
+                    {
                         break Some(s);
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let s = child.wait().map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
+                    let s = child
+                        .wait()
+                        .map_err(|e| anyhow!("Failed to wait for omp: {}", e))?;
                     break Some(s);
                 }
             }
@@ -291,7 +314,10 @@ impl OmpRunner {
             if let Some(s) = status {
                 if !s.success() {
                     warn!("OMP agent exited with non-zero status: {:?}", s.code());
-                    return Err(anyhow!("OMP agent exited with non-zero status: {:?}", s.code()));
+                    return Err(anyhow!(
+                        "OMP agent exited with non-zero status: {:?}",
+                        s.code()
+                    ));
                 }
             }
         }
@@ -305,15 +331,23 @@ impl OmpRunner {
         let mut dirs = Vec::new();
         if let Ok(home) = std::env::var("HOME") {
             let p = PathBuf::from(home).join(".omp/agent/sessions");
-            if p.exists() { dirs.push(p); }
+            if p.exists() {
+                dirs.push(p);
+            }
         }
         let root = crate::config::get_repo_root();
         let r_omp = root.join(".omp/agent/sessions");
-        if r_omp.exists() && !dirs.contains(&r_omp) { dirs.push(r_omp); }
+        if r_omp.exists() && !dirs.contains(&r_omp) {
+            dirs.push(r_omp);
+        }
         let u = PathBuf::from("/home/ubuntu/.omp/agent/sessions");
-        if u.exists() && !dirs.contains(&u) { dirs.push(u); }
+        if u.exists() && !dirs.contains(&u) {
+            dirs.push(u);
+        }
         let r = PathBuf::from("/root/.omp/agent/sessions");
-        if r.exists() && !dirs.contains(&r) { dirs.push(r); }
+        if r.exists() && !dirs.contains(&r) {
+            dirs.push(r);
+        }
         dirs
     }
 
@@ -379,9 +413,12 @@ impl OmpRunner {
                 Ok(_) => {
                     if line_buf.ends_with('\n') {
                         // Check limits in session line
-                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line_buf.trim()) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line_buf.trim())
+                        {
                             // 1. Assistant turn check
-                            if val.pointer("/message/role").and_then(|r| r.as_str()) == Some("assistant") {
+                            if val.pointer("/message/role").and_then(|r| r.as_str())
+                                == Some("assistant")
+                            {
                                 let c = ctx.turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
                                 if let Some(max_t) = ctx.limits.max_turns {
                                     if c >= max_t {
@@ -393,7 +430,10 @@ impl OmpRunner {
                                 }
                             }
                             // 2. Budget check
-                            if let Some(cost) = val.pointer("/message/usage/cost/total").and_then(|c| c.as_f64()) {
+                            if let Some(cost) = val
+                                .pointer("/message/usage/cost/total")
+                                .and_then(|c| c.as_f64())
+                            {
                                 if let Ok(mut c_lock) = ctx.accumulated_cost.lock() {
                                     *c_lock += cost;
                                     let current_spend = *c_lock;
@@ -505,7 +545,10 @@ impl OmpRunner {
         let mut results = Vec::new();
 
         let custom_type = v.get("customType").and_then(|s| s.as_str());
-        let role = v.get("message").and_then(|m| m.get("role")).and_then(|s| s.as_str());
+        let role = v
+            .get("message")
+            .and_then(|m| m.get("role"))
+            .and_then(|s| s.as_str());
 
         if custom_type == Some("tool_execution_start") {
             if let Some(d) = v.get("data") {
@@ -542,11 +585,26 @@ impl OmpRunner {
         } else if role == Some("assistant") {
             if let Some(msg) = v.get("message") {
                 if let Some(usage) = msg.get("usage") {
-                    let tin = usage.get("input").or_else(|| usage.get("prompt_tokens")).and_then(|x| x.as_u64()).unwrap_or(0);
-                    let tout = usage.get("output").or_else(|| usage.get("completion_tokens")).and_then(|x| x.as_u64()).unwrap_or(0);
-                    let tcached = usage.get("cacheRead").or_else(|| usage.get("cache_read_input_tokens")).and_then(|x| x.as_u64()).unwrap_or(0);
+                    let tin = usage
+                        .get("input")
+                        .or_else(|| usage.get("prompt_tokens"))
+                        .and_then(|x| x.as_u64())
+                        .unwrap_or(0);
+                    let tout = usage
+                        .get("output")
+                        .or_else(|| usage.get("completion_tokens"))
+                        .and_then(|x| x.as_u64())
+                        .unwrap_or(0);
+                    let tcached = usage
+                        .get("cacheRead")
+                        .or_else(|| usage.get("cache_read_input_tokens"))
+                        .and_then(|x| x.as_u64())
+                        .unwrap_or(0);
                     if tin > 0 || tout > 0 || tcached > 0 {
-                        results.push(format!("[TOKENS] Turn usage - input: {}, output: {}, cached: {}", tin, tout, tcached));
+                        results.push(format!(
+                            "[TOKENS] Turn usage - input: {}, output: {}, cached: {}",
+                            tin, tout, tcached
+                        ));
                     }
                 }
                 if let Some(content) = msg.get("content").and_then(|c| c.as_array()) {
@@ -576,8 +634,14 @@ impl OmpRunner {
             }
         } else if role == Some("toolResult") {
             if let Some(msg) = v.get("message") {
-                let tool = msg.get("toolName").and_then(|s| s.as_str()).unwrap_or("tool");
-                let is_err = msg.get("isError").and_then(|b| b.as_bool()).unwrap_or(false);
+                let tool = msg
+                    .get("toolName")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("tool");
+                let is_err = msg
+                    .get("isError")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
                 let status = if is_err { "FAIL" } else { "OK" };
 
                 let mut text = String::new();
@@ -636,17 +700,30 @@ impl OmpRunner {
         for line in content.lines() {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                 steps += 1;
-                let usage_opt = v.get("usage")
+                let usage_opt = v
+                    .get("usage")
                     .or_else(|| v.get("message").and_then(|m| m.get("usage")));
 
                 if let Some(usage) = usage_opt {
-                    if let Some(pt) = usage.get("input").or_else(|| usage.get("prompt_tokens")).and_then(|x| x.as_u64()) {
+                    if let Some(pt) = usage
+                        .get("input")
+                        .or_else(|| usage.get("prompt_tokens"))
+                        .and_then(|x| x.as_u64())
+                    {
                         prompt_tokens += pt;
                     }
-                    if let Some(ct) = usage.get("output").or_else(|| usage.get("completion_tokens")).and_then(|x| x.as_u64()) {
+                    if let Some(ct) = usage
+                        .get("output")
+                        .or_else(|| usage.get("completion_tokens"))
+                        .and_then(|x| x.as_u64())
+                    {
                         completion_tokens += ct;
                     }
-                    if let Some(cr) = usage.get("cacheRead").or_else(|| usage.get("cache_read_input_tokens")).and_then(|x| x.as_u64()) {
+                    if let Some(cr) = usage
+                        .get("cacheRead")
+                        .or_else(|| usage.get("cache_read_input_tokens"))
+                        .and_then(|x| x.as_u64())
+                    {
                         cached_tokens += cr;
                     } else if let Some(details) = usage.get("prompt_tokens_details") {
                         if let Some(c) = details.get("cached_tokens").and_then(|x| x.as_u64()) {
@@ -681,7 +758,9 @@ mod tests {
 
         let json_read = r#"{"customType":"tool_execution_start","data":{"toolName":"read","intent":"read file","args":{"path":"/workspace/main.rs"}}}"#;
         let res_read = OmpRunner::format_session_line(json_read).unwrap();
-        assert!(res_read.iter().any(|s| s.contains("path: /workspace/main.rs")));
+        assert!(res_read
+            .iter()
+            .any(|s| s.contains("path: /workspace/main.rs")));
 
         let json_write = r#"{"customType":"tool_execution_start","data":{"toolName":"write","intent":"","args":{"code":"line1\nline2"}}}"#;
         let res_write = OmpRunner::format_session_line(json_write).unwrap();
@@ -702,9 +781,15 @@ mod tests {
             }
         }"#;
         let res = OmpRunner::format_session_line(json_assistant).unwrap();
-        assert!(res.iter().any(|s| s.contains("[TOKENS] Turn usage - input: 1500, output: 250, cached: 500")));
-        assert!(res.iter().any(|s| s.contains("[THOUGHT] Let me think about this...")));
-        assert!(res.iter().any(|s| s.contains("[RESPONSE] Here is the code to solve it")));
+        assert!(res
+            .iter()
+            .any(|s| s.contains("[TOKENS] Turn usage - input: 1500, output: 250, cached: 500")));
+        assert!(res
+            .iter()
+            .any(|s| s.contains("[THOUGHT] Let me think about this...")));
+        assert!(res
+            .iter()
+            .any(|s| s.contains("[RESPONSE] Here is the code to solve it")));
     }
 
     #[test]
@@ -823,7 +908,10 @@ mod tests {
     #[test]
     fn test_format_session_line_edge_cases() {
         // 1. Tool with > 20 lines of code
-        let long_code = (0..25).map(|i| format!("println!(\"line {}\");", i)).collect::<Vec<_>>().join("\n");
+        let long_code = (0..25)
+            .map(|i| format!("println!(\"line {}\");", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let json_code = serde_json::json!({
             "customType": "tool_execution_start",
             "data": {
@@ -832,19 +920,24 @@ mod tests {
                     "code": long_code
                 }
             }
-        }).to_string();
+        })
+        .to_string();
         let res_code = OmpRunner::format_session_line(&json_code).unwrap();
         assert!(res_code.iter().any(|s| s.contains("(+5 lines)")));
 
         // 2. ToolResult with > 40 lines
-        let long_res = (0..50).map(|i| format!("output row {}", i)).collect::<Vec<_>>().join("\n");
+        let long_res = (0..50)
+            .map(|i| format!("output row {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let json_res = serde_json::json!({
             "message": {
                 "role": "toolResult",
                 "toolName": "bash",
                 "content": long_res
             }
-        }).to_string();
+        })
+        .to_string();
         let res_long = OmpRunner::format_session_line(&json_res).unwrap();
         assert!(res_long.iter().any(|s| s.contains("(+10 more lines)")));
 
@@ -855,7 +948,8 @@ mod tests {
                 "toolName": "bash",
                 "content": ""
             }
-        }).to_string();
+        })
+        .to_string();
         let res_empty = OmpRunner::format_session_line(&json_empty).unwrap();
         assert!(res_empty.iter().any(|s| s.contains("(empty output)")));
 
@@ -902,7 +996,8 @@ mod tests {
 
     #[test]
     fn test_tail_session_file_turn_and_budget_limits() {
-        let temp_dir = std::env::temp_dir().join(format!("test_tail_limits_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_tail_limits_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
 
@@ -919,7 +1014,7 @@ mod tests {
         let limit_reached = Arc::new(AtomicBool::new(false));
         let limit_reason = Arc::new(Mutex::new(None));
         let limits = AgentExecutionLimits {
-            max_turns: Some(1), // Should trigger limit immediately
+            max_turns: Some(1),         // Should trigger limit immediately
             max_budget_usd: Some(0.20), // Should also trigger budget limit
             timeout_seconds: Some(10),
         };

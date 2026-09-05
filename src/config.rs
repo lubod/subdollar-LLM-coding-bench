@@ -53,6 +53,10 @@ pub enum Commands {
         /// Number of repeated trials for statistical variance (Pass@k)
         #[arg(long, default_value_t = 1)]
         trials: u32,
+
+        /// Do not save results or archive run artifacts to disk
+        #[arg(long, default_value_t = false)]
+        no_save: bool,
     },
 
     /// Directly run verification test suite against a running server
@@ -160,7 +164,9 @@ impl std::fmt::Display for TaskType {
 }
 
 pub fn get_repo_root() -> PathBuf {
-    if let Ok(sdb_home) = std::env::var("SDB_HOME").or_else(|_| std::env::var("SUBDOLLAR_BENCH_HOME")) {
+    if let Ok(sdb_home) =
+        std::env::var("SDB_HOME").or_else(|_| std::env::var("SUBDOLLAR_BENCH_HOME"))
+    {
         let p = PathBuf::from(sdb_home);
         if p.exists() {
             return p;
@@ -244,10 +250,26 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_run() {
-        let args = ["subdollar-bench", "run", "--model", "test-model", "--task", "redis"];
+        let args = [
+            "subdollar-bench",
+            "run",
+            "--model",
+            "test-model",
+            "--task",
+            "redis",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
-            Commands::Run { model, task, effort, budget_usd, max_turns, timeout_min, eval_only, .. } => {
+            Commands::Run {
+                model,
+                task,
+                effort,
+                budget_usd,
+                max_turns,
+                timeout_min,
+                eval_only,
+                ..
+            } => {
                 assert_eq!(model, "test-model");
                 assert_eq!(task, TaskType::Redis);
                 assert_eq!(effort, "auto");
@@ -259,10 +281,35 @@ mod tests {
             _ => panic!("Expected Run command"),
         }
 
-        let args_http = ["subdollar-bench", "run", "--model", "test-model-2", "--task", "http", "--effort", "max", "--budget-usd", "0.20", "--max-turns", "10", "--timeout-min", "5", "--eval-only"];
+        let args_http = [
+            "subdollar-bench",
+            "run",
+            "--model",
+            "test-model-2",
+            "--task",
+            "http",
+            "--effort",
+            "max",
+            "--budget-usd",
+            "0.20",
+            "--max-turns",
+            "10",
+            "--timeout-min",
+            "5",
+            "--eval-only",
+        ];
         let cli_http = Cli::try_parse_from(args_http).unwrap();
         match cli_http.command {
-            Commands::Run { model, task, effort, budget_usd, max_turns, timeout_min, eval_only, .. } => {
+            Commands::Run {
+                model,
+                task,
+                effort,
+                budget_usd,
+                max_turns,
+                timeout_min,
+                eval_only,
+                ..
+            } => {
                 assert_eq!(model, "test-model-2");
                 assert_eq!(task, TaskType::Http);
                 assert_eq!(effort, "max");
@@ -274,7 +321,16 @@ mod tests {
             _ => panic!("Expected Run command"),
         }
 
-        let args_key = ["subdollar-bench", "run", "--model", "m", "--task", "redis", "--api-key", "sk-test-123"];
+        let args_key = [
+            "subdollar-bench",
+            "run",
+            "--model",
+            "m",
+            "--task",
+            "redis",
+            "--api-key",
+            "sk-test-123",
+        ];
         let cli_key = Cli::try_parse_from(args_key).unwrap();
         match cli_key.command {
             Commands::Run { api_key, .. } => {
@@ -294,10 +350,27 @@ mod tests {
         }
         std::env::remove_var("OPENROUTER_API_KEY");
 
-        let args_short = ["subdollar-bench", "run", "-m", "test-model-3", "-t", "http", "-e", "max", "-b", "0.20"];
+        let args_short = [
+            "subdollar-bench",
+            "run",
+            "-m",
+            "test-model-3",
+            "-t",
+            "http",
+            "-e",
+            "max",
+            "-b",
+            "0.20",
+        ];
         let cli_short = Cli::try_parse_from(args_short).unwrap();
         match cli_short.command {
-            Commands::Run { model, task, effort, budget_usd, .. } => {
+            Commands::Run {
+                model,
+                task,
+                effort,
+                budget_usd,
+                ..
+            } => {
                 assert_eq!(model, "test-model-3");
                 assert_eq!(task, TaskType::Http);
                 assert_eq!(effort, "max");
@@ -309,7 +382,14 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_eval() {
-        let args = ["subdollar-bench", "eval", "--task", "redis", "--port", "6379"];
+        let args = [
+            "subdollar-bench",
+            "eval",
+            "--task",
+            "redis",
+            "--port",
+            "6379",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Eval { task, port } => {
@@ -332,7 +412,12 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_leaderboard() {
-        let args = ["subdollar-bench", "leaderboard", "--results-dir", "./custom_results"];
+        let args = [
+            "subdollar-bench",
+            "leaderboard",
+            "--results-dir",
+            "./custom_results",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Leaderboard { results_dir } => {
@@ -344,10 +429,23 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_publish() {
-        let args = ["subdollar-bench", "publish", "--run-id", "test_run_123", "--message", "custom commit msg"];
+        let args = [
+            "subdollar-bench",
+            "publish",
+            "--run-id",
+            "test_run_123",
+            "--message",
+            "custom commit msg",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
-            Commands::Publish { run_id, message, runs_dir, results_dir, repo_root } => {
+            Commands::Publish {
+                run_id,
+                message,
+                runs_dir,
+                results_dir,
+                repo_root,
+            } => {
                 assert_eq!(run_id, "test_run_123");
                 assert_eq!(message, Some("custom commit msg".to_string()));
                 assert_eq!(runs_dir, "./runs");
@@ -360,10 +458,20 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_summary() {
-        let args = ["subdollar-bench", "summary", "--runs-dir", "./test_runs", "--repo-root", "./test_repo"];
+        let args = [
+            "subdollar-bench",
+            "summary",
+            "--runs-dir",
+            "./test_runs",
+            "--repo-root",
+            "./test_repo",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
-            Commands::Summary { runs_dir, repo_root } => {
+            Commands::Summary {
+                runs_dir,
+                repo_root,
+            } => {
                 assert_eq!(runs_dir, "./test_runs");
                 assert_eq!(repo_root, "./test_repo");
             }
@@ -373,7 +481,14 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_ui() {
-        let args = ["subdollar-bench", "ui", "--port", "8080", "--host", "127.0.0.1"];
+        let args = [
+            "subdollar-bench",
+            "ui",
+            "--port",
+            "8080",
+            "--host",
+            "127.0.0.1",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Ui { port, host } => {

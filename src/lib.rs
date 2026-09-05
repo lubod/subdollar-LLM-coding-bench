@@ -1,8 +1,8 @@
 pub mod bench;
 pub mod config;
 pub mod cost;
+pub mod pipeline;
 pub mod report;
 pub mod sandbox;
 pub mod verifier;
 pub mod web;
-pub mod pipeline;

@@ -54,7 +54,14 @@ impl LeaderboardManager {
         let mut has_py = false;
         let mut has_js = false;
 
-        Self::scan_extensions(workdir, &mut has_c, &mut has_rust, &mut has_go, &mut has_py, &mut has_js);
+        Self::scan_extensions(
+            workdir,
+            &mut has_c,
+            &mut has_rust,
+            &mut has_go,
+            &mut has_py,
+            &mut has_js,
+        );
 
         if has_rust {
             "Rust".to_string()
@@ -93,11 +100,17 @@ impl LeaderboardManager {
                         *has_rust = true;
                     } else if name == "go.mod" || name.ends_with(".go") {
                         *has_go = true;
-                    } else if name.ends_with(".c") || name.ends_with(".cpp") || name.ends_with(".cc") {
+                    } else if name.ends_with(".c")
+                        || name.ends_with(".cpp")
+                        || name.ends_with(".cc")
+                    {
                         *has_c = true;
                     } else if name.ends_with(".py") || name == "requirements.txt" {
                         *has_py = true;
-                    } else if name.ends_with(".js") || name.ends_with(".ts") || name == "package.json" {
+                    } else if name.ends_with(".js")
+                        || name.ends_with(".ts")
+                        || name == "package.json"
+                    {
                         *has_js = true;
                     }
                 }
@@ -174,7 +187,10 @@ impl LeaderboardManager {
                 .map(|t| format!("{:.0} req/s", t))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let pass_str = format!("{:.0}% ({}/{})", r.pass_rate, r.passed_stages, r.total_stages);
+            let pass_str = format!(
+                "{:.0}% ({}/{})",
+                r.pass_rate, r.passed_stages, r.total_stages
+            );
             let savings_str = format!("{:.0}%", r.savings_percent);
             let eff_str = r.effort.clone().unwrap_or_else(|| "auto".to_string());
 
@@ -183,7 +199,11 @@ impl LeaderboardManager {
                 Cell::new(eff_str).fg(Color::Yellow),
                 Cell::new(&r.task),
                 Cell::new(&r.language).fg(Color::Green),
-                Cell::new(pass_str).fg(if r.pass_rate == 100.0 { Color::Green } else { Color::Yellow }),
+                Cell::new(pass_str).fg(if r.pass_rate == 100.0 {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                }),
                 Cell::new(tp),
                 Cell::new(format!("${:.4}", r.total_cost_usd)).fg(Color::Magenta),
                 Cell::new(savings_str).fg(Color::Green),

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use clap::Parser;
 use colored::*;
 use std::path::{Path, PathBuf};
@@ -6,9 +7,7 @@ use std::sync::Arc;
 
 use subdollar_bench::config::{Cli, Commands, TaskType};
 use subdollar_bench::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
-use subdollar_bench::report::{
-    LeaderboardManager, RunPublisher, SummaryGenerator,
-};
+use subdollar_bench::report::{LeaderboardManager, RunPublisher, SummaryGenerator};
 use subdollar_bench::verifier::{DnsVerifier, HttpVerifier, RedisVerifier};
 use subdollar_bench::web;
 use subdollar_bench::web::server::compute_pass_at_k;
@@ -41,6 +40,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
             workdir,
             eval_only,
             trials,
+            no_save,
         } => {
             let total_trials = trials.max(1);
             let mut passing_trials = 0;
@@ -56,9 +56,28 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 if total_trials > 1 {
                     println!(
                         "{}",
-                        format!("=== Starting Trial {}/{} ===", trial_idx, total_trials).bold().blue()
+                        format!("=== Starting Trial {}/{} ===", trial_idx, total_trials)
+                            .bold()
+                            .blue()
                     );
                 }
+
+                let run_id = if total_trials > 1 {
+                    format!(
+                        "{}_{}_trial{}_{}",
+                        task,
+                        model.replace(['/', ':'], "_"),
+                        trial_idx,
+                        Utc::now().format("%Y%m%d_%H%M%S")
+                    )
+                } else {
+                    format!(
+                        "{}_{}_{}",
+                        task,
+                        model.replace(['/', ':'], "_"),
+                        Utc::now().format("%Y%m%d_%H%M%S")
+                    )
+                };
 
                 let pipe_config = BenchmarkConfig {
                     model: model.clone(),
@@ -70,16 +89,11 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                     api_key: api_key.clone(),
                     workdir: work_path_buf.clone(),
                     eval_only,
-                    run_id: None,
-                    save_results: true,
+                    run_id: Some(run_id),
+                    save_results: !no_save,
                 };
 
-                let pipe_res = BenchmarkPipeline::execute(
-                    pipe_config,
-                    logger.clone(),
-                    None,
-                )
-                .await;
+                let pipe_res = BenchmarkPipeline::execute(pipe_config, logger.clone(), None).await;
 
                 match pipe_res {
                     Ok(output) => {
@@ -95,7 +109,9 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
 
             if total_trials > 1 {
                 let pass_at_1 = compute_pass_at_k(total_trials as usize, passing_trials, 1) * 100.0;
-                let pass_at_k = compute_pass_at_k(total_trials as usize, passing_trials, total_trials as usize) * 100.0;
+                let pass_at_k =
+                    compute_pass_at_k(total_trials as usize, passing_trials, total_trials as usize)
+                        * 100.0;
                 println!(
                     "\n{}",
                     "=== Multi-Trial Pass@k Summary ===".bold().magenta()
@@ -104,10 +120,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 println!("  Passing Trials: {}", passing_trials);
                 println!("  Pass@1:         {:.1}%", pass_at_1);
                 println!("  Pass@{}:         {:.1}%", total_trials, pass_at_k);
-                println!(
-                    "{}",
-                    "=================================".bold().magenta()
-                );
+                println!("{}", "=================================".bold().magenta());
             }
 
             let results_dir_buf = subdollar_bench::config::get_repo_root().join("results");
@@ -169,9 +182,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
         } => {
             println!(
                 "{}",
-                format!("Publishing run {} to Git...", run_id)
-                    .bold()
-                    .cyan()
+                format!("Publishing run {} to Git...", run_id).bold().cyan()
             );
             let res = RunPublisher::publish_run(
                 Path::new(&repo_root),
@@ -180,10 +191,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 &run_id,
                 message.as_deref(),
             )?;
-            println!(
-                "{}",
-                "✅ Successfully published run to Git!".bold().green()
-            );
+            println!("{}", "✅ Successfully published run to Git!".bold().green());
             println!("  Commit:  {}", res.commit_hash.yellow());
             println!("  Message: {}", res.commit_message);
             println!("  Summary: {}", res.summary_path);
@@ -317,8 +325,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_main_cli_publish() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("test_main_pub_{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!("test_main_pub_{}", std::process::id()));
         let repo_root = temp_dir.join("repo");
         let runs_dir = repo_root.join("runs");
         let results_dir = repo_root.join("results");
@@ -421,6 +428,7 @@ mod tests {
                 workdir: temp_workdir.to_string_lossy().to_string(),
                 eval_only: true,
                 trials: 2,
+                no_save: true,
             },
         };
         assert!(run_cli(cli_run).await.is_ok());
@@ -471,6 +479,7 @@ mod tests {
                 workdir: temp_workdir.to_string_lossy().to_string(),
                 eval_only: true,
                 trials: 1,
+                no_save: true,
             },
         };
         assert!(run_cli(cli_run).await.is_ok());
@@ -517,6 +526,7 @@ mod tests {
                 workdir: temp_workdir.to_string_lossy().to_string(),
                 eval_only: true,
                 trials: 1,
+                no_save: true,
             },
         };
         assert!(run_cli(cli_run).await.is_ok());

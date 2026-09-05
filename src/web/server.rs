@@ -1,3 +1,10 @@
+use crate::config::TaskType;
+use crate::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
+use crate::report::{
+    BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, PublishResult, RunArchiver,
+    RunManifest, RunPublisher, SummaryGenerator,
+};
+use crate::sandbox::SandboxManager;
 use axum::{
     extract::{Path as AxumPath, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -20,13 +27,6 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use crate::config::TaskType;
-use crate::report::{
-    BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, PublishResult, RunArchiver,
-    RunManifest, RunPublisher, SummaryGenerator,
-};
-use crate::sandbox::SandboxManager;
-use crate::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ActiveRunInfo {
@@ -80,6 +80,8 @@ pub struct RunRequest {
     pub timeout_min: Option<u64>,
     #[serde(default = "default_trials")]
     pub trials: u32,
+    #[serde(default)]
+    pub save_results: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -183,7 +185,8 @@ pub fn generate_unified_diff(path: &str, text_a: &str, text_b: &str) -> String {
                         j += lookahead;
                         found_match = true;
                         break;
-                    } else if i + lookahead < lines_a.len() && lines_a[i + lookahead] == lines_b[j] {
+                    } else if i + lookahead < lines_a.len() && lines_a[i + lookahead] == lines_b[j]
+                    {
                         for k in 0..lookahead {
                             out.push_str(&format!("-{}\n", lines_a[i + k]));
                         }
@@ -215,7 +218,9 @@ fn validate_task_name(task: &str) -> Result<&str, StatusCode> {
         || task.contains('/')
         || task.contains('\\')
         || task.contains("..")
-        || !task.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        || !task
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -223,7 +228,10 @@ fn validate_task_name(task: &str) -> Result<&str, StatusCode> {
 }
 
 fn resolve_task_path(task: &str) -> PathBuf {
-    crate::config::get_repo_root().join("tasks").join(task).join("prompt.md")
+    crate::config::get_repo_root()
+        .join("tasks")
+        .join(task)
+        .join("prompt.md")
 }
 
 fn resolve_results_dir() -> PathBuf {
@@ -323,7 +331,11 @@ async fn get_models(
 
     let api_key = header_key
         .filter(|k| !k.is_empty())
-        .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|k| !k.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("OPENROUTER_API_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty())
+        })
         .or_else(|| params.get("key").filter(|k| !k.trim().is_empty()).cloned());
 
     let client = reqwest::Client::builder()
@@ -387,7 +399,10 @@ async fn get_prompt(AxumPath(task): AxumPath<String>) -> Result<String, StatusCo
     Ok(fs::read_to_string(path).unwrap_or_else(|_| "# Task prompt not found".to_string()))
 }
 
-async fn save_prompt(AxumPath(task): AxumPath<String>, body: String) -> Result<&'static str, StatusCode> {
+async fn save_prompt(
+    AxumPath(task): AxumPath<String>,
+    body: String,
+) -> Result<&'static str, StatusCode> {
     validate_task_name(&task)?;
     let path = resolve_task_path(&task);
     if let Some(parent) = path.parent() {
@@ -426,7 +441,9 @@ async fn get_run_log(AxumPath(run_id): AxumPath<String>) -> Response {
     }
 }
 
-async fn get_run_files(AxumPath(run_id): AxumPath<String>) -> Result<Json<Vec<FileInfo>>, Response> {
+async fn get_run_files(
+    AxumPath(run_id): AxumPath<String>,
+) -> Result<Json<Vec<FileInfo>>, Response> {
     let r_dir = RunArchiver::resolve_runs_dir();
     let ws_dir = r_dir.join(&run_id).join("workspace");
     if ws_dir.exists() {
@@ -526,17 +543,33 @@ async fn stop_run(State(state): State<AppState>) -> Response {
 
     state.cancel_requested.store(true, Ordering::SeqCst);
     let tx = state.log_sender.clone();
-    let _ = tx.send("[USER ACTION] Cancellation requested. Terminating sandbox containers...".to_string());
+    let _ = tx.send(
+        "[USER ACTION] Cancellation requested. Terminating sandbox containers...".to_string(),
+    );
 
     let maybe_handle = state.task_handle.lock().unwrap().take();
     if let Some(handle) = maybe_handle {
         handle.abort();
     }
 
-    let sandbox = SandboxManager::new();
-    sandbox.cleanup();
+    let maybe_run = state.current_run.read().unwrap().clone();
+    if let Some(info) = maybe_run {
+        let sandbox = SandboxManager::with_id(&info.run_id);
+        sandbox.cleanup();
+    } else {
+        let sandbox = SandboxManager::new();
+        sandbox.cleanup();
+    }
+
+    let agent_pid = format!("subdollar-omp-agent-{}", std::process::id());
     let _ = std::process::Command::new("docker")
-        .args(["rm", "-f", "subdollar-omp-agent", "subdollar-candidate"])
+        .args([
+            "rm",
+            "-f",
+            "subdollar-omp-agent",
+            &agent_pid,
+            "subdollar-candidate",
+        ])
         .output();
 
     *state.current_run.write().unwrap() = None;
@@ -757,7 +790,7 @@ async fn start_run(
                 workdir: work_path,
                 eval_only: req.eval_only,
                 run_id: Some(run_id.clone()),
-                save_results: true,
+                save_results: req.save_results.unwrap_or(true),
             };
 
             let pipe_res = BenchmarkPipeline::execute(
@@ -789,13 +822,17 @@ async fn start_run(
         }
 
         // Publish summary
-        let runs_dir = RunArchiver::resolve_runs_dir();
-        let repo_root = crate::config::get_repo_root();
-        let _ = SummaryGenerator::update_summary_file(&repo_root, &runs_dir);
+        if req.save_results.unwrap_or(true) {
+            let runs_dir = RunArchiver::resolve_runs_dir();
+            let repo_root = crate::config::get_repo_root();
+            let _ = SummaryGenerator::update_summary_file(&repo_root, &runs_dir);
+        }
 
         if total_trials > 1 {
             let pass_at_1 = compute_pass_at_k(total_trials as usize, passing_trials, 1) * 100.0;
-            let pass_at_k = compute_pass_at_k(total_trials as usize, passing_trials, total_trials as usize) * 100.0;
+            let pass_at_k =
+                compute_pass_at_k(total_trials as usize, passing_trials, total_trials as usize)
+                    * 100.0;
             let _ = tx.send(format!(
                 "[MULTI-TRIAL] Trials: {}, Passing: {}, Pass@1: {:.1}%, Pass@{}: {:.1}%",
                 total_trials, passing_trials, pass_at_1, total_trials, pass_at_k
@@ -907,14 +944,22 @@ mod tests {
         assert!(html.contains("SubDollarBench"));
 
         // 2. GET /api/status
-        let res = client.get(format!("{}/api/status", base)).send().await.unwrap();
+        let res = client
+            .get(format!("{}/api/status", base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
         let status_json: StatusResponse = res.json().await.unwrap();
         assert!(!status_json.is_running);
         assert!(status_json.current_run.is_none());
 
         // 3. GET /api/env
-        let res = client.get(format!("{}/api/env", base)).send().await.unwrap();
+        let res = client
+            .get(format!("{}/api/env", base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
         let env_json: EnvironmentInfo = res.json().await.unwrap();
         assert!(!env_json.os.is_empty());
@@ -981,7 +1026,11 @@ mod tests {
         assert!(res.text().await.unwrap().contains("Initial log line"));
 
         // 8. GET /api/runs
-        let res = client.get(format!("{}/api/runs", base)).send().await.unwrap();
+        let res = client
+            .get(format!("{}/api/runs", base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
 
         // 9. GET /api/runs/nonexistent_xyz
@@ -1010,14 +1059,21 @@ mod tests {
 
         // 12. GET /api/runs/nonexistent_xyz/file?file=abc.txt
         let res = client
-            .get(format!("{}/api/runs/nonexistent_xyz/file?file=abc.txt", base))
+            .get(format!(
+                "{}/api/runs/nonexistent_xyz/file?file=abc.txt",
+                base
+            ))
             .send()
             .await
             .unwrap();
         assert_eq!(res.status(), 404);
 
         // 13. GET /api/summary
-        let res = client.get(format!("{}/api/summary", base)).send().await.unwrap();
+        let res = client
+            .get(format!("{}/api/summary", base))
+            .send()
+            .await
+            .unwrap();
         assert!(res.status() == 200 || res.status() == 404);
 
         // 14. POST /api/summary
@@ -1040,6 +1096,7 @@ mod tests {
             effort: Some("low".to_string()),
             timeout_min: Some(1),
             trials: 1,
+            save_results: Some(false),
         };
         let res = client
             .post(format!("{}/api/run", base))
@@ -1077,6 +1134,7 @@ mod tests {
             effort: Some("low".to_string()),
             timeout_min: Some(1),
             trials: 2,
+            save_results: Some(false),
         };
         let res = client
             .post(format!("{}/api/run", base))
@@ -1094,11 +1152,19 @@ mod tests {
         }
 
         // 19. GET /api/models
-        let res = client.get(format!("{}/api/models", base)).send().await.unwrap();
+        let res = client
+            .get(format!("{}/api/models", base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
 
         // 20. GET /api/stream
-        let res = client.get(format!("{}/api/stream", base)).send().await.unwrap();
+        let res = client
+            .get(format!("{}/api/stream", base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
 
         // 21. Tests with valid archived runs & comparison
@@ -1259,7 +1325,10 @@ mod tests {
         assert_eq!(res.status(), 400);
 
         let res = client
-            .get(format!("{}/api/runs/{}/file?file=missing.txt", base, run_a_id))
+            .get(format!(
+                "{}/api/runs/{}/file?file=missing.txt",
+                base, run_a_id
+            ))
             .send()
             .await
             .unwrap();
@@ -1267,7 +1336,10 @@ mod tests {
 
         // Check GET /api/compare missing run_b
         let res = client
-            .get(format!("{}/api/compare?run_a={}&run_b=missing_b", base, run_a_id))
+            .get(format!(
+                "{}/api/compare?run_a={}&run_b=missing_b",
+                base, run_a_id
+            ))
             .send()
             .await
             .unwrap();
@@ -1313,6 +1385,7 @@ mod tests {
             effort: Some("low".to_string()),
             timeout_min: Some(1),
             trials: 1,
+            save_results: Some(false),
         };
         let res = client
             .post(format!("{}/api/run", base))
@@ -1363,7 +1436,10 @@ mod tests {
         let res_dir = resolve_results_dir();
         assert!(res_dir.to_string_lossy().contains("results"));
         let ws_dir = resolve_workspace_dir();
-        assert!(ws_dir.is_absolute(), "resolve_workspace_dir must be absolute");
+        assert!(
+            ws_dir.is_absolute(),
+            "resolve_workspace_dir must be absolute"
+        );
         assert_eq!(validate_task_name("redis").unwrap(), "redis");
         assert!(validate_task_name("../bad").is_err());
         assert!(validate_task_name("bad/slash").is_err());

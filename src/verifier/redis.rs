@@ -28,6 +28,19 @@ impl RedisVerifier {
         }
     }
 
+    pub fn get_seed_prefix<'a>(&'a self, default_val: &'a str) -> &'a str {
+        match &self.run_seed {
+            Some(s) if !s.is_empty() => {
+                if s.len() <= 8 {
+                    s.as_str()
+                } else {
+                    &s[s.len() - 8..]
+                }
+            }
+            _ => default_val,
+        }
+    }
+
     pub fn format_resp_cmd(args: &[&str]) -> String {
         let mut payload = format!("*{}\r\n", args.len());
         for arg in args {
@@ -165,12 +178,26 @@ impl RedisVerifier {
         let name = "Stage 1: PING & ECHO Handshake".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
-            Err(e) => return StageResult { stage: 1, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => {
+                return StageResult {
+                    stage: 1,
+                    name,
+                    passed: false,
+                    error: Some(e.to_string()),
+                }
+            }
         };
 
         let res = match Self::send_resp_cmd(&mut stream, &["PING"]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 1, name, passed: false, error: Some(format!("PING failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 1,
+                    name,
+                    passed: false,
+                    error: Some(format!("PING failed: {}", e)),
+                }
+            }
         };
 
         if res.trim() != "+PONG" {
@@ -182,18 +209,23 @@ impl RedisVerifier {
             };
         }
 
-        let echo_str = self
-            .run_seed
-            .as_ref()
-            .map(|s| {
-                let prefix = &s[..s.len().min(8)];
-                format!("echo_{}", prefix)
-            })
-            .unwrap_or_else(|| "subdollar_test".to_string());
+        let prefix = self.get_seed_prefix("test");
+        let echo_str = if prefix == "test" {
+            "subdollar_test".to_string()
+        } else {
+            format!("echo_{}", prefix)
+        };
 
         let res = match Self::send_resp_cmd(&mut stream, &["ECHO", &echo_str]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 1, name, passed: false, error: Some(format!("ECHO failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 1,
+                    name,
+                    passed: false,
+                    error: Some(format!("ECHO failed: {}", e)),
+                }
+            }
         };
 
         let expected = format!("${}\r\n{}", echo_str.len(), echo_str);
@@ -202,157 +234,355 @@ impl RedisVerifier {
                 stage: 1,
                 name,
                 passed: false,
-                error: Some(format!("Expected ECHO with '{}\\r\\n', got: {:?}", expected, res)),
+                error: Some(format!(
+                    "Expected ECHO with '{}\\r\\n', got: {:?}",
+                    expected, res
+                )),
             };
         }
 
-        StageResult { stage: 1, name, passed: true, error: None }
+        StageResult {
+            stage: 1,
+            name,
+            passed: true,
+            error: None,
+        }
     }
 
     pub async fn test_stage2_key_value(&self) -> StageResult {
         let name = "Stage 2: Basic Key-Value (SET/GET/DEL/EXISTS)".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(e.to_string()),
+                }
+            }
         };
 
-        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("bench");
+        let seed_prefix = self.get_seed_prefix("bench");
         let key = format!("k_{}", seed_prefix);
         let val = format!("v_{}", seed_prefix);
 
         let set_res = match Self::send_resp_cmd(&mut stream, &["SET", &key, &val]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("SET failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("SET failed: {}", e)),
+                }
+            }
         };
         if set_res.trim() != "+OK" {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected +OK, got {:?}", set_res)) };
+            return StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(format!("Expected +OK, got {:?}", set_res)),
+            };
         }
 
         let get_res = match Self::send_resp_cmd(&mut stream, &["GET", &key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("GET failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("GET failed: {}", e)),
+                }
+            }
         };
         let expected_val = format!("${}\r\n{}", val.len(), val);
         if get_res.trim() != expected_val && get_res != format!("{}\r\n", expected_val) {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected '{}', got {:?}", expected_val, get_res)) };
+            return StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(format!("Expected '{}', got {:?}", expected_val, get_res)),
+            };
         }
 
         let exists_res = match Self::send_resp_cmd(&mut stream, &["EXISTS", &key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("EXISTS failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("EXISTS failed: {}", e)),
+                }
+            }
         };
         if exists_res.trim() != ":1" {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :1, got {:?}", exists_res)) };
+            return StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(format!("Expected :1, got {:?}", exists_res)),
+            };
         }
 
         let del_res = match Self::send_resp_cmd(&mut stream, &["DEL", &key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("DEL failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("DEL failed: {}", e)),
+                }
+            }
         };
         if del_res.trim() != ":1" {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :1 from DEL, got {:?}", del_res)) };
+            return StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(format!("Expected :1 from DEL, got {:?}", del_res)),
+            };
         }
 
         let get_nil = match Self::send_resp_cmd(&mut stream, &["GET", &key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("GET after DEL failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("GET after DEL failed: {}", e)),
+                }
+            }
         };
         if get_nil.trim() != "$-1" {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected nil ($-1\\r\\n), got {:?}", get_nil)) };
+            return StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(format!("Expected nil ($-1\\r\\n), got {:?}", get_nil)),
+            };
         }
 
         let exists_zero = match Self::send_resp_cmd(&mut stream, &["EXISTS", &key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 2, name, passed: false, error: Some(format!("EXISTS after DEL failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("EXISTS after DEL failed: {}", e)),
+                }
+            }
         };
         if exists_zero.trim() != ":0" {
-            return StageResult { stage: 2, name, passed: false, error: Some(format!("Expected :0, got {:?}", exists_zero)) };
+            return StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(format!("Expected :0, got {:?}", exists_zero)),
+            };
         }
 
-        StageResult { stage: 2, name, passed: true, error: None }
+        StageResult {
+            stage: 2,
+            name,
+            passed: true,
+            error: None,
+        }
     }
 
     pub async fn test_stage3_expiration(&self) -> StageResult {
         let name = "Stage 3: Expiration (SET ... PX <ms>)".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
-            Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => {
+                return StageResult {
+                    stage: 3,
+                    name,
+                    passed: false,
+                    error: Some(e.to_string()),
+                }
+            }
         };
 
-        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("ttl");
+        let seed_prefix = self.get_seed_prefix("ttl");
         let ttl_key = format!("ttl_{}", seed_prefix);
         let ttl_val = format!("val_{}", seed_prefix);
 
-        let set_res = match Self::send_resp_cmd(&mut stream, &["SET", &ttl_key, &ttl_val, "PX", "150"]).await {
-            Ok(r) => r,
-            Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("SET PX failed: {}", e)) },
-        };
+        let set_res =
+            match Self::send_resp_cmd(&mut stream, &["SET", &ttl_key, &ttl_val, "PX", "150"]).await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    return StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(format!("SET PX failed: {}", e)),
+                    }
+                }
+            };
         if set_res.trim() != "+OK" {
-            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected +OK for SET PX, got {:?}", set_res)) };
+            return StageResult {
+                stage: 3,
+                name,
+                passed: false,
+                error: Some(format!("Expected +OK for SET PX, got {:?}", set_res)),
+            };
         }
 
         let get_fast = match Self::send_resp_cmd(&mut stream, &["GET", &ttl_key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("Immediate GET failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 3,
+                    name,
+                    passed: false,
+                    error: Some(format!("Immediate GET failed: {}", e)),
+                }
+            }
         };
         let expected_fast = format!("${}\r\n{}", ttl_val.len(), ttl_val);
         if get_fast.trim() != expected_fast && get_fast != format!("{}\r\n", expected_fast) {
-            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected immediate GET to return '{}', got {:?}", expected_fast, get_fast)) };
+            return StageResult {
+                stage: 3,
+                name,
+                passed: false,
+                error: Some(format!(
+                    "Expected immediate GET to return '{}', got {:?}",
+                    expected_fast, get_fast
+                )),
+            };
         }
 
         sleep(Duration::from_millis(250)).await;
 
         let get_expired = match Self::send_resp_cmd(&mut stream, &["GET", &ttl_key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 3, name, passed: false, error: Some(format!("Post-TTL GET failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 3,
+                    name,
+                    passed: false,
+                    error: Some(format!("Post-TTL GET failed: {}", e)),
+                }
+            }
         };
         if get_expired.trim() != "$-1" {
-            return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected expired key to return nil ($-1\\r\\n), got {:?}", get_expired)) };
+            return StageResult {
+                stage: 3,
+                name,
+                passed: false,
+                error: Some(format!(
+                    "Expected expired key to return nil ($-1\\r\\n), got {:?}",
+                    get_expired
+                )),
+            };
         }
 
-        StageResult { stage: 3, name, passed: true, error: None }
+        StageResult {
+            stage: 3,
+            name,
+            passed: true,
+            error: None,
+        }
     }
 
     pub async fn test_stage4_counters(&self) -> StageResult {
         let name = "Stage 4: INCR & DECR Arithmetic".to_string();
         let mut stream = match self.connect().await {
             Ok(s) => s,
-            Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => {
+                return StageResult {
+                    stage: 4,
+                    name,
+                    passed: false,
+                    error: Some(e.to_string()),
+                }
+            }
         };
 
-        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("num");
+        let seed_prefix = self.get_seed_prefix("num");
         let counter_key = format!("cnt_{}", seed_prefix);
         let non_num_key = format!("str_{}", seed_prefix);
 
         let incr1 = match Self::send_resp_cmd(&mut stream, &["INCR", &counter_key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("INCR 1 failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 4,
+                    name,
+                    passed: false,
+                    error: Some(format!("INCR 1 failed: {}", e)),
+                }
+            }
         };
         if incr1.trim() != ":1" {
-            return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :1, got {:?}", incr1)) };
+            return StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some(format!("Expected :1, got {:?}", incr1)),
+            };
         }
 
         let incr2 = match Self::send_resp_cmd(&mut stream, &["INCR", &counter_key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("INCR 2 failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 4,
+                    name,
+                    passed: false,
+                    error: Some(format!("INCR 2 failed: {}", e)),
+                }
+            }
         };
         if incr2.trim() != ":2" {
-            return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :2, got {:?}", incr2)) };
+            return StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some(format!("Expected :2, got {:?}", incr2)),
+            };
         }
 
         let decr1 = match Self::send_resp_cmd(&mut stream, &["DECR", &counter_key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("DECR failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 4,
+                    name,
+                    passed: false,
+                    error: Some(format!("DECR failed: {}", e)),
+                }
+            }
         };
         if decr1.trim() != ":1" {
-            return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected :1, got {:?}", decr1)) };
+            return StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some(format!("Expected :1, got {:?}", decr1)),
+            };
         }
 
         // Negative test: non-numeric increment error handling
         let _ = Self::send_resp_cmd(&mut stream, &["SET", &non_num_key, "invalid_number"]).await;
         let err_res = match Self::send_resp_cmd(&mut stream, &["INCR", &non_num_key]).await {
             Ok(r) => r,
-            Err(e) => return StageResult { stage: 4, name, passed: false, error: Some(format!("Negative test failed: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 4,
+                    name,
+                    passed: false,
+                    error: Some(format!("Negative test failed: {}", e)),
+                }
+            }
         };
         if !err_res.starts_with('-') {
             return StageResult {
@@ -363,7 +593,12 @@ impl RedisVerifier {
             };
         }
 
-        StageResult { stage: 4, name, passed: true, error: None }
+        StageResult {
+            stage: 4,
+            name,
+            passed: true,
+            error: None,
+        }
     }
 }
 
@@ -374,7 +609,10 @@ mod tests {
 
     #[test]
     fn test_resp_formatting() {
-        assert_eq!(RedisVerifier::format_resp_cmd(&["PING"]), "*1\r\n$4\r\nPING\r\n");
+        assert_eq!(
+            RedisVerifier::format_resp_cmd(&["PING"]),
+            "*1\r\n$4\r\nPING\r\n"
+        );
         assert_eq!(
             RedisVerifier::format_resp_cmd(&["ECHO", "hello"]),
             "*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"
@@ -390,20 +628,34 @@ mod tests {
         assert!(RedisVerifier::is_complete_resp_frame(b"+PONG\r\n"));
         assert!(RedisVerifier::is_complete_resp_frame(b":1\r\n"));
         assert!(RedisVerifier::is_complete_resp_frame(b":0\r\n"));
-        assert!(RedisVerifier::is_complete_resp_frame(b"-ERR unknown command\r\n"));
+        assert!(RedisVerifier::is_complete_resp_frame(
+            b"-ERR unknown command\r\n"
+        ));
         assert!(RedisVerifier::is_complete_resp_frame(b"$-1\r\n"));
         assert!(!RedisVerifier::is_complete_resp_frame(b"+PONG"));
-        assert!(!RedisVerifier::is_complete_resp_frame(b"$14\r\nsubdollar_test"));
-        assert!(RedisVerifier::is_complete_resp_frame(b"$14\r\nsubdollar_test\r\n"));
+        assert!(!RedisVerifier::is_complete_resp_frame(
+            b"$14\r\nsubdollar_test"
+        ));
+        assert!(RedisVerifier::is_complete_resp_frame(
+            b"$14\r\nsubdollar_test\r\n"
+        ));
         assert!(!RedisVerifier::is_complete_resp_frame(b""));
 
         // Array frames
         assert!(RedisVerifier::is_complete_resp_frame(b"*0\r\n"));
         assert!(RedisVerifier::is_complete_resp_frame(b"*-1\r\n"));
-        assert!(RedisVerifier::is_complete_resp_frame(b"*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"));
-        assert!(!RedisVerifier::is_complete_resp_frame(b"*2\r\n$4\r\nECHO\r\n")); // only 1 of 2 elements
-        assert!(!RedisVerifier::is_complete_resp_frame(b"*2\r\n$4\r\nECHO\r\n$5\r\nhel")); // incomplete second element
-        assert!(RedisVerifier::is_complete_resp_frame(b"*1\r\n*1\r\n:42\r\n")); // nested complete array
+        assert!(RedisVerifier::is_complete_resp_frame(
+            b"*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"
+        ));
+        assert!(!RedisVerifier::is_complete_resp_frame(
+            b"*2\r\n$4\r\nECHO\r\n"
+        )); // only 1 of 2 elements
+        assert!(!RedisVerifier::is_complete_resp_frame(
+            b"*2\r\n$4\r\nECHO\r\n$5\r\nhel"
+        )); // incomplete second element
+        assert!(RedisVerifier::is_complete_resp_frame(
+            b"*1\r\n*1\r\n:42\r\n"
+        )); // nested complete array
         assert!(!RedisVerifier::is_complete_resp_frame(b"*1\r\n*1\r\n")); // nested incomplete array
     }
 
@@ -434,7 +686,11 @@ mod tests {
 
         let verifier = RedisVerifier::new(port, None);
         let res = verifier.test_stage1_handshake().await;
-        assert!(res.passed, "Stage 1 should pass with mock server: {:?}", res.error);
+        assert!(
+            res.passed,
+            "Stage 1 should pass with mock server: {:?}",
+            res.error
+        );
     }
 
     #[tokio::test]
@@ -459,7 +715,9 @@ mod tests {
                     let mut counter = 0i64;
 
                     while let Ok(n) = socket.read(&mut buf).await {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         let req = String::from_utf8_lossy(&buf[..n]);
                         let upper = req.to_uppercase();
 
@@ -493,12 +751,18 @@ mod tests {
                             let _ = socket.write_all(b":1\r\n").await;
                         } else if upper.contains("INCR") && upper.contains("CNT_NUM") {
                             counter += 1;
-                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                            let _ = socket
+                                .write_all(format!(":{}\r\n", counter).as_bytes())
+                                .await;
                         } else if upper.contains("DECR") && upper.contains("CNT_NUM") {
                             counter -= 1;
-                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                            let _ = socket
+                                .write_all(format!(":{}\r\n", counter).as_bytes())
+                                .await;
                         } else if upper.contains("INCR") && upper.contains("STR_NUM") {
-                            let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
+                            let _ = socket
+                                .write_all(b"-ERR value is not an integer or out of range\r\n")
+                                .await;
                         } else {
                             let _ = socket.write_all(b"+OK\r\n").await;
                         }
@@ -509,7 +773,11 @@ mod tests {
 
         let verifier = RedisVerifier::new(port, None);
         let summary = verifier.run_all().await;
-        assert_eq!(summary.passed_count, 4, "Summary failed: {:?}", summary.stages);
+        assert_eq!(
+            summary.passed_count, 4,
+            "Summary failed: {:?}",
+            summary.stages
+        );
         assert_eq!(summary.pass_rate, 100.0);
     }
 
@@ -528,7 +796,9 @@ mod tests {
                     let mut counter = 0i64;
 
                     while let Ok(n) = socket.read(&mut buf).await {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         let req = String::from_utf8_lossy(&buf[..n]);
                         let upper = req.to_uppercase();
 
@@ -568,12 +838,18 @@ mod tests {
                             let _ = socket.write_all(b":1\r\n").await;
                         } else if upper.contains("INCR") && upper.contains("CNT_MYRUN123") {
                             counter += 1;
-                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                            let _ = socket
+                                .write_all(format!(":{}\r\n", counter).as_bytes())
+                                .await;
                         } else if upper.contains("DECR") && upper.contains("CNT_MYRUN123") {
                             counter -= 1;
-                            let _ = socket.write_all(format!(":{}\r\n", counter).as_bytes()).await;
+                            let _ = socket
+                                .write_all(format!(":{}\r\n", counter).as_bytes())
+                                .await;
                         } else if upper.contains("INCR") && upper.contains("STR_MYRUN123") {
-                            let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
+                            let _ = socket
+                                .write_all(b"-ERR value is not an integer or out of range\r\n")
+                                .await;
                         } else {
                             let _ = socket.write_all(b"+OK\r\n").await;
                         }
@@ -584,7 +860,11 @@ mod tests {
 
         let verifier = RedisVerifier::new(port, Some(seed));
         let summary = verifier.run_all().await;
-        assert_eq!(summary.passed_count, 4, "Seeded summary failed: {:?}", summary.stages);
+        assert_eq!(
+            summary.passed_count, 4,
+            "Seeded summary failed: {:?}",
+            summary.stages
+        );
         assert_eq!(summary.pass_rate, 100.0);
     }
 
@@ -598,7 +878,9 @@ mod tests {
                 tokio::spawn(async move {
                     let mut buf = [0u8; 1024];
                     while let Ok(n) = socket.read(&mut buf).await {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         let req = String::from_utf8_lossy(&buf[..n]);
                         let upper = req.to_uppercase();
                         if upper.contains("PING") {
@@ -647,7 +929,9 @@ mod tests {
             }
         });
 
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port)).await.unwrap();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
         let res = RedisVerifier::send_resp_cmd(&mut stream, &["PING"]).await;
         assert!(res.is_err());
     }

@@ -18,7 +18,10 @@ impl BenchmarkRunner {
         }
 
         if rates.is_empty() {
-            return Err(anyhow!("Could not parse redis-benchmark output. stdout: '{}'", stdout));
+            return Err(anyhow!(
+                "Could not parse redis-benchmark output. stdout: '{}'",
+                stdout
+            ));
         }
 
         let avg = rates.iter().sum::<f64>() / rates.len() as f64;
@@ -105,7 +108,9 @@ mod tests {
         let res = BenchmarkRunner::parse_redis_benchmark_output(output).unwrap();
         assert!((res - 79664.0).abs() < 1.0);
 
-        let err = BenchmarkRunner::parse_redis_benchmark_output("Could not connect to Redis at 127.0.0.1:6379: Connection refused");
+        let err = BenchmarkRunner::parse_redis_benchmark_output(
+            "Could not connect to Redis at 127.0.0.1:6379: Connection refused",
+        );
         assert!(err.is_err());
     }
 

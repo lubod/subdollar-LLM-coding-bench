@@ -11,12 +11,21 @@ pub struct SummaryGenerator;
 impl SummaryGenerator {
     pub fn update_summary_file(repo_root: &Path, runs_dir: &Path) -> Result<PathBuf> {
         let mut runs = RunArchiver::list_runs(runs_dir);
-        // Sort runs: highest efficiency score first, tie-break by pass rate and throughput
+        // Sort runs: pass rate DESC -> efficiency score DESC -> cost ASC -> throughput DESC
         runs.sort_by(|a, b| {
-            b.efficiency_score
-                .partial_cmp(&a.efficiency_score)
+            b.pass_rate
+                .partial_cmp(&a.pass_rate)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| b.pass_rate.partial_cmp(&a.pass_rate).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    b.efficiency_score
+                        .partial_cmp(&a.efficiency_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    a.cost_usd
+                        .partial_cmp(&b.cost_usd)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| {
                     let t_a = a.throughput_req_sec.unwrap_or(0.0);
                     let t_b = b.throughput_req_sec.unwrap_or(0.0);
@@ -42,10 +51,16 @@ impl SummaryGenerator {
 
         md.push_str("## 📑 Quick Navigation\n");
         md.push_str("- [📊 Global Leaderboard](#-global-leaderboard)\n");
-        md.push_str("- [⚡ Task 1: In-Memory Redis Server](#-task-1-in-memory-redis-server-task-redis)\n");
+        md.push_str(
+            "- [⚡ Task 1: In-Memory Redis Server](#-task-1-in-memory-redis-server-task-redis)\n",
+        );
         md.push_str("- [🌐 Task 2: HTTP/1.1 Web Server](#-task-2-http11-web-server-task-http)\n");
-        md.push_str("- [🖥️ Testbed Environment Specs](#%EF%B8%8F-benchmark-testbed-environment-specs)\n");
-        md.push_str("- [🚀 How to Reproduce & Submit Results](#-how-to-reproduce--submit-your-results)\n\n");
+        md.push_str(
+            "- [🖥️ Testbed Environment Specs](#%EF%B8%8F-benchmark-testbed-environment-specs)\n",
+        );
+        md.push_str(
+            "- [🚀 How to Reproduce & Submit Results](#-how-to-reproduce--submit-your-results)\n\n",
+        );
 
         md.push_str("---\n\n");
         md.push_str("## 📊 Global Leaderboard\n\n");
@@ -71,7 +86,10 @@ impl SummaryGenerator {
                     other => other,
                 };
 
-                let pass_str = format!("{:.0}% ({}/{})", r.pass_rate, r.passed_stages, r.total_stages);
+                let pass_str = format!(
+                    "{:.0}% ({}/{})",
+                    r.pass_rate, r.passed_stages, r.total_stages
+                );
                 let tp_str = r
                     .throughput_req_sec
                     .map(|t| format!("{:.0} req/s", t))
@@ -83,7 +101,16 @@ impl SummaryGenerator {
 
                 md.push_str(&format!(
                     "| {} | `{}` | `{}` | {} | `{}` | {} | {} | {} | {} | {} |\n",
-                    rank, r.model, eff_str, task_display, r.language, pass_str, tp_str, cost_str, score_str, link_str
+                    rank,
+                    r.model,
+                    eff_str,
+                    task_display,
+                    r.language,
+                    pass_str,
+                    tp_str,
+                    cost_str,
+                    score_str,
+                    link_str
                 ));
             }
             md.push('\n');
@@ -99,10 +126,15 @@ impl SummaryGenerator {
 
         let redis_runs: Vec<&RunManifest> = runs.iter().filter(|r| r.task == "redis").collect();
         if !redis_runs.is_empty() {
-            md.push_str("| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |\n");
+            md.push_str(
+                "| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |\n",
+            );
             md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
             for r in redis_runs {
-                let tp_str = r.throughput_req_sec.map(|t| format!("{:.0} req/s", t)).unwrap_or_else(|| "N/A".to_string());
+                let tp_str = r
+                    .throughput_req_sec
+                    .map(|t| format!("{:.0} req/s", t))
+                    .unwrap_or_else(|| "N/A".to_string());
                 md.push_str(&format!(
                     "| `{}` | `{}` | `{}` | {:.0}% | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
                     r.model,
@@ -128,10 +160,15 @@ impl SummaryGenerator {
 
         let http_runs: Vec<&RunManifest> = runs.iter().filter(|r| r.task == "http").collect();
         if !http_runs.is_empty() {
-            md.push_str("| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |\n");
+            md.push_str(
+                "| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |\n",
+            );
             md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
             for r in http_runs {
-                let tp_str = r.throughput_req_sec.map(|t| format!("{:.0} req/s", t)).unwrap_or_else(|| "N/A".to_string());
+                let tp_str = r
+                    .throughput_req_sec
+                    .map(|t| format!("{:.0} req/s", t))
+                    .unwrap_or_else(|| "N/A".to_string());
                 md.push_str(&format!(
                     "| `{}` | `{}` | `{}` | {:.0}% | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
                     r.model,
@@ -160,7 +197,9 @@ impl SummaryGenerator {
         md.push_str("### 1. Prerequisites\n");
         md.push_str("- **Docker**: Docker CE 24+ installed and running.\n");
         md.push_str("- **Rust**: Rust toolchain 1.80+ (`cargo`, `rustc`).\n");
-        md.push_str("- **OMP Agent**: `oh-my-pi` installed (`bun install -g @oh-my-pi/pi-coding-agent`).\n");
+        md.push_str(
+            "- **OMP Agent**: `oh-my-pi` installed (`bun install -g @oh-my-pi/pi-coding-agent`).\n",
+        );
         md.push_str("- **OpenRouter API Key**: Export `OPENROUTER_API_KEY` in your shell.\n\n");
 
         md.push_str("### 2. Clone the Repository\n");
@@ -199,8 +238,12 @@ impl SummaryGenerator {
         md.push_str("```\n");
         md.push_str("Your run directory (`runs/<run_id>/`) contains:\n");
         md.push_str("- `workspace/`: The complete candidate codebase produced by the model.\n");
-        md.push_str("- `manifest.json`: Full metrics, token consumption, live spend, and test stages.\n");
-        md.push_str("- `console.log`: Complete audit trail of thoughts, bash commands, and test outputs.\n");
+        md.push_str(
+            "- `manifest.json`: Full metrics, token consumption, live spend, and test stages.\n",
+        );
+        md.push_str(
+            "- `console.log`: Complete audit trail of thoughts, bash commands, and test outputs.\n",
+        );
         md.push_str("- `env.json`: Hardware, operating system, and container specifications.\n");
         md.push_str("- `README.md`: Self-contained markdown report for that specific run.\n\n");
 
@@ -249,7 +292,12 @@ mod tests {
             total_stages: 4,
             stages: vec![],
             throughput_req_sec: Some(74000.0),
-            tokens: RunTokenUsage { prompt_tokens: 1000, cached_tokens: 500, completion_tokens: 200, total_tokens: 1200 },
+            tokens: RunTokenUsage {
+                prompt_tokens: 1000,
+                cached_tokens: 500,
+                completion_tokens: 200,
+                total_tokens: 1200,
+            },
             cost_usd: 0.01,
             savings_percent: 50.0,
             efficiency_score: 100.0,
@@ -268,4 +316,3 @@ mod tests {
         assert!(md.contains("How to Reproduce & Submit Your Results"));
     }
 }
-

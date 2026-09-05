@@ -113,7 +113,10 @@ impl EnvironmentInfo {
             out
         } else {
             let repo = crate::config::get_repo_root();
-            Self::cmd_output_su(&format!("cd {} && git rev-parse --short HEAD", repo.display()))
+            Self::cmd_output_su(&format!(
+                "cd {} && git rev-parse --short HEAD",
+                repo.display()
+            ))
         }
     }
 
@@ -123,7 +126,10 @@ impl EnvironmentInfo {
             out
         } else {
             let repo = crate::config::get_repo_root();
-            Self::cmd_output_su(&format!("cd {} && git rev-parse --abbrev-ref HEAD", repo.display()))
+            Self::cmd_output_su(&format!(
+                "cd {} && git rev-parse --abbrev-ref HEAD",
+                repo.display()
+            ))
         }
     }
 

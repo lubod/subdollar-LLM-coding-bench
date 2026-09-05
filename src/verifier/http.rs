@@ -30,6 +30,19 @@ impl HttpVerifier {
         }
     }
 
+    pub fn get_seed_prefix<'a>(&'a self, default_val: &'a str) -> &'a str {
+        match &self.run_seed {
+            Some(s) if !s.is_empty() => {
+                if s.len() <= 8 {
+                    s.as_str()
+                } else {
+                    &s[s.len() - 8..]
+                }
+            }
+            _ => default_val,
+        }
+    }
+
     pub async fn run_all(&self) -> HttpTestSummary {
         let mut stages = Vec::new();
         stages.push(self.test_stage1_root().await);
@@ -56,45 +69,81 @@ impl HttpVerifier {
         match self.client.get(&url).send().await {
             Ok(resp) => {
                 if resp.status() == reqwest::StatusCode::OK {
-                    StageResult { stage: 1, name, passed: true, error: None }
+                    StageResult {
+                        stage: 1,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 1, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) }
+                    StageResult {
+                        stage: 1,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected 200 OK, got {}", resp.status())),
+                    }
                 }
             }
-            Err(e) => StageResult { stage: 1, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => StageResult {
+                stage: 1,
+                name,
+                passed: false,
+                error: Some(e.to_string()),
+            },
         }
     }
 
     pub async fn test_stage2_not_found(&self) -> StageResult {
         let name = "Stage 2: 404 Not Found Handling".to_string();
-        let url = format!("http://127.0.0.1:{}/nonexistent-route-1234", self.target_port);
+        let url = format!(
+            "http://127.0.0.1:{}/nonexistent-route-1234",
+            self.target_port
+        );
         match self.client.get(&url).send().await {
             Ok(resp) => {
                 if resp.status() == reqwest::StatusCode::NOT_FOUND {
-                    StageResult { stage: 2, name, passed: true, error: None }
+                    StageResult {
+                        stage: 2,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 2, name, passed: false, error: Some(format!("Expected 404 Not Found, got {}", resp.status())) }
+                    StageResult {
+                        stage: 2,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected 404 Not Found, got {}", resp.status())),
+                    }
                 }
             }
-            Err(e) => StageResult { stage: 2, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(e.to_string()),
+            },
         }
     }
 
     pub async fn test_stage3_echo(&self) -> StageResult {
         let name = "Stage 3: GET /echo/{str}".to_string();
-        let word = self
-            .run_seed
-            .as_ref()
-            .map(|s| {
-                let prefix = &s[..s.len().min(8)];
-                format!("echo_{}", prefix)
-            })
-            .unwrap_or_else(|| "subdollar_speed_test".to_string());
+        let prefix = self.get_seed_prefix("test");
+        let word = if prefix == "test" {
+            "subdollar_speed_test".to_string()
+        } else {
+            format!("echo_{}", prefix)
+        };
         let url = format!("http://127.0.0.1:{}/echo/{}", self.target_port, word);
         match self.client.get(&url).send().await {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::OK {
-                    return StageResult { stage: 3, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) };
+                    return StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected 200 OK, got {}", resp.status())),
+                    };
                 }
 
                 // Verify Content-Type header
@@ -108,7 +157,10 @@ impl HttpVerifier {
                         stage: 3,
                         name,
                         passed: false,
-                        error: Some(format!("Expected Content-Type 'text/plain', got '{}'", content_type)),
+                        error: Some(format!(
+                            "Expected Content-Type 'text/plain', got '{}'",
+                            content_type
+                        )),
                     };
                 }
 
@@ -123,17 +175,41 @@ impl HttpVerifier {
                         stage: 3,
                         name,
                         passed: false,
-                        error: Some(format!("Expected Content-Length '{}', got '{}'", word.len(), content_length)),
+                        error: Some(format!(
+                            "Expected Content-Length '{}', got '{}'",
+                            word.len(),
+                            content_length
+                        )),
                     };
                 }
 
                 match resp.text().await {
-                    Ok(text) if text.trim() == word => StageResult { stage: 3, name, passed: true, error: None },
-                    Ok(text) => StageResult { stage: 3, name, passed: false, error: Some(format!("Body didn't match '{}', got: '{}'", word, text)) },
-                    Err(e) => StageResult { stage: 3, name, passed: false, error: Some(e.to_string()) },
+                    Ok(text) if text.trim() == word => StageResult {
+                        stage: 3,
+                        name,
+                        passed: true,
+                        error: None,
+                    },
+                    Ok(text) => StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(format!("Body didn't match '{}', got: '{}'", word, text)),
+                    },
+                    Err(e) => StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(e.to_string()),
+                    },
                 }
             }
-            Err(e) => StageResult { stage: 3, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => StageResult {
+                stage: 3,
+                name,
+                passed: false,
+                error: Some(e.to_string()),
+            },
         }
     }
 
@@ -144,7 +220,12 @@ impl HttpVerifier {
         match self.client.get(&url).header("User-Agent", ua).send().await {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::OK {
-                    return StageResult { stage: 4, name, passed: false, error: Some(format!("Expected 200 OK, got {}", resp.status())) };
+                    return StageResult {
+                        stage: 4,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected 200 OK, got {}", resp.status())),
+                    };
                 }
 
                 // Verify Content-Type header
@@ -158,7 +239,10 @@ impl HttpVerifier {
                         stage: 4,
                         name,
                         passed: false,
-                        error: Some(format!("Expected Content-Type 'text/plain', got '{}'", content_type)),
+                        error: Some(format!(
+                            "Expected Content-Type 'text/plain', got '{}'",
+                            content_type
+                        )),
                     };
                 }
 
@@ -173,48 +257,93 @@ impl HttpVerifier {
                         stage: 4,
                         name,
                         passed: false,
-                        error: Some(format!("Expected Content-Length '{}', got '{}'", ua.len(), content_length)),
+                        error: Some(format!(
+                            "Expected Content-Length '{}', got '{}'",
+                            ua.len(),
+                            content_length
+                        )),
                     };
                 }
 
                 match resp.text().await {
-                    Ok(text) if text.trim() == ua => StageResult { stage: 4, name, passed: true, error: None },
-                    Ok(text) => StageResult { stage: 4, name, passed: false, error: Some(format!("Expected UA '{}', got '{}'", ua, text)) },
-                    Err(e) => StageResult { stage: 4, name, passed: false, error: Some(e.to_string()) },
+                    Ok(text) if text.trim() == ua => StageResult {
+                        stage: 4,
+                        name,
+                        passed: true,
+                        error: None,
+                    },
+                    Ok(text) => StageResult {
+                        stage: 4,
+                        name,
+                        passed: false,
+                        error: Some(format!("Expected UA '{}', got '{}'", ua, text)),
+                    },
+                    Err(e) => StageResult {
+                        stage: 4,
+                        name,
+                        passed: false,
+                        error: Some(e.to_string()),
+                    },
                 }
             }
-            Err(e) => StageResult { stage: 4, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some(e.to_string()),
+            },
         }
     }
 
     pub async fn test_stage5_file_storage(&self) -> StageResult {
         let name = "Stage 5: POST & GET /files/{filename}".to_string();
-        let seed_prefix = self.run_seed.as_ref().map(|s| &s[..s.len().min(8)]).unwrap_or("artifact");
+        let seed_prefix = self.get_seed_prefix("artifact");
         let filename = format!("bench_{}.txt", seed_prefix);
         let content = format!("SubDollarBench payload {}", seed_prefix);
         let post_url = format!("http://127.0.0.1:{}/files/{}", self.target_port, filename);
         let get_url = format!("http://127.0.0.1:{}/files/{}", self.target_port, filename);
 
         // POST request must return strictly 201 Created
-        match self.client.post(&post_url).body(content.clone()).send().await {
+        match self
+            .client
+            .post(&post_url)
+            .body(content.clone())
+            .send()
+            .await
+        {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::CREATED {
                     return StageResult {
                         stage: 5,
                         name,
                         passed: false,
-                        error: Some(format!("POST /files expected 201 Created, got status: {}", resp.status())),
+                        error: Some(format!(
+                            "POST /files expected 201 Created, got status: {}",
+                            resp.status()
+                        )),
                     };
                 }
             }
-            Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(format!("POST error: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 5,
+                    name,
+                    passed: false,
+                    error: Some(format!("POST error: {}", e)),
+                }
+            }
         }
 
         // GET request to retrieve created file
         match self.client.get(&get_url).send().await {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::OK {
-                    return StageResult { stage: 5, name, passed: false, error: Some(format!("GET /files failed with status: {}", resp.status())) };
+                    return StageResult {
+                        stage: 5,
+                        name,
+                        passed: false,
+                        error: Some(format!("GET /files failed with status: {}", resp.status())),
+                    };
                 }
 
                 // Verify Content-Length header
@@ -228,21 +357,52 @@ impl HttpVerifier {
                         stage: 5,
                         name,
                         passed: false,
-                        error: Some(format!("Expected Content-Length '{}', got '{}'", content.len(), content_length)),
+                        error: Some(format!(
+                            "Expected Content-Length '{}', got '{}'",
+                            content.len(),
+                            content_length
+                        )),
                     };
                 }
 
                 match resp.text().await {
                     Ok(text) if text.trim() == content => {}
-                    Ok(text) => return StageResult { stage: 5, name, passed: false, error: Some(format!("File content mismatch! Expected '{}', got '{}'", content, text)) },
-                    Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
+                    Ok(text) => {
+                        return StageResult {
+                            stage: 5,
+                            name,
+                            passed: false,
+                            error: Some(format!(
+                                "File content mismatch! Expected '{}', got '{}'",
+                                content, text
+                            )),
+                        }
+                    }
+                    Err(e) => {
+                        return StageResult {
+                            stage: 5,
+                            name,
+                            passed: false,
+                            error: Some(e.to_string()),
+                        }
+                    }
                 }
             }
-            Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(e.to_string()) },
+            Err(e) => {
+                return StageResult {
+                    stage: 5,
+                    name,
+                    passed: false,
+                    error: Some(e.to_string()),
+                }
+            }
         }
 
         // GET request for non-existent file must return 404
-        let nonexistent_url = format!("http://127.0.0.1:{}/files/missing_{}.txt", self.target_port, seed_prefix);
+        let nonexistent_url = format!(
+            "http://127.0.0.1:{}/files/missing_{}.txt",
+            self.target_port, seed_prefix
+        );
         match self.client.get(&nonexistent_url).send().await {
             Ok(resp) => {
                 if resp.status() != reqwest::StatusCode::NOT_FOUND {
@@ -250,14 +410,29 @@ impl HttpVerifier {
                         stage: 5,
                         name,
                         passed: false,
-                        error: Some(format!("Expected 404 Not Found for missing file, got {}", resp.status())),
+                        error: Some(format!(
+                            "Expected 404 Not Found for missing file, got {}",
+                            resp.status()
+                        )),
                     };
                 }
             }
-            Err(e) => return StageResult { stage: 5, name, passed: false, error: Some(format!("GET missing file error: {}", e)) },
+            Err(e) => {
+                return StageResult {
+                    stage: 5,
+                    name,
+                    passed: false,
+                    error: Some(format!("GET missing file error: {}", e)),
+                }
+            }
         }
 
-        StageResult { stage: 5, name, passed: true, error: None }
+        StageResult {
+            stage: 5,
+            name,
+            passed: true,
+            error: None,
+        }
     }
 }
 
@@ -287,7 +462,9 @@ mod tests {
                 tokio::spawn(async move {
                     let mut buf = [0u8; 4096];
                     while let Ok(n) = socket.read(&mut buf).await {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         let req = String::from_utf8_lossy(&buf[..n]);
                         let first_line = req.lines().next().unwrap_or("");
                         let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -298,7 +475,8 @@ mod tests {
                         let path = parts[1];
 
                         let response = if method == "GET" && path == "/" {
-                            "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nOK".to_string()
+                            "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nOK"
+                                .to_string()
                         } else if method == "GET" && path.starts_with("/echo/") {
                             let echo_str = &path["/echo/".len()..];
                             format!(
@@ -322,7 +500,8 @@ mod tests {
                             let filename = path["/files/".len()..].to_string();
                             let body = req.split("\r\n\r\n").nth(1).unwrap_or("");
                             store.lock().unwrap().insert(filename, body.to_string());
-                            "HTTP/1.1 201 Created\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_string()
+                            "HTTP/1.1 201 Created\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+                                .to_string()
                         } else if method == "GET" && path.starts_with("/files/") {
                             let filename = &path["/files/".len()..];
                             if let Some(content) = store.lock().unwrap().get(filename) {
@@ -347,14 +526,22 @@ mod tests {
         // Test unseeded
         let verifier = HttpVerifier::new(port, None);
         let summary = verifier.run_all().await;
-        assert_eq!(summary.passed_count, 5, "Unseeded summary failed: {:?}", summary.stages);
+        assert_eq!(
+            summary.passed_count, 5,
+            "Unseeded summary failed: {:?}",
+            summary.stages
+        );
         assert_eq!(summary.total_stages, 5);
         assert_eq!(summary.pass_rate, 100.0);
 
         // Test seeded
         let verifier_seeded = HttpVerifier::new(port, Some("testseed"));
         let summary_seeded = verifier_seeded.run_all().await;
-        assert_eq!(summary_seeded.passed_count, 5, "Seeded summary failed: {:?}", summary_seeded.stages);
+        assert_eq!(
+            summary_seeded.passed_count, 5,
+            "Seeded summary failed: {:?}",
+            summary_seeded.stages
+        );
         assert_eq!(summary_seeded.total_stages, 5);
         assert_eq!(summary_seeded.pass_rate, 100.0);
     }

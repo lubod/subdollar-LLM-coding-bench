@@ -277,7 +277,8 @@ mod tests {
         };
 
         let console_log = "[06:30:00] [INIT] Starting test run\n[06:31:00] [DONE] Finished!\n";
-        let archived = RunArchiver::archive_run(&runs_dir, &manifest, &ws_dir, console_log).unwrap();
+        let archived =
+            RunArchiver::archive_run(&runs_dir, &manifest, &ws_dir, console_log).unwrap();
         assert!(archived.exists());
 
         // Verify listing
@@ -297,7 +298,8 @@ mod tests {
         assert!(log.contains("[INIT] Starting test run"));
 
         // Verify get_workspace_file with subpath
-        let code = RunArchiver::get_workspace_file(&runs_dir, "test_run_123", "src/main.go").unwrap();
+        let code =
+            RunArchiver::get_workspace_file(&runs_dir, "test_run_123", "src/main.go").unwrap();
         assert!(code.contains("package main"));
 
         let _ = fs::remove_dir_all(&temp_dir);

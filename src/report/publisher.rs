@@ -57,7 +57,10 @@ impl RunPublisher {
         fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
 
         // 3. Write env.json
-        fs::write(run_dir.join("env.json"), serde_json::to_string_pretty(&env)?)?;
+        fs::write(
+            run_dir.join("env.json"),
+            serde_json::to_string_pretty(&env)?,
+        )?;
 
         // 4. Write runs/<run_id>/README.md (individual run report)
         let run_readme = Self::generate_run_readme(&manifest, &env);
@@ -83,7 +86,10 @@ impl RunPublisher {
             timestamp: manifest.completed_at.clone(),
             method_version: manifest.method_version.clone(),
         };
-        let _ = LeaderboardManager::save_result(results_dir.to_str().unwrap_or("./results"), &benchmark_result);
+        let _ = LeaderboardManager::save_result(
+            results_dir.to_str().unwrap_or("./results"),
+            &benchmark_result,
+        );
 
         // 6. Regenerate SUMMARY.md
         let summary_path = SummaryGenerator::update_summary_file(repo_root, runs_dir)?;
@@ -148,7 +154,9 @@ impl RunPublisher {
             .args(["rev-parse", "--short", "HEAD"])
             .output()?;
         let commit_hash = if hash_output.status.success() {
-            String::from_utf8_lossy(&hash_output.stdout).trim().to_string()
+            String::from_utf8_lossy(&hash_output.stdout)
+                .trim()
+                .to_string()
         } else {
             "unknown".to_string()
         };
@@ -169,15 +177,27 @@ impl RunPublisher {
         md.push_str(&format!("- **Model**: `{}`\n", m.model));
         md.push_str(&format!("- **Task**: `{}`\n", m.task));
         md.push_str(&format!("- **Language Detected**: `{}`\n", m.language));
-        md.push_str(&format!("- **Reasoning Effort**: `{}`\n", m.effort.as_deref().unwrap_or("auto")));
-        md.push_str(&format!("- **Pass Rate**: {:.1}% ({}/{} stages)\n", m.pass_rate, m.passed_stages, m.total_stages));
+        md.push_str(&format!(
+            "- **Reasoning Effort**: `{}`\n",
+            m.effort.as_deref().unwrap_or("auto")
+        ));
+        md.push_str(&format!(
+            "- **Pass Rate**: {:.1}% ({}/{} stages)\n",
+            m.pass_rate, m.passed_stages, m.total_stages
+        ));
         if let Some(tp) = m.throughput_req_sec {
             md.push_str(&format!("- **Throughput**: {:.0} req/sec\n", tp));
         }
         md.push_str(&format!("- **Cost**: ${:.4} USD\n", m.cost_usd));
         md.push_str(&format!("- **Cache Savings**: {:.1}%\n", m.savings_percent));
-        md.push_str(&format!("- **Efficiency Score**: **{:.1} pts/¢**\n", m.efficiency_score));
-        md.push_str(&format!("- **Execution Duration**: {:.1}s\n\n", m.duration_seconds));
+        md.push_str(&format!(
+            "- **Efficiency Score**: **{:.1} pts/¢**\n",
+            m.efficiency_score
+        ));
+        md.push_str(&format!(
+            "- **Execution Duration**: {:.1}s\n\n",
+            m.duration_seconds
+        ));
 
         md.push_str("## 🧪 Verification Stages\n\n");
         md.push_str("| Stage | Name | Status | Error |\n");
@@ -185,7 +205,10 @@ impl RunPublisher {
         for s in &m.stages {
             let status = if s.passed { "✅ PASS" } else { "❌ FAIL" };
             let err = s.error.as_deref().unwrap_or("-");
-            md.push_str(&format!("| {} | {} | {} | {} |\n", s.stage, s.name, status, err));
+            md.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                s.stage, s.name, status, err
+            ));
         }
         md.push('\n');
 
@@ -194,7 +217,10 @@ impl RunPublisher {
         md.push_str("| File | Size (Bytes) |\n");
         md.push_str("|:---|:---:|\n");
         for f in &m.files {
-            md.push_str(&format!("| [`{}`](workspace/{}) | {} |\n", f.name, f.name, f.size_bytes));
+            md.push_str(&format!(
+                "| [`{}`](workspace/{}) | {} |\n",
+                f.name, f.name, f.size_bytes
+            ));
         }
         md.push('\n');
 
@@ -247,17 +273,33 @@ mod tests {
             passed_stages: 4,
             total_stages: 4,
             stages: vec![
-                StageResult { stage: 1, name: "Handshake".to_string(), passed: true, error: None },
-                StageResult { stage: 2, name: "CRUD".to_string(), passed: true, error: None },
+                StageResult {
+                    stage: 1,
+                    name: "Handshake".to_string(),
+                    passed: true,
+                    error: None,
+                },
+                StageResult {
+                    stage: 2,
+                    name: "CRUD".to_string(),
+                    passed: true,
+                    error: None,
+                },
             ],
             throughput_req_sec: Some(55000.0),
-            tokens: RunTokenUsage { prompt_tokens: 1000, cached_tokens: 500, completion_tokens: 200, total_tokens: 1200 },
+            tokens: RunTokenUsage {
+                prompt_tokens: 1000,
+                cached_tokens: 500,
+                completion_tokens: 200,
+                total_tokens: 1200,
+            },
             cost_usd: 0.01,
             savings_percent: 50.0,
             efficiency_score: 100.0,
-            files: vec![
-                FileInfo { name: "main.rs".to_string(), size_bytes: 1234 },
-            ],
+            files: vec![FileInfo {
+                name: "main.rs".to_string(),
+                size_bytes: 1234,
+            }],
             env: Some(env.clone()),
             git_commit: Some("abc1234".to_string()),
             is_published: Some(true),
@@ -286,19 +328,35 @@ mod tests {
 
     #[test]
     fn test_publish_run_git_flow() {
-        let temp_dir = std::env::temp_dir().join(format!("test_git_publish_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_git_publish_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
         // Initialize git repo
-        let _ = Command::new("git").current_dir(&temp_dir).args(["init"]).output();
-        let _ = Command::new("git").current_dir(&temp_dir).args(["config", "user.name", "Bench Tester"]).output();
-        let _ = Command::new("git").current_dir(&temp_dir).args(["config", "user.email", "tester@bench.test"]).output();
+        let _ = Command::new("git")
+            .current_dir(&temp_dir)
+            .args(["init"])
+            .output();
+        let _ = Command::new("git")
+            .current_dir(&temp_dir)
+            .args(["config", "user.name", "Bench Tester"])
+            .output();
+        let _ = Command::new("git")
+            .current_dir(&temp_dir)
+            .args(["config", "user.email", "tester@bench.test"])
+            .output();
 
         // Write .gitignore ignoring runs/ and results/ to verify force add
         fs::write(temp_dir.join(".gitignore"), "runs/\nresults/\n").unwrap();
-        let _ = Command::new("git").current_dir(&temp_dir).args(["add", ".gitignore"]).output();
-        let _ = Command::new("git").current_dir(&temp_dir).args(["commit", "-m", "chore: initial commit"]).output();
+        let _ = Command::new("git")
+            .current_dir(&temp_dir)
+            .args(["add", ".gitignore"])
+            .output();
+        let _ = Command::new("git")
+            .current_dir(&temp_dir)
+            .args(["commit", "-m", "chore: initial commit"])
+            .output();
 
         let runs_dir = temp_dir.join("runs");
         let results_dir = temp_dir.join("results");
@@ -322,7 +380,12 @@ mod tests {
             total_stages: 4,
             stages: vec![],
             throughput_req_sec: Some(40000.0),
-            tokens: RunTokenUsage { prompt_tokens: 500, cached_tokens: 0, completion_tokens: 100, total_tokens: 600 },
+            tokens: RunTokenUsage {
+                prompt_tokens: 500,
+                cached_tokens: 0,
+                completion_tokens: 100,
+                total_tokens: 600,
+            },
             cost_usd: 0.005,
             savings_percent: 0.0,
             efficiency_score: 200.0,
@@ -333,7 +396,11 @@ mod tests {
             method_version: Some("0.1.0".to_string()),
         };
 
-        fs::write(run_dir.join("manifest.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        fs::write(
+            run_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let pub_res = RunPublisher::publish_run(
             &temp_dir,
@@ -352,9 +419,17 @@ mod tests {
         assert!(run_dir.join("README.md").exists());
 
         // Verify git status in temp repo - runs and results must be committed, not untracked or ignored
-        let status_out = Command::new("git").current_dir(&temp_dir).args(["status", "--porcelain"]).output().unwrap();
+        let status_out = Command::new("git")
+            .current_dir(&temp_dir)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
         let status_str = String::from_utf8_lossy(&status_out.stdout);
-        assert_eq!(status_str.trim(), "", "Working tree should be clean after publish");
+        assert_eq!(
+            status_str.trim(),
+            "",
+            "Working tree should be clean after publish"
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

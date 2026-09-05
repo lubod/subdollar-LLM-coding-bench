@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-05 17:11:06 UTC*
+*Last Updated: 2026-09-05 17:36:40 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -15,10 +15,7 @@
 
 ## 📊 Global Leaderboard
 
-| Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
-|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 🥇 1 | `google/gemini-2.5-flash` | `low` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_google_gemini-2.5-flash_trial2_20260905_171105/) |
-| 🥈 2 | `google/gemini-2.5-flash` | `low` | Redis | `Unknown` | 0% (0/4) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/redis_google_gemini-2.5-flash_trial1_20260905_171104/) |
+*No benchmark runs recorded yet. Run a benchmark to populate the leaderboard!*
 
 ---
 
@@ -29,11 +26,6 @@ The candidate LLM is instructed to build a production-grade, concurrent Redis cl
 - **Supported Commands**: `PING`, `ECHO`, `SET` (with `PX` millisecond expiration, `EX`, `NX`, `XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `COMMAND`, `QUIT`.
 - **Packaging Freedom**: Working multi-stage `Dockerfile` (automatically built and containerized) or `./start.sh`.
 - **Verification**: Automated raw-socket TCP verification test suite + `redis-benchmark -p 6379 -n 5000 -c 10 -t get,set -q`.
-
-| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `google/gemini-2.5-flash` | `low` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_google_gemini-2.5-flash_trial2_20260905_171105/](runs/redis_google_gemini-2.5-flash_trial2_20260905_171105/) |
-| `google/gemini-2.5-flash` | `low` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/redis_google_gemini-2.5-flash_trial1_20260905_171104/](runs/redis_google_gemini-2.5-flash_trial1_20260905_171104/) |
 
 ---
 
@@ -60,8 +52,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `5ce9c08` (branch `master`) |
-| **Benchmark Captured** | 2026-09-05T17:11:06.815530773+00:00 |
+| **Git Baseline** | Commit `3ffb182` (branch `master`) |
+| **Benchmark Captured** | 2026-09-05T17:36:40.499699693+00:00 |
 
 ---
 

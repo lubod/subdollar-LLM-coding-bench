@@ -33,12 +33,15 @@ impl DnsVerifier {
         let timeout_dur = Duration::from_secs(timeout_secs);
         while start.elapsed() < timeout_dur {
             if let Ok(socket) = UdpSocket::bind("127.0.0.1:0").await {
-                let target: Result<SocketAddr, _> = format!("127.0.0.1:{}", self.target_port).parse();
+                let target: Result<SocketAddr, _> =
+                    format!("127.0.0.1:{}", self.target_port).parse();
                 if let Ok(target_addr) = target {
                     let query = Self::build_query(0x9999, "localhost", 1);
                     if socket.send_to(&query, target_addr).await.is_ok() {
                         let mut buf = [0u8; 512];
-                        if let Ok(Ok((len, _))) = timeout(Duration::from_millis(300), socket.recv_from(&mut buf)).await {
+                        if let Ok(Ok((len, _))) =
+                            timeout(Duration::from_millis(300), socket.recv_from(&mut buf)).await
+                        {
                             if len >= 12 {
                                 return true;
                             }
@@ -52,7 +55,10 @@ impl DnsVerifier {
     }
 
     pub async fn run_all(&self) -> DnsTestSummary {
-        info!("Starting DNS RFC 1035 verification suite on port {}", self.target_port);
+        info!(
+            "Starting DNS RFC 1035 verification suite on port {}",
+            self.target_port
+        );
         let mut stages = Vec::new();
 
         stages.push(self.test_stage1_handshake().await);
@@ -125,13 +131,36 @@ impl DnsVerifier {
                 let flags = u16::from_be_bytes([resp[2], resp[3]]);
                 let is_response = (flags & 0x8000) != 0;
                 if id == 0x1234 && is_response {
-                    StageResult { stage: 1, name, passed: true, error: None }
+                    StageResult {
+                        stage: 1,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 1, name, passed: false, error: Some(format!("Invalid header flags: 0x{:04x}, id: 0x{:04x}", flags, id)) }
+                    StageResult {
+                        stage: 1,
+                        name,
+                        passed: false,
+                        error: Some(format!(
+                            "Invalid header flags: 0x{:04x}, id: 0x{:04x}",
+                            flags, id
+                        )),
+                    }
                 }
             }
-            Ok(r) => StageResult { stage: 1, name, passed: false, error: Some(format!("Response too short: {} bytes", r.len())) },
-            Err(e) => StageResult { stage: 1, name, passed: false, error: Some(e) },
+            Ok(r) => StageResult {
+                stage: 1,
+                name,
+                passed: false,
+                error: Some(format!("Response too short: {} bytes", r.len())),
+            },
+            Err(e) => StageResult {
+                stage: 1,
+                name,
+                passed: false,
+                error: Some(e),
+            },
         }
     }
 
@@ -141,13 +170,36 @@ impl DnsVerifier {
             Ok(resp) if resp.len() >= 12 => {
                 let ancount = u16::from_be_bytes([resp[6], resp[7]]);
                 if ancount >= 1 && resp.windows(4).any(|w| w == [93, 184, 216, 34]) {
-                    StageResult { stage: 2, name, passed: true, error: None }
+                    StageResult {
+                        stage: 2,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 2, name, passed: false, error: Some(format!("ancount={}, expected IP 93.184.216.34 in answer", ancount)) }
+                    StageResult {
+                        stage: 2,
+                        name,
+                        passed: false,
+                        error: Some(format!(
+                            "ancount={}, expected IP 93.184.216.34 in answer",
+                            ancount
+                        )),
+                    }
                 }
             }
-            Ok(_) => StageResult { stage: 2, name, passed: false, error: Some("Response truncated".to_string()) },
-            Err(e) => StageResult { stage: 2, name, passed: false, error: Some(e) },
+            Ok(_) => StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some("Response truncated".to_string()),
+            },
+            Err(e) => StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some(e),
+            },
         }
     }
 
@@ -157,13 +209,33 @@ impl DnsVerifier {
             Ok(resp) if resp.len() >= 12 => {
                 let ancount = u16::from_be_bytes([resp[6], resp[7]]);
                 if ancount >= 1 && resp.windows(4).any(|w| w == [127, 0, 0, 1]) {
-                    StageResult { stage: 3, name, passed: true, error: None }
+                    StageResult {
+                        stage: 3,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 3, name, passed: false, error: Some(format!("ancount={}, expected IP 127.0.0.1", ancount)) }
+                    StageResult {
+                        stage: 3,
+                        name,
+                        passed: false,
+                        error: Some(format!("ancount={}, expected IP 127.0.0.1", ancount)),
+                    }
                 }
             }
-            Ok(_) => StageResult { stage: 2, name, passed: false, error: Some("Response truncated".to_string()) },
-            Err(e) => StageResult { stage: 3, name, passed: false, error: Some(e) },
+            Ok(_) => StageResult {
+                stage: 2,
+                name,
+                passed: false,
+                error: Some("Response truncated".to_string()),
+            },
+            Err(e) => StageResult {
+                stage: 3,
+                name,
+                passed: false,
+                error: Some(e),
+            },
         }
     }
 
@@ -173,31 +245,79 @@ impl DnsVerifier {
             Ok(resp) if resp.len() >= 12 => {
                 let s = String::from_utf8_lossy(&resp);
                 if s.contains("subdollar-benchmark") {
-                    StageResult { stage: 4, name, passed: true, error: None }
+                    StageResult {
+                        stage: 4,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 4, name, passed: false, error: Some("TXT record payload 'subdollar-benchmark' not found".to_string()) }
+                    StageResult {
+                        stage: 4,
+                        name,
+                        passed: false,
+                        error: Some(
+                            "TXT record payload 'subdollar-benchmark' not found".to_string(),
+                        ),
+                    }
                 }
             }
-            Ok(_) => StageResult { stage: 4, name, passed: false, error: Some("Response truncated".to_string()) },
-            Err(e) => StageResult { stage: 4, name, passed: false, error: Some(e) },
+            Ok(_) => StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some("Response truncated".to_string()),
+            },
+            Err(e) => StageResult {
+                stage: 4,
+                name,
+                passed: false,
+                error: Some(e),
+            },
         }
     }
 
     pub async fn test_stage5_nxdomain(&self) -> StageResult {
         let name = "Stage 5: Unknown Domain NXDOMAIN / Error Response".to_string();
-        match self.send_query(0x5678, "nonexistent.subdollar.invalid", 1).await {
+        match self
+            .send_query(0x5678, "nonexistent.subdollar.invalid", 1)
+            .await
+        {
             Ok(resp) if resp.len() >= 12 => {
                 let flags = u16::from_be_bytes([resp[2], resp[3]]);
                 let rcode = flags & 0x000F;
                 let ancount = u16::from_be_bytes([resp[6], resp[7]]);
                 if rcode == 3 || ancount == 0 {
-                    StageResult { stage: 5, name, passed: true, error: None }
+                    StageResult {
+                        stage: 5,
+                        name,
+                        passed: true,
+                        error: None,
+                    }
                 } else {
-                    StageResult { stage: 5, name, passed: false, error: Some(format!("Expected RCODE 3 or ANCOUNT 0, got rcode={}, ancount={}", rcode, ancount)) }
+                    StageResult {
+                        stage: 5,
+                        name,
+                        passed: false,
+                        error: Some(format!(
+                            "Expected RCODE 3 or ANCOUNT 0, got rcode={}, ancount={}",
+                            rcode, ancount
+                        )),
+                    }
                 }
             }
-            Ok(_) => StageResult { stage: 5, name, passed: false, error: Some("Response truncated".to_string()) },
-            Err(e) => StageResult { stage: 5, name, passed: false, error: Some(e) },
+            Ok(_) => StageResult {
+                stage: 5,
+                name,
+                passed: false,
+                error: Some("Response truncated".to_string()),
+            },
+            Err(e) => StageResult {
+                stage: 5,
+                name,
+                passed: false,
+                error: Some(e),
+            },
         }
     }
 
@@ -221,13 +341,21 @@ impl DnsVerifier {
         }
 
         if success >= 8 {
-            StageResult { stage: 6, name, passed: true, error: None }
+            StageResult {
+                stage: 6,
+                name,
+                passed: true,
+                error: None,
+            }
         } else {
             StageResult {
                 stage: 6,
                 name,
                 passed: false,
-                error: Some(format!("Only {} of 10 concurrent queries succeeded", success)),
+                error: Some(format!(
+                    "Only {} of 10 concurrent queries succeeded",
+                    success
+                )),
             }
         }
     }
@@ -245,7 +373,9 @@ mod tests {
             let mut buf = [0u8; 512];
             loop {
                 if let Ok((len, src)) = socket.recv_from(&mut buf).await {
-                    if len < 12 { continue; }
+                    if len < 12 {
+                        continue;
+                    }
                     let id = &buf[0..2];
                     let qname_end = buf[12..len].iter().position(|&b| b == 0).unwrap_or(0) + 12;
                     let domain_raw = String::from_utf8_lossy(&buf[12..qname_end]);
@@ -255,28 +385,44 @@ mod tests {
 
                     if domain_raw.contains("nonexistent") {
                         // NXDOMAIN (flags = 0x8183)
-                        resp.extend_from_slice(&[0x81, 0x83, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                        resp.extend_from_slice(&[
+                            0x81, 0x83, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        ]);
                         resp.extend_from_slice(&buf[12..len]);
                     } else if domain_raw.contains("localhost") {
                         // 127.0.0.1
-                        resp.extend_from_slice(&[0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+                        resp.extend_from_slice(&[
+                            0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                        ]);
                         resp.extend_from_slice(&buf[12..len]);
-                        resp.extend_from_slice(&[0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 127, 0, 0, 1]);
+                        resp.extend_from_slice(&[
+                            0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04,
+                            127, 0, 0, 1,
+                        ]);
                     } else if domain_raw.contains("test") {
                         // TXT record
                         let txt = b"subdollar-benchmark";
-                        resp.extend_from_slice(&[0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+                        resp.extend_from_slice(&[
+                            0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                        ]);
                         resp.extend_from_slice(&buf[12..len]);
-                        resp.extend_from_slice(&[0xc0, 0x0c, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2c]);
+                        resp.extend_from_slice(&[
+                            0xc0, 0x0c, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2c,
+                        ]);
                         let rdlen = (txt.len() + 1) as u16;
                         resp.extend_from_slice(&rdlen.to_be_bytes());
                         resp.push(txt.len() as u8);
                         resp.extend_from_slice(txt);
                     } else {
                         // example.com -> 93.184.216.34
-                        resp.extend_from_slice(&[0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+                        resp.extend_from_slice(&[
+                            0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                        ]);
                         resp.extend_from_slice(&buf[12..len]);
-                        resp.extend_from_slice(&[0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 93, 184, 216, 34]);
+                        resp.extend_from_slice(&[
+                            0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04,
+                            93, 184, 216, 34,
+                        ]);
                     }
 
                     let _ = socket.send_to(&resp, src).await;
@@ -293,7 +439,11 @@ mod tests {
         let verifier = DnsVerifier::new(port, None);
         assert!(verifier.wait_for_ready(5).await);
         let summary = verifier.run_all().await;
-        assert_eq!(summary.passed_count, 6, "Stages failed: {:?}", summary.stages);
+        assert_eq!(
+            summary.passed_count, 6,
+            "Stages failed: {:?}",
+            summary.stages
+        );
         assert_eq!(summary.total_stages, 6);
         assert_eq!(summary.pass_rate, 100.0);
     }

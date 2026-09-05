@@ -4,14 +4,40 @@ use std::path::Path;
 pub struct ComplianceChecker;
 
 const FORBIDDEN_BASE_IMAGES: &[&str] = &[
-    "redis", "valkey", "keydb", "dragonfly", "nginx", "caddy", "coredns",
-    "bind9", "named", "dnsmasq", "apache", "httpd", "envoy", "traefik",
-    "haproxy", "lighttpd", "memcached",
+    "redis",
+    "valkey",
+    "keydb",
+    "dragonfly",
+    "nginx",
+    "caddy",
+    "coredns",
+    "bind9",
+    "named",
+    "dnsmasq",
+    "apache",
+    "httpd",
+    "envoy",
+    "traefik",
+    "haproxy",
+    "lighttpd",
+    "memcached",
 ];
 
 const FORBIDDEN_DAEMONS: &[&str] = &[
-    "redis-server", "valkey-server", "keydb-server", "dragonfly", "nginx", "caddy",
-    "coredns", "dnsmasq", "named", "bind9", "lighttpd", "apache2", "httpd", "memcached",
+    "redis-server",
+    "valkey-server",
+    "keydb-server",
+    "dragonfly",
+    "nginx",
+    "caddy",
+    "coredns",
+    "dnsmasq",
+    "named",
+    "bind9",
+    "lighttpd",
+    "apache2",
+    "httpd",
+    "memcached",
 ];
 
 impl ComplianceChecker {
@@ -38,7 +64,12 @@ impl ComplianceChecker {
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 // Skip hidden folders, git, target, node_modules, etc.
-                if name.starts_with('.') || name == "target" || name == "node_modules" || name == "vendor" || name == "__pycache__" {
+                if name.starts_with('.')
+                    || name == "target"
+                    || name == "node_modules"
+                    || name == "vendor"
+                    || name == "__pycache__"
+                {
                     continue;
                 }
 
@@ -80,6 +111,224 @@ impl ComplianceChecker {
         logical_lines
     }
 
+    /// Checks a shell command line or Dockerfile instruction for forbidden daemon executions/installations,
+    /// avoiding false positives in string literals, echo statements, package removals, or comments.
+    pub fn check_daemon_command(line: &str) -> Option<String> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return None;
+        }
+
+        // Split into command pipeline segments separated by ;, &&, ||, |, &
+        let segments = Self::split_command_segments(trimmed);
+        for seg in segments {
+            if let Some(violation) = Self::check_command_segment(&seg) {
+                return Some(violation);
+            }
+        }
+        None
+    }
+
+    fn split_command_segments(line: &str) -> Vec<String> {
+        let mut segments = Vec::new();
+        let mut current = String::new();
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '\'' && !in_double_quote {
+                in_single_quote = !in_single_quote;
+                current.push(c);
+            } else if c == '"' && !in_single_quote {
+                in_double_quote = !in_double_quote;
+                current.push(c);
+            } else if !in_single_quote && !in_double_quote {
+                if c == ';' {
+                    segments.push(current.trim().to_string());
+                    current.clear();
+                } else if (c == '&' && i + 1 < chars.len() && chars[i + 1] == '&')
+                    || (c == '|' && i + 1 < chars.len() && chars[i + 1] == '|')
+                {
+                    segments.push(current.trim().to_string());
+                    current.clear();
+                    i += 1;
+                } else if c == '|' || c == '&' {
+                    segments.push(current.trim().to_string());
+                    current.clear();
+                } else {
+                    current.push(c);
+                }
+            } else {
+                current.push(c);
+            }
+            i += 1;
+        }
+        if !current.trim().is_empty() {
+            segments.push(current.trim().to_string());
+        }
+        segments
+    }
+
+    fn clean_token(token: &str) -> String {
+        let mut t = token.trim();
+        // Strip command substitution $(...) or `...`
+        if t.starts_with("$(") && t.ends_with(')') {
+            t = &t[2..t.len() - 1];
+        }
+        if t.starts_with('`') && t.ends_with('`') && t.len() >= 2 {
+            t = &t[1..t.len() - 1];
+        }
+        // Strip enclosing quotes
+        if (t.starts_with('"') && t.ends_with('"') && t.len() >= 2)
+            || (t.starts_with('\'') && t.ends_with('\'') && t.len() >= 2)
+        {
+            t = &t[1..t.len() - 1];
+        }
+        t.trim().to_string()
+    }
+
+    fn check_command_segment(segment: &str) -> Option<String> {
+        let raw_tokens: Vec<&str> = segment.split_whitespace().collect();
+        if raw_tokens.is_empty() {
+            return None;
+        }
+
+        let mut tokens: Vec<String> = raw_tokens.into_iter().map(Self::clean_token).collect();
+        // Remove empty tokens or parenthesis/brackets
+        tokens.retain(|t| !t.is_empty() && t != "[" && t != "]" && t != "(" && t != ")");
+
+        if tokens.is_empty() {
+            return None;
+        }
+
+        let mut idx = 0;
+        // Skip env vars like FOO=bar
+        while idx < tokens.len() && tokens[idx].contains('=') && !tokens[idx].starts_with('-') {
+            idx += 1;
+        }
+
+        // Skip runner prefixes like sudo, exec, nohup, env, command, builtin, time
+        while idx < tokens.len() {
+            let lower = tokens[idx].to_lowercase();
+            let base = lower.split('/').next_back().unwrap_or(&lower);
+            if base == "sudo"
+                || base == "nohup"
+                || base == "exec"
+                || base == "env"
+                || base == "command"
+                || base == "builtin"
+                || base == "time"
+            {
+                idx += 1;
+                // For sudo or env, skip flags like -u user or -E
+                while idx < tokens.len() && tokens[idx].starts_with('-') {
+                    if tokens[idx] == "-u" || tokens[idx] == "-g" {
+                        idx += 2;
+                    } else {
+                        idx += 1;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        if idx >= tokens.len() {
+            return None;
+        }
+
+        let cmd_token = tokens[idx].to_lowercase();
+        let cmd_base = cmd_token.split('/').next_back().unwrap_or(&cmd_token);
+
+        // Check if the command itself is a forbidden daemon
+        for daemon in FORBIDDEN_DAEMONS {
+            if cmd_base == *daemon {
+                return Some(format!("executes forbidden server daemon '{}'", daemon));
+            }
+        }
+
+        // Check package managers
+        let pkg_managers = ["apt", "apt-get", "apk", "yum", "dnf", "pacman"];
+        if pkg_managers.contains(&cmd_base) {
+            let args = &tokens[idx + 1..];
+            let is_install = args.iter().any(|a| a == "install" || a == "add");
+            if is_install {
+                for arg in args {
+                    let arg_lower = arg.to_lowercase();
+                    let arg_base = arg_lower.split('/').next_back().unwrap_or(&arg_lower);
+                    for daemon in FORBIDDEN_DAEMONS {
+                        if arg_base == *daemon || arg_base.starts_with(&format!("{}-", daemon)) {
+                            return Some(format!(
+                                "installs forbidden server daemon '{}' via {}",
+                                daemon, cmd_base
+                            ));
+                        }
+                    }
+                }
+            }
+            return None;
+        }
+
+        // Check service managers
+        if cmd_base == "systemctl" || cmd_base == "service" {
+            let args = &tokens[idx + 1..];
+            let is_start = args
+                .iter()
+                .any(|a| a == "start" || a == "restart" || a == "enable" || a == "run");
+            if is_start {
+                for arg in args {
+                    let arg_lower = arg.to_lowercase();
+                    for daemon in FORBIDDEN_DAEMONS {
+                        if arg_lower.contains(daemon) {
+                            return Some(format!(
+                                "starts forbidden service '{}' via {}",
+                                daemon, cmd_base
+                            ));
+                        }
+                    }
+                }
+            }
+            return None;
+        }
+
+        // Check container runners
+        if cmd_base == "docker" || cmd_base == "podman" {
+            let args = &tokens[idx + 1..];
+            let is_run = args.iter().any(|a| a == "run" || a == "start");
+            if is_run {
+                for arg in args {
+                    let arg_lower = arg.to_lowercase();
+                    for img in FORBIDDEN_BASE_IMAGES {
+                        if arg_lower == *img
+                            || arg_lower.starts_with(&format!("{}:", img))
+                            || arg_lower.contains(&format!("/{}", img))
+                        {
+                            return Some(format!(
+                                "runs forbidden container image '{}' via {}",
+                                img, cmd_base
+                            ));
+                        }
+                    }
+                }
+            }
+            return None;
+        }
+
+        // If the command is echo, printf, cat, grep, etc., ignore its arguments
+        let safe_cmds = [
+            "echo", "printf", "print", "cat", "grep", "sed", "awk", "find", "test", "touch",
+            "mkdir", "cp", "mv", "rm", "kill", "killall", "pkill", "export",
+        ];
+        if safe_cmds.contains(&cmd_base) {
+            return None;
+        }
+
+        None
+    }
+
     /// Tokenizes shell or Dockerfile commands by splitting on shell word/operator delimiters.
     pub fn tokenize_command(cmd: &str) -> Vec<String> {
         let cleaned: String = cmd
@@ -107,22 +356,44 @@ impl ComplianceChecker {
                 if lower.starts_with("from ") {
                     for forbidden in FORBIDDEN_BASE_IMAGES {
                         if lower.contains(forbidden) {
-                            violations.push(format!("Dockerfile uses forbidden base image '{}'", line));
+                            violations
+                                .push(format!("Dockerfile uses forbidden base image '{}'", line));
                             break;
                         }
                     }
-                } else if lower.starts_with("run ")
-                    || lower.starts_with("cmd ")
-                    || lower.starts_with("cmd[")
-                    || lower.starts_with("entrypoint ")
-                    || lower.starts_with("entrypoint[")
-                {
-                    let tokens = Self::tokenize_command(&lower);
-                    for daemon in FORBIDDEN_DAEMONS {
-                        if tokens.iter().any(|t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
-                            violations.push(format!("Dockerfile: executes or installs forbidden server daemon '{}' in '{}'", daemon, line));
-                            break;
+                } else if lower.starts_with("run ") {
+                    if let Some(v) = Self::check_daemon_command(&line[4..]) {
+                        violations.push(format!("Dockerfile: {}", v));
+                    }
+                } else if lower.starts_with("cmd") || lower.starts_with("entrypoint") {
+                    let rest = if lower.starts_with("cmd") {
+                        line["cmd".len()..].trim()
+                    } else {
+                        line["entrypoint".len()..].trim()
+                    };
+                    if rest.starts_with('[') && rest.ends_with(']') {
+                        if let Ok(arr) = serde_json::from_str::<Vec<String>>(rest) {
+                            if let Some(first) = arr.first() {
+                                let lower_first = first.to_lowercase();
+                                let base =
+                                    lower_first.split('/').next_back().unwrap_or(&lower_first);
+                                if FORBIDDEN_DAEMONS.contains(&base) {
+                                    violations.push(format!(
+                                        "Dockerfile: specifies forbidden daemon '{}' in '{}'",
+                                        base, line
+                                    ));
+                                } else if (base == "sh" || base == "bash")
+                                    && arr.len() >= 3
+                                    && arr[1] == "-c"
+                                {
+                                    if let Some(v) = Self::check_daemon_command(&arr[2]) {
+                                        violations.push(format!("Dockerfile: {}", v));
+                                    }
+                                }
+                            }
                         }
+                    } else if let Some(v) = Self::check_daemon_command(rest) {
+                        violations.push(format!("Dockerfile: {}", v));
                     }
                 }
             }
@@ -132,16 +403,8 @@ impl ComplianceChecker {
         if filename.ends_with(".sh") || filename.ends_with(".bash") || filename == "start.sh" {
             let logical_lines = Self::normalize_lines(&content);
             for line in logical_lines {
-                if line.starts_with('#') {
-                    continue;
-                }
-                let lower = line.to_lowercase();
-                let tokens = Self::tokenize_command(&lower);
-                for daemon in FORBIDDEN_DAEMONS {
-                    if tokens.iter().any(|t| t == daemon || t.ends_with(&format!("/{}", daemon))) {
-                        violations.push(format!("{}: executes forbidden server daemon '{}'", filename, daemon));
-                        break;
-                    }
+                if let Some(v) = Self::check_daemon_command(&line) {
+                    violations.push(format!("{}: {}", filename, v));
                 }
             }
         }
@@ -149,8 +412,15 @@ impl ComplianceChecker {
         // 3. Node.js package.json
         if filename == "package.json" {
             let forbidden = [
-                "\"express\"", "\"fastify\"", "\"koa\"", "\"hapi\"", "\"nest\"",
-                "\"sails\"", "\"connect\"", "\"ioredis\"", "\"redis\"",
+                "\"express\"",
+                "\"fastify\"",
+                "\"koa\"",
+                "\"hapi\"",
+                "\"nest\"",
+                "\"sails\"",
+                "\"connect\"",
+                "\"ioredis\"",
+                "\"redis\"",
             ];
             for f in forbidden {
                 if content.contains(f) {
@@ -162,13 +432,16 @@ impl ComplianceChecker {
         // 4. Python requirements.txt or pyproject.toml
         if filename == "requirements.txt" || filename == "pyproject.toml" {
             let forbidden = [
-                "flask", "fastapi", "django", "tornado", "aiohttp", "sanic",
-                "redis", "valkey", "redis-py", "twisted",
+                "flask", "fastapi", "django", "tornado", "aiohttp", "sanic", "redis", "valkey",
+                "redis-py", "twisted",
             ];
             for line in content.lines() {
                 let trimmed = line.trim().to_lowercase();
                 for f in forbidden {
-                    if trimmed.starts_with(f) || trimmed.contains(&format!("\"{}\"", f)) || trimmed.contains(&format!("'{}'", f)) {
+                    if trimmed.starts_with(f)
+                        || trimmed.contains(&format!("\"{}\"", f))
+                        || trimmed.contains(&format!("'{}'", f))
+                    {
                         violations.push(format!("{}: uses forbidden dependency '{}'", filename, f));
                     }
                 }
@@ -178,8 +451,14 @@ impl ComplianceChecker {
         // 5. Rust Cargo.toml
         if filename == "Cargo.toml" {
             let forbidden = [
-                "actix-web", "axum", "warp", "rocket", "tide", "hyper",
-                "redis", "fred",
+                "actix-web",
+                "axum",
+                "warp",
+                "rocket",
+                "tide",
+                "hyper",
+                "redis",
+                "fred",
             ];
             for f in forbidden {
                 if content.contains(f) {
@@ -191,8 +470,10 @@ impl ComplianceChecker {
         // 6. Go go.mod
         if filename == "go.mod" {
             let forbidden = [
-                "github.com/gin-gonic/gin", "github.com/labstack/echo",
-                "github.com/gofiber/fiber", "github.com/go-redis/redis",
+                "github.com/gin-gonic/gin",
+                "github.com/labstack/echo",
+                "github.com/gofiber/fiber",
+                "github.com/go-redis/redis",
                 "github.com/redis/go-redis",
             ];
             for f in forbidden {
@@ -218,12 +499,18 @@ impl ComplianceChecker {
             }
             "go" => {
                 if content.contains("http.ListenAndServe") || content.contains("http.Server{") {
-                    violations.push(format!("{}: calls net/http built-in server (http.ListenAndServe)", filename));
+                    violations.push(format!(
+                        "{}: calls net/http built-in server (http.ListenAndServe)",
+                        filename
+                    ));
                 }
             }
             "js" | "ts" => {
                 if content.contains("http.createServer") {
-                    violations.push(format!("{}: calls node:http built-in server (http.createServer)", filename));
+                    violations.push(format!(
+                        "{}: calls node:http built-in server (http.createServer)",
+                        filename
+                    ));
                 }
                 if content.contains("require('express')") || content.contains("from 'express'") {
                     violations.push(format!("{}: imports express", filename));
@@ -236,10 +523,16 @@ impl ComplianceChecker {
             }
             "c" | "cpp" | "cc" | "h" | "hpp" => {
                 if content.contains("<microhttpd.h>") {
-                    violations.push(format!("{}: includes forbidden library <microhttpd.h>", filename));
+                    violations.push(format!(
+                        "{}: includes forbidden library <microhttpd.h>",
+                        filename
+                    ));
                 }
                 if content.contains("<event2/http.h>") {
-                    violations.push(format!("{}: includes forbidden library <event2/http.h>", filename));
+                    violations.push(format!(
+                        "{}: includes forbidden library <event2/http.h>",
+                        filename
+                    ));
                 }
             }
             _ => {}
@@ -253,14 +546,19 @@ mod tests {
 
     #[test]
     fn test_compliance_checker_clean_workspace() {
-        let temp_dir = std::env::temp_dir().join(format!("test_compliance_clean_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_compliance_clean_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);
 
         fs::write(
             temp_dir.join("main.go"),
             "package main\nimport \"net\"\nfunc main() { listener, _ := net.Listen(\"tcp\", \":8080\") }\n",
         ).unwrap();
-        fs::write(temp_dir.join("Dockerfile"), "FROM golang:1.22-alpine\nCOPY . /app\n").unwrap();
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM golang:1.22-alpine\nCOPY . /app\n",
+        )
+        .unwrap();
         fs::write(temp_dir.join("start.sh"), "#!/bin/bash\n./server\n").unwrap();
 
         assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
@@ -269,7 +567,8 @@ mod tests {
 
     #[test]
     fn test_compliance_checker_catches_continuation_line_and_delimiters() {
-        let temp_dir = std::env::temp_dir().join(format!("test_compliance_cont_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_compliance_cont_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);
 
         // 1. Dockerfile with line continuations
@@ -283,10 +582,7 @@ mod tests {
         let _ = fs::remove_file(temp_dir.join("Dockerfile"));
 
         // 2. Dockerfile with continuation in FROM
-        fs::write(
-            temp_dir.join("Dockerfile"),
-            "FROM \\\n  redis:alpine\n",
-        ).unwrap();
+        fs::write(temp_dir.join("Dockerfile"), "FROM \\\n  redis:alpine\n").unwrap();
         let res2 = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res2.is_err());
         assert!(res2.unwrap_err().contains("redis"));
@@ -314,32 +610,49 @@ mod tests {
 
     #[test]
     fn test_compliance_checker_catches_forbidden_frameworks() {
-        let temp_dir = std::env::temp_dir().join(format!("test_compliance_fail_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_compliance_fail_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);
 
         // 1. Python http.server
-        fs::write(temp_dir.join("server.py"), "from http.server import HTTPServer\n").unwrap();
+        fs::write(
+            temp_dir.join("server.py"),
+            "from http.server import HTTPServer\n",
+        )
+        .unwrap();
         let res_py = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_py.is_err());
         assert!(res_py.unwrap_err().contains("http.server"));
         let _ = fs::remove_file(temp_dir.join("server.py"));
 
         // 2. Node express in package.json
-        fs::write(temp_dir.join("package.json"), "{\"dependencies\": {\"express\": \"^4.18\"}}\n").unwrap();
+        fs::write(
+            temp_dir.join("package.json"),
+            "{\"dependencies\": {\"express\": \"^4.18\"}}\n",
+        )
+        .unwrap();
         let res_pkg = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_pkg.is_err());
         assert!(res_pkg.unwrap_err().contains("package.json"));
         let _ = fs::remove_file(temp_dir.join("package.json"));
 
         // 3. Go net/http.ListenAndServe
-        fs::write(temp_dir.join("main.go"), "package main\nfunc main() { http.ListenAndServe(\":8080\", nil) }\n").unwrap();
+        fs::write(
+            temp_dir.join("main.go"),
+            "package main\nfunc main() { http.ListenAndServe(\":8080\", nil) }\n",
+        )
+        .unwrap();
         let res_go = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_go.is_err());
         assert!(res_go.unwrap_err().contains("net/http"));
         let _ = fs::remove_file(temp_dir.join("main.go"));
 
         // 4. Rust Cargo.toml axum
-        fs::write(temp_dir.join("Cargo.toml"), "[dependencies]\naxum = \"0.7\"\n").unwrap();
+        fs::write(
+            temp_dir.join("Cargo.toml"),
+            "[dependencies]\naxum = \"0.7\"\n",
+        )
+        .unwrap();
         let res_rs = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_rs.is_err());
         assert!(res_rs.unwrap_err().contains("Cargo.toml"));
@@ -353,35 +666,55 @@ mod tests {
         let _ = fs::remove_file(temp_dir.join("requirements.txt"));
 
         // 6. Go go.mod
-        fs::write(temp_dir.join("go.mod"), "module myapp\nrequire github.com/gin-gonic/gin v1.9.1\n").unwrap();
+        fs::write(
+            temp_dir.join("go.mod"),
+            "module myapp\nrequire github.com/gin-gonic/gin v1.9.1\n",
+        )
+        .unwrap();
         let res_mod = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_mod.is_err());
         assert!(res_mod.unwrap_err().contains("go.mod"));
         let _ = fs::remove_file(temp_dir.join("go.mod"));
 
         // 7. Node http.createServer
-        fs::write(temp_dir.join("server.js"), "const http = require('http'); http.createServer();\n").unwrap();
+        fs::write(
+            temp_dir.join("server.js"),
+            "const http = require('http'); http.createServer();\n",
+        )
+        .unwrap();
         let res_js = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_js.is_err());
         assert!(res_js.unwrap_err().contains("http.createServer"));
         let _ = fs::remove_file(temp_dir.join("server.js"));
 
         // 8. Python flask / fastapi imports
-        fs::write(temp_dir.join("app.py"), "from flask import Flask\nfrom fastapi import FastAPI\n").unwrap();
+        fs::write(
+            temp_dir.join("app.py"),
+            "from flask import Flask\nfrom fastapi import FastAPI\n",
+        )
+        .unwrap();
         let res_app = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_app.is_err());
         assert!(res_app.unwrap_err().contains("flask"));
         let _ = fs::remove_file(temp_dir.join("app.py"));
 
         // 9. Dockerfile FROM redis cheat
-        fs::write(temp_dir.join("Dockerfile"), "FROM redis:alpine\nEXPOSE 6379\n").unwrap();
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM redis:alpine\nEXPOSE 6379\n",
+        )
+        .unwrap();
         let res_df = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_df.is_err());
         assert!(res_df.unwrap_err().contains("redis"));
         let _ = fs::remove_file(temp_dir.join("Dockerfile"));
 
         // 10. start.sh redis-server cheat
-        fs::write(temp_dir.join("start.sh"), "#!/bin/bash\nredis-server --port 6379\n").unwrap();
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\nredis-server --port 6379\n",
+        )
+        .unwrap();
         let res_sh = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_sh.is_err());
         assert!(res_sh.unwrap_err().contains("redis-server"));
@@ -395,21 +728,33 @@ mod tests {
         let _ = fs::remove_file(temp_dir.join("server.c"));
 
         // 12. Dockerfile RUN redis-server install
-        fs::write(temp_dir.join("Dockerfile"), "FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y redis-server\n").unwrap();
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y redis-server\n",
+        )
+        .unwrap();
         let res_df_run = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_df_run.is_err());
         assert!(res_df_run.unwrap_err().contains("redis-server"));
         let _ = fs::remove_file(temp_dir.join("Dockerfile"));
 
         // 13. Dockerfile CMD redis-server
-        fs::write(temp_dir.join("Dockerfile"), "FROM ubuntu:24.04\nCMD [\"redis-server\", \"--protected-mode\", \"no\"]\n").unwrap();
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM ubuntu:24.04\nCMD [\"redis-server\", \"--protected-mode\", \"no\"]\n",
+        )
+        .unwrap();
         let res_df_cmd = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_df_cmd.is_err());
         assert!(res_df_cmd.unwrap_err().contains("redis-server"));
         let _ = fs::remove_file(temp_dir.join("Dockerfile"));
 
         // 14. Dockerfile ENTRYPOINT nginx
-        fs::write(temp_dir.join("Dockerfile"), "FROM alpine:3.19\nENTRYPOINT [\"nginx\", \"-g\", \"daemon off;\"]\n").unwrap();
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM alpine:3.19\nENTRYPOINT [\"nginx\", \"-g\", \"daemon off;\"]\n",
+        )
+        .unwrap();
         let res_df_ep = ComplianceChecker::check_no_frameworks(&temp_dir);
         assert!(res_df_ep.is_err());
         assert!(res_df_ep.unwrap_err().contains("nginx"));
@@ -419,6 +764,38 @@ mod tests {
         let hidden = temp_dir.join(".git");
         let _ = fs::create_dir_all(&hidden);
         fs::write(hidden.join("server.py"), "import http.server\n").unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_compliance_checker_allows_safe_commands_and_removals() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_compliance_safe_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        // 1. Shell script with echo string mentioning nginx
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\necho \"nginx-like headers supported\"\n./my_server\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        // 2. Shell script with apt-get remove
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\napt-get remove -y redis-server\n./my_server\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        // 3. Dockerfile with echo and apt-get purge
+        fs::write(
+            temp_dir.join("Dockerfile"),
+            "FROM ubuntu:24.04\nRUN apt-get update && apt-get purge -y redis-server && echo \"no nginx here\"\nCMD [\"./my_server\"]\n"
+        ).unwrap();
         assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
 
         let _ = fs::remove_dir_all(&temp_dir);

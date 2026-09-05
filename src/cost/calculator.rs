@@ -100,8 +100,9 @@ impl ModelPricing {
         let comp_cost = (completion_tokens as f64 / 1_000_000.0) * self.completion_per_million;
 
         let total_cost_usd = fresh_cost + cached_cost + comp_cost;
-        let un_cached_cost_usd =
-            ((prompt_tokens + cached_tokens) as f64 / 1_000_000.0) * self.prompt_per_million + comp_cost;
+        let un_cached_cost_usd = ((prompt_tokens + cached_tokens) as f64 / 1_000_000.0)
+            * self.prompt_per_million
+            + comp_cost;
 
         let savings_usd = (un_cached_cost_usd - total_cost_usd).max(0.0);
         let savings_percent = if un_cached_cost_usd > 0.0 {
@@ -141,17 +142,19 @@ impl ModelPricing {
         }
 
         let body: serde_json::Value = resp.json().await.ok()?;
-        body.get("data")?
-            .get("usage")?
-            .as_f64()
+        body.get("data")?.get("usage")?.as_f64()
     }
 
     /// Query OpenRouter /api/v1/models to get live catalog pricing for a model
     pub async fn fetch_openrouter_model_pricing(model_name: &str) -> Option<ModelPricing> {
-        Self::fetch_openrouter_model_pricing_at(model_name, "https://openrouter.ai/api/v1/models").await
+        Self::fetch_openrouter_model_pricing_at(model_name, "https://openrouter.ai/api/v1/models")
+            .await
     }
 
-    pub async fn fetch_openrouter_model_pricing_at(model_name: &str, url: &str) -> Option<ModelPricing> {
+    pub async fn fetch_openrouter_model_pricing_at(
+        model_name: &str,
+        url: &str,
+    ) -> Option<ModelPricing> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(4))
             .build()
@@ -276,7 +279,11 @@ mod tests {
         let diff = (b.total_cost_usd - 0.0375).abs();
         assert!(diff < 1e-6, "Expected 0.0375, got {}", b.total_cost_usd);
         let diff_savings = (b.savings_usd - 0.1125).abs();
-        assert!(diff_savings < 1e-6, "Expected 0.1125, got {}", b.savings_usd);
+        assert!(
+            diff_savings < 1e-6,
+            "Expected 0.1125, got {}",
+            b.savings_usd
+        );
         assert!((b.savings_percent - 75.0).abs() < 1e-4);
     }
 
@@ -352,7 +359,9 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/api/v1/models", port);
-        let pricing = ModelPricing::fetch_openrouter_model_pricing_at("custom/super-model", &url).await.unwrap();
+        let pricing = ModelPricing::fetch_openrouter_model_pricing_at("custom/super-model", &url)
+            .await
+            .unwrap();
         assert!((pricing.prompt_per_million - 1.50).abs() < 1e-6);
         assert!((pricing.completion_per_million - 4.50).abs() < 1e-6);
         assert!((pricing.cache_read_per_million - 0.375).abs() < 1e-6);
@@ -361,7 +370,8 @@ mod tests {
     #[tokio::test]
     async fn test_for_model_async_fallback() {
         // Fallback to hardcoded when model not in openrouter or request fails
-        let pricing = ModelPricing::for_model_async("unknown-provider/dummy-gemini-2.5-flash-test").await;
+        let pricing =
+            ModelPricing::for_model_async("unknown-provider/dummy-gemini-2.5-flash-test").await;
         assert_eq!(pricing.prompt_per_million, 0.15);
         assert_eq!(pricing.completion_per_million, 0.60);
 
