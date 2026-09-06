@@ -919,6 +919,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_routes_lifecycle() {
+        let summary_path = crate::config::get_repo_root().join("SUMMARY.md");
+        let initial_summary = fs::read_to_string(&summary_path).ok();
+
         let state = create_test_state();
         state
             .log_buffer
@@ -1426,6 +1429,11 @@ mod tests {
                     let _ = fs::remove_file(entry.path());
                 }
             }
+        }
+
+        // Restore original SUMMARY.md to avoid dirtying git working tree during tests
+        if let Some(orig) = initial_summary {
+            let _ = fs::write(&summary_path, orig);
         }
     }
 

@@ -96,8 +96,10 @@ docker build -t subdollar-sandbox -f Dockerfile.sandbox .
 
 ### 3. Launch the Interactive Web UI (Recommended)
 ```bash
-cargo run --release -- ui --host 0.0.0.0 --port 3000
+cargo run --release -- ui --port 3000
 ```
+> ⚠️ **Security Warning**: The Web UI does not enforce authentication. Always bind to loopback (`127.0.0.1`, default). Do not bind to `0.0.0.0` or expose the UI port on untrusted networks, as anyone with network access could trigger benchmark runs, spend your API credits, or modify task prompts.
+
 Open `http://localhost:3000` in your browser. From the UI, you can:
 - Browse all models on OpenRouter priced below $1.00 / 1M tokens.
 - Choose between `redis` and `http` tasks.

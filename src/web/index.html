@@ -1352,10 +1352,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const pill = document.getElementById('selectedPricePill');
       pill.style.display = 'inline-flex';
       pill.innerHTML = `
-        <span>📅 Released: <b>${opt.dataset.relDate}</b></span> • 
-        <span>📥 Input: <b>$${opt.dataset.promptPrice}/1M</b></span> • 
-        <span>📤 Output: <b>$${opt.dataset.compPrice}/1M</b></span> • 
-        <span>🧠 Ctx: <b>${parseInt(opt.dataset.context).toLocaleString()}</b></span>
+        <span>📅 Released: <b>${escapeHtml(opt.dataset.relDate)}</b></span> • 
+        <span>📥 Input: <b>$${escapeHtml(opt.dataset.promptPrice)}/1M</b></span> • 
+        <span>📤 Output: <b>$${escapeHtml(opt.dataset.compPrice)}/1M</b></span> • 
+        <span>🧠 Ctx: <b>${parseInt(opt.dataset.context || 0).toLocaleString()}</b></span>
       `;
     }
 
@@ -1546,9 +1546,16 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         return s;
       }
 
-      function escapeHtml(str) {
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-      }
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
     }
 
     let currentLoadedPromptText = '';
@@ -1741,7 +1748,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       navigator.clipboard.writeText(text).then(() => {
         if (!el) return;
         const orig = el.innerHTML;
-        el.innerHTML = `<span style="color:var(--success)">${feedbackText || 'Copied!'}</span>`;
+        el.innerHTML = `<span style="color:var(--success)">${escapeHtml(feedbackText) || 'Copied!'}</span>`;
         setTimeout(() => { el.innerHTML = orig; }, 1500);
       });
     }
@@ -1807,9 +1814,14 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
           : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
         const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
+        const safeModel = escapeHtml(r.model);
+        const safeTask = escapeHtml(r.task);
+        const safeLanguage = escapeHtml(r.language);
+        const safeEffort = escapeHtml(r.effort || 'auto');
+        const effBadge = `<span class="badge badge-effort">effort: ${safeEffort}</span>`;
         const pubBadge = r.is_published 
           ? `<span class="badge" style="background:#238636;color:#fff;font-size:0.72rem;padding:2px 8px;">✔ Git</span>` 
-          : `<button class="btn-primary" style="padding:3px 8px;font-size:0.72rem;" onclick="event.stopPropagation(); publishRunModal('${r.run_id}')">🚀 Publish</button>`;
+          : `<button class="btn-primary" style="padding:3px 8px;font-size:0.72rem;" data-run-id="${escapeHtml(r.run_id)}" onclick="event.stopPropagation(); publishRunModal(this.dataset.runId)">🚀 Publish</button>`;
 
         const dateStr = formatTimestamp(r.started_at || r.completed_at);
         const durationStr = formatDuration(r.duration_seconds);
@@ -1823,15 +1835,15 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             <td>
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.88rem;">${r.model}</span>
-                  <span class="badge badge-info">${r.task}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
+                  <span style="font-weight: 600; color: var(--primary); font-size: 0.88rem;">${safeModel}</span>
+                  <span class="badge badge-info">${safeTask}</span>
+                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${safeLanguage}</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
                   <span>${dateStr}</span>
                   <span>·</span>
-                  <span title="${r.run_id}" style="cursor: pointer; text-decoration: underline dotted;" onclick="copySpecificText('${r.run_id}', this, 'Copied ID!')">
-                    id: ...${shortId} 📋
+                  <span title="${escapeHtml(r.run_id)}" style="cursor: pointer; text-decoration: underline dotted;" data-run-id="${escapeHtml(r.run_id)}" onclick="copySpecificText(this.dataset.runId, this, 'Copied ID!')">
+                    id: ...${escapeHtml(shortId)} 📋
                   </span>
                   <span>·</span>
                   <span>${durationStr}</span>
@@ -1858,8 +1870,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             </td>
             <td style="text-align: right;">
               <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end;">
-                <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
-                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openCompareWith('${r.run_id}')">⚖️ Compare</button>
+                <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.run_id)}" onclick="inspectRun(this.dataset.runId)">🔍 Inspect</button>
+                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.run_id)}" onclick="openCompareWith(this.dataset.runId)">⚖️ Compare</button>
                 ${pubBadge}
               </div>
             </td>
@@ -1875,17 +1887,17 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
               <div>
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${r.model}</span>
-                  <span class="badge badge-info">${r.task}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
+                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${safeModel}</span>
+                  <span class="badge badge-info">${safeTask}</span>
+                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${safeLanguage}</span>
                 </div>
                 <div style="font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 3px;">
-                  ${dateStr} · <span title="${r.run_id}" style="cursor: pointer;" onclick="copySpecificText('${r.run_id}', this, 'Copied!')">...${shortId} 📋</span> · ${durationStr}
+                  ${dateStr} · <span title="${escapeHtml(r.run_id)}" style="cursor: pointer;" data-run-id="${escapeHtml(r.run_id)}" onclick="copySpecificText(this.dataset.runId, this, 'Copied!')">...${escapeHtml(shortId)} 📋</span> · ${durationStr}
                 </div>
               </div>
               <div style="display: flex; gap: 6px; align-items: center;">
-                <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.run_id}')">🔍 Inspect</button>
-                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openCompareWith('${r.run_id}')">⚖️ Compare</button>
+                <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.run_id)}" onclick="inspectRun(this.dataset.runId)">🔍 Inspect</button>
+                <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.run_id)}" onclick="openCompareWith(this.dataset.runId)">⚖️ Compare</button>
               </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #090d13; padding: 8px; border-radius: 6px; text-align: center;">
@@ -1932,7 +1944,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           const passBadge = r.pass_rate === 100 
             ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
             : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
-          const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
+          const safeEffort = escapeHtml(r.effort || 'auto');
+          const effBadge = `<span class="badge badge-effort">effort: ${safeEffort}</span>`;
           const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : (r.completion_tokens ? `${((r.prompt_tokens + r.completion_tokens) / 1000).toFixed(1)}k tokens` : 'N/A');
           
           let rankBadge = `<span style="font-weight: 700; font-size: 0.95rem; color: var(--text-muted);">#${idx + 1}</span>`;
@@ -1945,9 +1958,9 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             <td>
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${r.model}</span>
-                  <span class="badge badge-info">${r.task}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${r.language}</span>
+                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${escapeHtml(r.model)}</span>
+                  <span class="badge badge-info">${escapeHtml(r.task)}</span>
+                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${escapeHtml(r.language)}</span>
                 </div>
                 <div style="font-size: 0.72rem; color: var(--text-muted);">
                   ${formatTimestamp(r.timestamp)}
@@ -1972,7 +1985,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             <td style="text-align: right;">
               <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
                 <span style="font-weight: 800; color: var(--primary); font-size: 1.05rem;">${r.efficiency_score.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">Score/¢</span></span>
-                <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" onclick="inspectRun('${r.id}')">🔍 Inspect</button>
+                <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.id)}" onclick="inspectRun(this.dataset.runId)">🔍 Inspect</button>
               </div>
             </td>
           </tr>`;
@@ -2093,7 +2106,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
         document.getElementById('modalInspectThroughput').textContent = m.throughput_req_sec ? `${Math.round(m.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
         document.getElementById('modalInspectDuration').textContent = `${Math.round(m.duration_seconds || 0)}s`;
-        document.getElementById('modalInspectEffort').innerHTML = `${m.effort || 'auto'} <span style="color:var(--text-muted); font-size:0.72rem;">· ${m.task}</span>`;
+        document.getElementById('modalInspectEffort').innerHTML = `${escapeHtml(m.effort || 'auto')} <span style="color:var(--text-muted); font-size:0.72rem;">· ${escapeHtml(m.task)}</span>`;
 
         // Render Test Stages
         renderInspectStages(m);
@@ -2153,7 +2166,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         item.innerHTML = `
           <div style="display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">
             <span style="font-size:0.9rem;">${getFileIcon(f.name)}</span>
-            <span style="overflow:hidden; text-overflow:ellipsis;" title="${f.name}">${f.name}</span>
+            <span style="overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
           </div>
           <span style="font-size:0.68rem; color:var(--text-muted); flex-shrink:0; margin-left:6px;">${formatBytes(f.size_bytes)}</span>
         `;
@@ -2247,7 +2260,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           ${isFullPass ? '🎉 All Verification Stages Passed!' : `⚠️ Verification Incomplete: ${passed} of ${total} Passed (${(m.pass_rate || 0).toFixed(0)}%)`}
         </div>
         <div style="font-size: 0.78rem; color: var(--text-muted);">
-          Task: <b style="color:#fff;">${m.task}</b> | Status: <b style="color:#fff;">${m.status}</b>
+          Task: <b style="color:#fff;">${escapeHtml(m.task)}</b> | Status: <b style="color:#fff;">${escapeHtml(m.status)}</b>
         </div>
       `;
 
@@ -2261,13 +2274,13 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           const errBox = s.error ? `
             <div style="background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.3); border-radius: 4px; padding: 8px 12px; margin-top: 4px;">
               <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; margin-bottom: 2px;">FAILURE REASON:</div>
-              <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--danger); white-space: pre-wrap;">${s.error}</div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--danger); white-space: pre-wrap;">${escapeHtml(s.error)}</div>
             </div>
           ` : '';
 
           card.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-size: 0.86rem; font-weight: 600; color: #fff;">${s.name || `Stage ${s.stage}`}</span>
+              <span style="font-size: 0.86rem; font-weight: 600; color: #fff;">${escapeHtml(s.name || `Stage ${s.stage}`)}</span>
               ${badge}
             </div>
             ${errBox}
@@ -2302,14 +2315,14 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       if (m.env) {
         gitCommitSpan.textContent = `Git Baseline: ${m.git_commit || m.env.git_commit} (${m.env.git_branch || 'master'})`;
         grid.innerHTML = `
-          <div><span style="color:var(--text-muted)">OS:</span> <b>${m.env.os || 'Linux'}</b></div>
-          <div><span style="color:var(--text-muted)">Kernel:</span> <b>${m.env.kernel || 'N/A'}</b></div>
-          <div><span style="color:var(--text-muted)">Arch:</span> <b>${m.env.arch || 'x86_64'}</b></div>
-          <div><span style="color:var(--text-muted)">CPU:</span> <b>${m.env.cpu_model || 'Unknown'} (${m.env.cpu_cores || 0} vCPUs)</b></div>
-          <div><span style="color:var(--text-muted)">Memory:</span> <b>${m.env.total_memory || 'Unknown'}</b></div>
-          <div><span style="color:var(--text-muted)">Docker:</span> <b>${m.env.docker_version || 'N/A'}</b></div>
-          <div><span style="color:var(--text-muted)">Rust:</span> <b>${m.env.rust_version || 'N/A'}</b></div>
-          <div><span style="color:var(--text-muted)">Node / Python:</span> <b>${m.env.node_version || 'N/A'} / ${m.env.python_version || 'N/A'}</b></div>
+          <div><span style="color:var(--text-muted)">OS:</span> <b>${escapeHtml(m.env.os || 'Linux')}</b></div>
+          <div><span style="color:var(--text-muted)">Kernel:</span> <b>${escapeHtml(m.env.kernel || 'N/A')}</b></div>
+          <div><span style="color:var(--text-muted)">Arch:</span> <b>${escapeHtml(m.env.arch || 'x86_64')}</b></div>
+          <div><span style="color:var(--text-muted)">CPU:</span> <b>${escapeHtml(m.env.cpu_model || 'Unknown')} (${m.env.cpu_cores || 0} vCPUs)</b></div>
+          <div><span style="color:var(--text-muted)">Memory:</span> <b>${escapeHtml(m.env.total_memory || 'Unknown')}</b></div>
+          <div><span style="color:var(--text-muted)">Docker:</span> <b>${escapeHtml(m.env.docker_version || 'N/A')}</b></div>
+          <div><span style="color:var(--text-muted)">Rust:</span> <b>${escapeHtml(m.env.rust_version || 'N/A')}</b></div>
+          <div><span style="color:var(--text-muted)">Node / Python:</span> <b>${escapeHtml(m.env.node_version || 'N/A')} / ${escapeHtml(m.env.python_version || 'N/A')}</b></div>
         `;
       } else {
         gitCommitSpan.textContent = '';
@@ -2707,10 +2720,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         <div style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
           <div style="font-size: 0.75rem; color: var(--text-muted);">Throughput & Language</div>
           <div style="font-size: 0.95rem; font-weight: 600; margin-top: 4px;">
-            ${a.language} (${Math.round(a.throughput_req_sec || 0)} req/s)
+            ${escapeHtml(a.language)} (${Math.round(a.throughput_req_sec || 0)} req/s)
             <br>
             <span style="color: var(--text-muted); font-size: 0.8rem;">vs</span>
-            ${b.language} (${Math.round(b.throughput_req_sec || 0)} req/s)
+            ${escapeHtml(b.language)} (${Math.round(b.throughput_req_sec || 0)} req/s)
           </div>
         </div>
       `;
