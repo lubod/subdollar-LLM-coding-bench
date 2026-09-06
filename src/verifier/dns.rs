@@ -189,7 +189,7 @@ impl DnsVerifier {
                 }
             }
             Ok(_) => StageResult {
-                stage: 2,
+                stage: 3,
                 name,
                 passed: false,
                 error: Some("Response truncated".to_string()),

@@ -44,7 +44,11 @@ impl BufferingPipelineLogger {
 impl PipelineLogger for BufferingPipelineLogger {
     fn log(&self, msg: &str) {
         self.inner.log(msg);
-        self.buffer.lock().unwrap().push(msg.to_string());
+        let ts = Utc::now().format("%H:%M:%S").to_string();
+        self.buffer
+            .lock()
+            .unwrap()
+            .push(format!("[{}] {}", ts, msg));
     }
 }
 
@@ -601,6 +605,11 @@ mod tests {
         let content = fs::read_to_string(&console_log_path).unwrap();
         assert!(!content.is_empty());
         assert!(content.contains("[PIPELINE] Starting benchmark run"));
+        let first_line = content.lines().next().unwrap_or("");
+        assert!(
+            first_line.starts_with('[')
+                && first_line.contains("] [PIPELINE] Starting benchmark run")
+        );
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_workdir);

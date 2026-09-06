@@ -317,12 +317,26 @@ impl ComplianceChecker {
             return None;
         }
 
-        // If the command is echo, printf, cat, grep, etc., ignore its arguments
-        let safe_cmds = [
-            "echo", "printf", "print", "cat", "grep", "sed", "awk", "find", "test", "touch",
-            "mkdir", "cp", "mv", "rm", "kill", "killall", "pkill", "export",
-        ];
-        if safe_cmds.contains(&cmd_base) {
+        // Check subshell invocation: sh/bash/dash/zsh -c "..."
+        let shells = ["sh", "bash", "dash", "zsh"];
+        if shells.contains(&cmd_base) {
+            let args = &tokens[idx + 1..];
+            if let Some(c_pos) = args
+                .iter()
+                .position(|a| a == "-c" || (a.starts_with('-') && a.ends_with('c')))
+            {
+                let flag = &args[c_pos];
+                if let Some(flag_idx) = segment.find(flag) {
+                    let after_flag = segment[flag_idx + flag.len()..].trim();
+                    let inner_cmd = Self::clean_token(after_flag);
+                    if let Some(v) = Self::check_daemon_command(&inner_cmd) {
+                        return Some(format!(
+                            "subshell executes forbidden command via {}: {}",
+                            cmd_base, v
+                        ));
+                    }
+                }
+            }
             return None;
         }
 
@@ -796,6 +810,47 @@ mod tests {
             temp_dir.join("Dockerfile"),
             "FROM ubuntu:24.04\nRUN apt-get update && apt-get purge -y redis-server && echo \"no nginx here\"\nCMD [\"./my_server\"]\n"
         ).unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_compliance_checker_subshell_recursion() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_compliance_subshell_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        // 1. bash -c with direct daemon
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\nbash -c \"redis-server --port 6379\"\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_err());
+
+        // 2. sh -c with package manager install
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/sh\nsh -c \"apt-get install -y nginx\"\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_err());
+
+        // 3. bash -c with safe echo string mentioning redis-server
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\nbash -c \"echo redis-server\"\n./my_server\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        // 4. sh -c with package removal
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/sh\nsh -c \"apt-get remove -y redis-server\"\n./my_server\n",
+        )
+        .unwrap();
         assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
 
         let _ = fs::remove_dir_all(&temp_dir);

@@ -18,7 +18,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, llvm-tools-preview
+          components: clippy, rustfmt, llvm-tools-preview
 
       - name: Cache cargo registry & index
         uses: actions/cache@v4
@@ -35,6 +35,12 @@ jobs:
 
       - name: Run cargo check
         run: cargo check --all-targets
+
+      - name: Check code formatting (cargo fmt)
+        run: cargo fmt --check
+
+      - name: Run clippy linter
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Run unit & integration test suites
         run: cargo test --all-targets --verbose

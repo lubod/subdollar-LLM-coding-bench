@@ -47,6 +47,11 @@ pub fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
 pub struct LeaderboardManager;
 
 impl LeaderboardManager {
+    /// Detects the candidate implementation language by scanning source file extensions in `workdir`.
+    ///
+    /// Uses a deterministic priority hierarchy: `Rust` > `Go` > `C/C++` > `Node.js` > `Python`.
+    /// Priority ordering ensures deterministic categorization for polyglot workspaces
+    /// (e.g. wrapper/build scripts), favoring compiled systems languages over scripting runtimes.
     pub fn detect_language(workdir: &Path) -> String {
         let mut has_c = false;
         let mut has_rust = false;

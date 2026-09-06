@@ -118,7 +118,7 @@ export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 cargo run --release -- run \
   --task redis \
   --model openrouter/deepseek/deepseek-chat \
-  --budget-usd 0.20 \
+  --budget-usd 0.50 \
   --max-turns 15
 
 # Run HTTP benchmark with max reasoning effort
@@ -126,7 +126,7 @@ cargo run --release -- run \
   --task http \
   --model openrouter/google/gemini-2.5-flash \
   --effort max \
-  --budget-usd 0.20
+  --budget-usd 0.50
 ```
 
 #### CLI Options Reference
@@ -135,14 +135,16 @@ Usage: subdollar-bench run [OPTIONS] --model <MODEL>
 
 Options:
   -m, --model <MODEL>            OpenRouter model ID (e.g. openrouter/deepseek/deepseek-chat)
-  -t, --task <TASK>              Benchmark task [possible values: redis, http] [default: redis]
+  -t, --task <TASK>              Benchmark task [possible values: redis, http, dns] [default: redis]
   -e, --effort <EFFORT>          Reasoning effort: auto, max, high, medium, low, off [default: auto]
-  -b, --budget-usd <BUDGET_USD>  Maximum cost allowance in USD [default: 0.20]
+  -b, --budget-usd <BUDGET_USD>  Maximum cost allowance in USD [default: 0.50]
       --max-turns <MAX_TURNS>    Maximum agent conversation turns [default: 15]
       --timeout-min <MINUTES>    Execution timeout in minutes [default: 15]
       --api-key <KEY>            OpenRouter API key (overrides OPENROUTER_API_KEY env var)
       --workdir <DIR>            Candidate workspace output directory [default: ./workspace]
       --eval-only                Skip agent generation; evaluate existing code in workdir
+      --trials <TRIALS>          Number of repeated trials for statistical variance (Pass@k) [default: 1]
+      --no-save                  Do not save results or archive run artifacts to disk [default: false]
 ```
 
 #### Direct Protocol Evaluation (Standalone Mode)
@@ -153,6 +155,9 @@ cargo run --release -- eval --task redis --port 6379
 
 # Verify HTTP server on port 8080
 cargo run --release -- eval --task http --port 8080
+
+# Verify DNS server on port 5353
+cargo run --release -- eval --task dns --port 5353
 ```
 
 #### Inspect Leaderboard
