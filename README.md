@@ -184,12 +184,21 @@ cargo run --release -- summary
 
 SubDollarBench ranks models primarily by their **Engineering Efficiency Score**:
 
-$$\text{Efficiency Score} = \frac{\text{Pass Rate (\%)}}{\text{Cost (Cents)}} = \frac{\text{Pass Rate (\%)}}{\text{Cost (USD)} \times 100}$$
+$$\text{Efficiency Score} = \frac{\text{Pass Rate (\%)}}{\text{Effective Cost (Cents)}} = \frac{\text{Pass Rate (\%)}}{C_{\text{eff}} \times 100}$$
+
+Where **Effective Cost ($C_{\text{eff}}$)** incorporates API billing with compute duration and token baseline floor:
+
+$$C_{\text{compute}} = (T_{\text{seconds}} \times \$0.00003) + (N_{\text{tokens}} \times \$0.00000005)$$
+$$C_{\text{eff}} = C_{\text{API}} + C_{\text{compute}}$$
+
+- **Time Rate ($R_{\text{time}}$)**: $0.00003 / sec ($\\approx \$0.108 / hr$ container compute equivalent).
+- **Token Baseline ($R_{\text{token}}$)**: $0.00000005 / token ($0.05 / 1M tokens).
+- **Unified Local & Cloud Scoring**: Local models ($0.00 API cost) receive realistic, measurable efficiency scores instead of 0 or infinity, rewarding fast, token-efficient models.
 
 ### Example Rankings:
-- Model A: 100% pass rate at $0.010 USD (1.0¢) $\rightarrow$ **100.0 pts/¢**
-- Model B: 100% pass rate at $0.005 USD (0.5¢) $\rightarrow$ **200.0 pts/¢**
-- Model C: 75% pass rate at $0.005 USD (0.5¢) $\rightarrow$ **150.0 pts/¢**
+- Fast Cloud Model: 100% pass rate, $0.003 API + $0.002 compute = $0.005 (0.5¢) $\rightarrow$ **200.0 pts/¢**
+- Fast Local Model: 100% pass rate, $0.000 API + $0.003 compute = $0.003 (0.3¢) $\rightarrow$ **333.3 pts/¢**
+- Slow Looping Model: 100% pass rate, $0.002 API + $0.025 compute = $0.027 (2.7¢) $\rightarrow$ **37.0 pts/¢**
 
 ### Supported Cost Calculation:
 1. **Live OpenRouter Accounting:** If an API key is provided, the harness queries the `/api/v1/auth/key` endpoint before and after the run to verify the exact billing delta deducted by OpenRouter.

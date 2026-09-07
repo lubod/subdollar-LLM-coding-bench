@@ -39,6 +39,8 @@ pub struct RunManifest {
     pub throughput_req_sec: Option<f64>,
     pub tokens: RunTokenUsage,
     pub cost_usd: f64,
+    #[serde(default)]
+    pub effective_cost_usd: Option<f64>,
     pub savings_percent: f64,
     pub efficiency_score: f64,
     pub files: Vec<FileInfo>,
@@ -50,6 +52,12 @@ pub struct RunManifest {
     pub is_published: Option<bool>,
     #[serde(default)]
     pub method_version: Option<String>,
+}
+
+impl RunManifest {
+    pub fn effective_cost(&self) -> f64 {
+        self.effective_cost_usd.unwrap_or(self.cost_usd)
+    }
 }
 
 pub struct RunArchiver;
@@ -267,6 +275,7 @@ mod tests {
                 total_tokens: 11500,
             },
             cost_usd: 0.0025,
+            effective_cost_usd: Some(0.005),
             savings_percent: 65.0,
             efficiency_score: 400.0,
             files: scanned,

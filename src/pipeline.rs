@@ -451,6 +451,12 @@ impl BenchmarkPipeline {
         }
 
         // 10. Cost & Performance Accounting
+        let completed_at = Utc::now().to_rfc3339();
+        let duration_seconds = start_time.elapsed().as_secs_f64();
+        let total_run_tokens = omp_stats
+            .total_tokens
+            .max(prompt_tokens + completion_tokens);
+
         let pricing = ModelPricing::for_model_async(&config.model).await;
         let breakdown =
             pricing.compute_cost_with_cache(prompt_tokens, cached_tokens, completion_tokens);
@@ -466,16 +472,12 @@ impl BenchmarkPipeline {
         }
 
         let cost_usd = live_spend_delta.unwrap_or(breakdown.total_cost_usd);
-        let cost_cents = (cost_usd * 100.0).max(0.0001);
-        let efficiency_score = if cost_usd > 0.0 {
-            pass_rate / cost_cents
-        } else {
-            0.0
-        };
+        let effective_cost_usd =
+            ModelPricing::calculate_effective_cost(cost_usd, duration_seconds, total_run_tokens);
+        let efficiency_score =
+            ModelPricing::calculate_efficiency_score(pass_rate, effective_cost_usd);
 
         let lang = LeaderboardManager::detect_language(&config.workdir);
-        let completed_at = Utc::now().to_rfc3339();
-        let duration_seconds = start_time.elapsed().as_secs_f64();
         let scanned_files = RunArchiver::scan_workspace_files(&config.workdir);
 
         let manifest = RunManifest {
@@ -514,6 +516,7 @@ impl BenchmarkPipeline {
                     .max(prompt_tokens + completion_tokens),
             },
             cost_usd,
+            effective_cost_usd: Some(effective_cost_usd),
             savings_percent: breakdown.savings_percent,
             efficiency_score,
             files: scanned_files,
@@ -537,6 +540,8 @@ impl BenchmarkPipeline {
             cached_tokens,
             completion_tokens,
             total_cost_usd: cost_usd,
+            effective_cost_usd: Some(effective_cost_usd),
+            duration_seconds: Some(duration_seconds),
             savings_percent: breakdown.savings_percent,
             efficiency_score,
             timestamp: completed_at,

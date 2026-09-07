@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-07 07:21:57 UTC*
+*Last Updated: 2026-09-07 13:33:38 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -17,7 +17,15 @@
 
 | Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 🥇 1 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_072100/) |
+| 🥇 1 | `openrouter/meta/muse-spark-1.3-contributor` | `auto` | HTTP/1.1 | `Python` | 100% (5/5) | 30976 req/s | $0.0027 *(eff: $0.0130)* | **77.1** pts/¢ | [Inspect](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260907_125627/) |
+| 🥈 2 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0011)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_072433/) |
+| 🥉 3 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0022)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_072100/) |
+| 4 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0022)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_081009/) |
+| 5 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Python` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0043)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_114159/) |
+| 6 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Python` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0044)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_084014/) |
+| 7 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Go` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0104)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_092044/) |
+| 8 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0125)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_075504/) |
+| 9 | `openrouter/~z-ai/glm-flash-latest` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0350)* | **0.0** pts/¢ | [Inspect](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
 
 ---
 
@@ -40,7 +48,15 @@ The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server fr
 
 | Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `openrouter/meta/muse-spark-1.3-contributor` | `auto` | `Python` | 100% | 30976 req/s | $0.0027 | 77.1 pts/¢ | [runs/http_openrouter_meta_muse-spark-1.3-contributor_20260907_125627/](runs/http_openrouter_meta_muse-spark-1.3-contributor_20260907_125627/) |
+| `openai/qwen2.5-coder-7b` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_072433/](runs/http_openai_qwen2.5-coder-7b_20260907_072433/) |
 | `openai/qwen2.5-coder-7b` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_072100/](runs/http_openai_qwen2.5-coder-7b_20260907_072100/) |
+| `openai/qwen2.5-coder-7b` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_081009/](runs/http_openai_qwen2.5-coder-7b_20260907_081009/) |
+| `openai/qwen2.5-coder-7b` | `auto` | `Python` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_114159/](runs/http_openai_qwen2.5-coder-7b_20260907_114159/) |
+| `openai/qwen2.5-coder-7b` | `auto` | `Python` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_084014/](runs/http_openai_qwen2.5-coder-7b_20260907_084014/) |
+| `openai/qwen2.5-coder-7b` | `auto` | `Go` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_092044/](runs/http_openai_qwen2.5-coder-7b_20260907_092044/) |
+| `openai/qwen2.5-coder-7b` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_075504/](runs/http_openai_qwen2.5-coder-7b_20260907_075504/) |
+| `openrouter/~z-ai/glm-flash-latest` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
 
 ---
 
@@ -58,8 +74,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `16c46ba` (branch `master`) |
-| **Benchmark Captured** | 2026-09-07T07:21:57.496998428+00:00 |
+| **Git Baseline** | Commit `bcd24a3` (branch `master`) |
+| **Benchmark Captured** | 2026-09-07T13:33:38.206347581+00:00 |
 
 ---
 

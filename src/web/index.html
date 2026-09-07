@@ -1979,7 +1979,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             </td>
             <td>
               <div style="display: flex; flex-direction: column; gap: 2px;">
-                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${r.cost_usd.toFixed(4)}</span>
+                <div>
+                  <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${((r.effective_cost_usd !== undefined && r.effective_cost_usd !== null) ? r.effective_cost_usd : r.cost_usd).toFixed(4)}</span>
+                  ${(r.effective_cost_usd !== undefined && r.effective_cost_usd !== null && Math.abs(r.effective_cost_usd - r.cost_usd) > 0.00001) ? `<span style="font-size: 0.7rem; color: var(--text-muted);" title="Model API Spend">(API: $${r.cost_usd.toFixed(4)})</span>` : ''}
+                </div>
                 <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
               </div>
             </td>
@@ -2031,8 +2034,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
                 <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem; margin-top: 2px;">${r.efficiency_score.toFixed(1)}</div>
               </div>
               <div>
-                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Cost</div>
-                <div style="font-weight: 600; color: var(--accent); font-size: 0.78rem; margin-top: 2px;">$${r.cost_usd.toFixed(4)}</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Eff Cost</div>
+                <div style="font-weight: 600; color: var(--accent); font-size: 0.78rem; margin-top: 2px;">$${((r.effective_cost_usd !== undefined && r.effective_cost_usd !== null) ? r.effective_cost_usd : r.cost_usd).toFixed(4)}</div>
               </div>
               <div>
                 <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Throughput</div>
@@ -2099,7 +2102,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             </td>
             <td>
               <div style="display: flex; flex-direction: column; gap: 2px;">
-                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${r.total_cost_usd.toFixed(4)}</span>
+                <div>
+                  <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${((r.effective_cost_usd !== undefined && r.effective_cost_usd !== null) ? r.effective_cost_usd : r.total_cost_usd).toFixed(4)}</span>
+                  ${(r.effective_cost_usd !== undefined && r.effective_cost_usd !== null && Math.abs(r.effective_cost_usd - r.total_cost_usd) > 0.00001) ? `<span style="font-size: 0.7rem; color: var(--text-muted);" title="Model API Spend">(API: $${r.total_cost_usd.toFixed(4)})</span>` : ''}
+                </div>
                 <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
               </div>
             </td>
@@ -2214,7 +2220,14 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         document.getElementById('modalInspectPass').innerHTML = m.pass_rate === 100 
           ? `<span style="color: var(--success);">${m.pass_rate}% (${m.passed_stages || 0}/${m.total_stages || 0})</span>` 
           : `<span style="color: var(--danger);">${(m.pass_rate || 0).toFixed(0)}% (${m.passed_stages || 0}/${m.total_stages || 0})</span>`;
-        document.getElementById('modalInspectCost').textContent = `$${(m.cost_usd || 0).toFixed(4)}`;
+        const effCost = (m.effective_cost_usd !== undefined && m.effective_cost_usd !== null) ? m.effective_cost_usd : (m.cost_usd || 0);
+        const apiCost = m.cost_usd || 0;
+        const compCost = Math.max(0, effCost - apiCost);
+        if (Math.abs(effCost - apiCost) > 0.00001) {
+          document.getElementById('modalInspectCost').innerHTML = `$${effCost.toFixed(4)} <span style="font-size:0.68rem; color:var(--text-muted); font-weight:normal;">(API: $${apiCost.toFixed(4)} + Comp: $${compCost.toFixed(4)})</span>`;
+        } else {
+          document.getElementById('modalInspectCost').textContent = `$${effCost.toFixed(4)}`;
+        }
         
         let tokenStr = 'N/A';
         if (m.tokens) {
@@ -2801,8 +2814,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const a = data.run_a;
       const b = data.run_b;
 
-      const scoreDiff = (b.score_per_cent - a.score_per_cent).toFixed(1);
-      const costDiff = (b.cost_usd - a.cost_usd).toFixed(4);
+      const effCostA = (a.effective_cost_usd !== undefined && a.effective_cost_usd !== null) ? a.effective_cost_usd : a.cost_usd;
+      const effCostB = (b.effective_cost_usd !== undefined && b.effective_cost_usd !== null) ? b.effective_cost_usd : b.cost_usd;
+      const scoreDiff = (b.efficiency_score - a.efficiency_score).toFixed(1);
+      const costDiff = (effCostB - effCostA).toFixed(4);
       const passDiff = (b.pass_rate - a.pass_rate).toFixed(0);
 
       summaryCard.innerHTML = `

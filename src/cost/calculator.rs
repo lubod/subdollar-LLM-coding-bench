@@ -15,7 +15,33 @@ pub struct ModelPricing {
     pub cache_read_per_million: f64,
 }
 
+/// Equivalent compute runtime rate in USD per second ($0.00003/sec ~= $0.108/hour).
+pub const COMPUTE_COST_PER_SECOND: f64 = 0.00003;
+
+/// Baseline token volume processing rate in USD per token ($0.05 per 1M tokens).
+pub const COMPUTE_COST_PER_TOKEN: f64 = 0.00000005;
+
 impl ModelPricing {
+    /// Calculates the equivalent compute cost from execution duration and total token volume.
+    pub fn compute_cost(duration_seconds: f64, total_tokens: u64) -> f64 {
+        (duration_seconds * COMPUTE_COST_PER_SECOND) + (total_tokens as f64 * COMPUTE_COST_PER_TOKEN)
+    }
+
+    /// Calculates effective total cost: API spend + compute runtime floor.
+    pub fn calculate_effective_cost(api_cost_usd: f64, duration_seconds: f64, total_tokens: u64) -> f64 {
+        api_cost_usd + Self::compute_cost(duration_seconds, total_tokens)
+    }
+
+    /// Calculates Engineering Efficiency Score (pts/¢): Pass Rate (%) / (Effective Cost in Cents)
+    pub fn calculate_efficiency_score(pass_rate: f64, effective_cost_usd: f64) -> f64 {
+        if effective_cost_usd > 0.0 {
+            let cost_cents = (effective_cost_usd * 100.0).max(0.0001);
+            pass_rate / cost_cents
+        } else {
+            0.0
+        }
+    }
+
     pub fn new(
         prompt_per_million: f64,
         completion_per_million: f64,
@@ -410,6 +436,20 @@ mod tests {
         let unknown = ModelPricing::for_model_async("completely-unknown-xyz").await;
         assert_eq!(unknown.prompt_per_million, 0.20);
         assert_eq!(unknown.completion_per_million, 0.60);
+    }
+
+    #[test]
+    fn test_compute_cost_and_efficiency_score() {
+        let comp = ModelPricing::compute_cost(100.0, 200_000);
+        assert!((comp - 0.013).abs() < 1e-9);
+
+        let eff = ModelPricing::calculate_effective_cost(0.0, 100.0, 200_000);
+        assert!((eff - 0.013).abs() < 1e-9);
+
+        let score = ModelPricing::calculate_efficiency_score(100.0, eff);
+        assert!((score - (100.0 / 1.3)).abs() < 1e-3);
+
+        assert_eq!(ModelPricing::calculate_efficiency_score(0.0, eff), 0.0);
     }
 
     #[test]

@@ -21,10 +21,20 @@ pub struct BenchmarkRunResult {
     pub cached_tokens: u64,
     pub completion_tokens: u64,
     pub total_cost_usd: f64,
+    #[serde(default)]
+    pub effective_cost_usd: Option<f64>,
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
     pub savings_percent: f64,
     pub efficiency_score: f64,
     pub timestamp: String,
     pub method_version: Option<String>,
+}
+
+impl BenchmarkRunResult {
+    pub fn effective_cost(&self) -> f64 {
+        self.effective_cost_usd.unwrap_or(self.total_cost_usd)
+    }
 }
 
 pub fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
@@ -161,8 +171,10 @@ impl LeaderboardManager {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .then_with(|| {
-                    a.total_cost_usd
-                        .partial_cmp(&b.total_cost_usd)
+                    let a_cost = a.effective_cost();
+                    let b_cost = b.effective_cost();
+                    a_cost
+                        .partial_cmp(&b_cost)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
         });
@@ -317,6 +329,8 @@ mod tests {
             cached_tokens: 500,
             completion_tokens: 100,
             total_cost_usd: 0.005,
+            effective_cost_usd: Some(0.008),
+            duration_seconds: Some(60.0),
             savings_percent: 50.0,
             efficiency_score: 200.0,
             timestamp: "2026-09-04T12:00:00Z".to_string(),
@@ -346,6 +360,8 @@ mod tests {
             cached_tokens: 500,
             completion_tokens: 200,
             total_cost_usd: 0.001,
+            effective_cost_usd: Some(0.003),
+            duration_seconds: Some(40.0),
             savings_percent: 25.0,
             efficiency_score: 300.0,
             timestamp: "2026-09-04T06:00:00Z".to_string(),
@@ -367,6 +383,8 @@ mod tests {
             cached_tokens: 1500,
             completion_tokens: 300,
             total_cost_usd: 0.005,
+            effective_cost_usd: Some(0.008),
+            duration_seconds: Some(50.0),
             savings_percent: 60.0,
             efficiency_score: 200.0,
             timestamp: "2026-09-04T06:05:00Z".to_string(),

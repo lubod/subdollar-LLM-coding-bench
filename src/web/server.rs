@@ -142,6 +142,8 @@ pub struct RunComparisonResponse {
 pub struct MetricComparison {
     pub pass_rate_delta: f64,
     pub cost_delta: f64,
+    #[serde(default)]
+    pub effective_cost_delta: Option<f64>,
     pub tokens_delta: i64,
     pub duration_delta: f64,
     pub throughput_delta: Option<f64>,
@@ -645,6 +647,7 @@ async fn compare_runs(
     let metric_diff = MetricComparison {
         pass_rate_delta: manifest_b.pass_rate - manifest_a.pass_rate,
         cost_delta: manifest_b.cost_usd - manifest_a.cost_usd,
+        effective_cost_delta: Some(manifest_b.effective_cost() - manifest_a.effective_cost()),
         tokens_delta: (manifest_b.tokens.total_tokens as i64)
             - (manifest_a.tokens.total_tokens as i64),
         duration_delta: manifest_b.duration_seconds - manifest_a.duration_seconds,
@@ -1387,6 +1390,7 @@ mod tests {
                 total_tokens: 1200,
             },
             cost_usd: 0.05,
+            effective_cost_usd: Some(0.055),
             savings_percent: 25.0,
             efficiency_score: 15.0,
             files: Vec::new(),
@@ -1417,6 +1421,7 @@ mod tests {
                 total_tokens: 1800,
             },
             cost_usd: 0.08,
+            effective_cost_usd: Some(0.085),
             savings_percent: 20.0,
             efficiency_score: 12.5,
             files: Vec::new(),

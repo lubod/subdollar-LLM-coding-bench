@@ -22,8 +22,10 @@ impl SummaryGenerator {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .then_with(|| {
-                    a.cost_usd
-                        .partial_cmp(&b.cost_usd)
+                    let a_cost = a.effective_cost();
+                    let b_cost = b.effective_cost();
+                    a_cost
+                        .partial_cmp(&b_cost)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .then_with(|| {
@@ -95,7 +97,12 @@ impl SummaryGenerator {
                     .map(|t| format!("{:.0} req/s", t))
                     .unwrap_or_else(|| "N/A".to_string());
 
-                let cost_str = format!("${:.4}", r.cost_usd);
+                let eff_c = r.effective_cost();
+                let cost_str = if (eff_c - r.cost_usd).abs() > 0.0001 {
+                    format!("${:.4} *(eff: ${:.4})*", r.cost_usd, eff_c)
+                } else {
+                    format!("${:.4}", r.cost_usd)
+                };
                 let score_str = format!("**{:.1}** pts/¢", r.efficiency_score);
                 let link_str = format!("[Inspect](runs/{}/)", r.run_id);
 
@@ -299,6 +306,7 @@ mod tests {
                 total_tokens: 1200,
             },
             cost_usd: 0.01,
+            effective_cost_usd: Some(0.015),
             savings_percent: 50.0,
             efficiency_score: 100.0,
             files: vec![],

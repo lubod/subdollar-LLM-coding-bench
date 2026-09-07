@@ -81,6 +81,8 @@ impl RunPublisher {
             cached_tokens: manifest.tokens.cached_tokens,
             completion_tokens: manifest.tokens.completion_tokens,
             total_cost_usd: manifest.cost_usd,
+            effective_cost_usd: manifest.effective_cost_usd,
+            duration_seconds: Some(manifest.duration_seconds),
             savings_percent: manifest.savings_percent,
             efficiency_score: manifest.efficiency_score,
             timestamp: manifest.completed_at.clone(),
@@ -188,15 +190,24 @@ impl RunPublisher {
         if let Some(tp) = m.throughput_req_sec {
             md.push_str(&format!("- **Throughput**: {:.0} req/sec\n", tp));
         }
-        md.push_str(&format!("- **Cost**: ${:.4} USD\n", m.cost_usd));
+        md.push_str(&format!("- **API Cost**: ${:.4} USD\n", m.cost_usd));
+        if let Some(eff_cost) = m.effective_cost_usd {
+            let compute_cost = (eff_cost - m.cost_usd).max(0.0);
+            md.push_str(&format!("- **Compute Cost**: ${:.4} USD (time & token baseline)\n", compute_cost));
+            md.push_str(&format!("- **Effective Total Cost**: ${:.4} USD ({:.3}¢)\n", eff_cost, eff_cost * 100.0));
+        }
         md.push_str(&format!("- **Cache Savings**: {:.1}%\n", m.savings_percent));
         md.push_str(&format!(
             "- **Efficiency Score**: **{:.1} pts/¢**\n",
             m.efficiency_score
         ));
         md.push_str(&format!(
-            "- **Execution Duration**: {:.1}s\n\n",
+            "- **Execution Duration**: {:.1}s\n",
             m.duration_seconds
+        ));
+        md.push_str(&format!(
+            "- **Tokens**: {} total ({} prompt, {} cached, {} completion)\n\n",
+            m.tokens.total_tokens, m.tokens.prompt_tokens, m.tokens.cached_tokens, m.tokens.completion_tokens
         ));
 
         md.push_str("## 🧪 Verification Stages\n\n");
@@ -294,6 +305,7 @@ mod tests {
                 total_tokens: 1200,
             },
             cost_usd: 0.01,
+            effective_cost_usd: Some(0.015),
             savings_percent: 50.0,
             efficiency_score: 100.0,
             files: vec![FileInfo {
@@ -387,6 +399,7 @@ mod tests {
                 total_tokens: 600,
             },
             cost_usd: 0.005,
+            effective_cost_usd: Some(0.008),
             savings_percent: 0.0,
             efficiency_score: 200.0,
             files: vec![],
