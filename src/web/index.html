@@ -267,8 +267,17 @@
       gap: 8px;
       height: 100%;
     }
+    @keyframes liveDotPulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.7); }
+      70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+    }
+    .live-dot-running {
+      background: #3fb950 !important;
+      animation: liveDotPulse 1.8s infinite;
+    }
+
     .terminal {
-      background: #05070a;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 16px;
@@ -1079,6 +1088,34 @@
               <button class="btn btn-secondary" style="padding: 3px 8px; font-size: 0.75rem;" onclick="clearConsole()">Clear</button>
             </div>
           </div>
+
+          <!-- Live Telemetry Status Bar (Elapsed, Turns, Spent, Tokens) -->
+          <div id="liveTelemetryBar" style="display: flex; gap: 14px; align-items: center; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 9px 15px; flex-wrap: wrap; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
+            <div style="display: flex; align-items: center; gap: 7px;">
+              <span style="font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">⏱️ Elapsed</span>
+              <span id="liveMetricElapsed" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #58a6ff; font-size: 1.05rem;">00:00</span>
+            </div>
+            <div style="width: 1px; height: 18px; background: var(--border);"></div>
+            <div style="display: flex; align-items: center; gap: 7px;">
+              <span style="font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">🔄 Turns</span>
+              <span id="liveMetricTurns" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #e3b341; font-size: 1.05rem;">0 / 15</span>
+            </div>
+            <div style="width: 1px; height: 18px; background: var(--border);"></div>
+            <div style="display: flex; align-items: center; gap: 7px;">
+              <span style="font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">💰 Current Spent</span>
+              <span id="liveMetricSpent" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #3fb950; font-size: 1.05rem;">$0.0000</span>
+            </div>
+            <div style="width: 1px; height: 18px; background: var(--border);"></div>
+            <div style="display: flex; align-items: center; gap: 7px;">
+              <span style="font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">⚡ Tokens</span>
+              <span id="liveMetricTokens" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #bc8cff; font-size: 1.05rem;">0</span>
+            </div>
+            <div id="liveMetricStatusWrapper" style="margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 0.78rem;">
+              <span id="liveMetricStatusDot" style="width: 9px; height: 9px; border-radius: 50%; background: #484f58; display: inline-block;"></span>
+              <span id="liveMetricStatusText" style="color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">IDLE</span>
+            </div>
+          </div>
+
           <div class="terminal" id="terminalOutput">SubDollarBench console initialized.
 Select a model, choose reasoning effort, and click "Start Benchmark Run" to begin.
 </div>
@@ -1493,11 +1530,161 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
+    // =========================================================================
+    // Live Console Telemetry Engine (Elapsed, Turns, Spent, Tokens)
+    // =========================================================================
+    let liveTelemetry = {
+      startedAtMs: null,
+      durationSecs: null,
+      turns: 0,
+      maxTurns: 15,
+      spent: 0.0,
+      tokens: 0,
+      isRunning: false,
+      timerInterval: null
+    };
+
+    function formatElapsed(totalSeconds) {
+      const s = Math.max(0, Math.floor(totalSeconds));
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      if (hrs > 0) {
+        return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function updateTelemetryDisplay() {
+      const elapsedEl = document.getElementById('liveMetricElapsed');
+      const turnsEl = document.getElementById('liveMetricTurns');
+      const spentEl = document.getElementById('liveMetricSpent');
+      const tokensEl = document.getElementById('liveMetricTokens');
+      const statusDot = document.getElementById('liveMetricStatusDot');
+      const statusText = document.getElementById('liveMetricStatusText');
+
+      if (turnsEl) {
+        if (liveTelemetry.maxTurns > 0) {
+          turnsEl.textContent = `${liveTelemetry.turns} / ${liveTelemetry.maxTurns}`;
+        } else {
+          turnsEl.textContent = `${liveTelemetry.turns}`;
+        }
+      }
+
+      if (spentEl) {
+        spentEl.textContent = `$${Number(liveTelemetry.spent).toFixed(4)}`;
+      }
+
+      if (tokensEl) {
+        tokensEl.textContent = Number(liveTelemetry.tokens).toLocaleString();
+      }
+
+      if (statusDot && statusText) {
+        if (liveTelemetry.isRunning) {
+          statusDot.className = 'live-dot-running';
+          statusText.style.color = '#3fb950';
+          statusText.textContent = 'RUNNING';
+        } else if (liveTelemetry.durationSecs !== null || liveTelemetry.turns > 0 || liveTelemetry.spent > 0) {
+          statusDot.className = '';
+          statusDot.style.background = '#238636';
+          statusText.style.color = '#3fb950';
+          statusText.textContent = 'COMPLETED';
+        } else {
+          statusDot.className = '';
+          statusDot.style.background = '#484f58';
+          statusText.style.color = 'var(--text-muted)';
+          statusText.textContent = 'IDLE';
+        }
+      }
+    }
+
+    function startElapsedTimer(startTimeMs) {
+      liveTelemetry.startedAtMs = startTimeMs;
+      liveTelemetry.isRunning = true;
+      if (liveTelemetry.timerInterval) clearInterval(liveTelemetry.timerInterval);
+
+      function tick() {
+        if (!liveTelemetry.startedAtMs) return;
+        const elapsedSecs = Math.max(0, Math.floor((Date.now() - liveTelemetry.startedAtMs) / 1000));
+        const elapsedEl = document.getElementById('liveMetricElapsed');
+        if (elapsedEl) {
+          elapsedEl.textContent = formatElapsed(elapsedSecs);
+        }
+      }
+
+      tick();
+      liveTelemetry.timerInterval = setInterval(tick, 1000);
+      updateTelemetryDisplay();
+    }
+
+    function stopElapsedTimer(finalDurationSecs = null) {
+      if (liveTelemetry.timerInterval) {
+        clearInterval(liveTelemetry.timerInterval);
+        liveTelemetry.timerInterval = null;
+      }
+      liveTelemetry.isRunning = false;
+      if (finalDurationSecs !== null) {
+        liveTelemetry.durationSecs = finalDurationSecs;
+      } else if (liveTelemetry.startedAtMs) {
+        liveTelemetry.durationSecs = Math.max(0, Math.floor((Date.now() - liveTelemetry.startedAtMs) / 1000));
+      }
+      const elapsedEl = document.getElementById('liveMetricElapsed');
+      if (elapsedEl && liveTelemetry.durationSecs !== null) {
+        elapsedEl.textContent = formatElapsed(liveTelemetry.durationSecs);
+      }
+      updateTelemetryDisplay();
+    }
+
+    function parseTelemetryLine(line) {
+      if (!line) return false;
+
+      // 1. Structured [TELEMETRY] turn=X max_turns=Y spent=Z tokens=W
+      const telMatch = line.match(/\[TELEMETRY\]\s+turn=(\d+)(?:\s+max_turns=(\d+))?(?:\s+spent=([\d.]+))?(?:\s+tokens=(\d+))?/i);
+      if (telMatch) {
+        if (telMatch[1] !== undefined) liveTelemetry.turns = parseInt(telMatch[1], 10);
+        if (telMatch[2] !== undefined && parseInt(telMatch[2], 10) > 0) liveTelemetry.maxTurns = parseInt(telMatch[2], 10);
+        if (telMatch[3] !== undefined) liveTelemetry.spent = parseFloat(telMatch[3]);
+        if (telMatch[4] !== undefined) liveTelemetry.tokens = parseInt(telMatch[4], 10);
+        updateTelemetryDisplay();
+        return true;
+      }
+
+      // 2. Human-readable [LIVE] Turn X/Y | Spent: $Z | Tokens: W
+      const liveMatch = line.match(/\[LIVE\]\s+Turn\s+(\d+)\s*\/\s*(\d+|\S+)\s*\|\s*Spent:\s*\$([\d.]+)(?:\s*\|\s*Tokens:\s*([\d,]+))?/i);
+      if (liveMatch) {
+        liveTelemetry.turns = parseInt(liveMatch[1], 10);
+        if (liveMatch[2] && !isNaN(parseInt(liveMatch[2], 10))) {
+          liveTelemetry.maxTurns = parseInt(liveMatch[2], 10);
+        }
+        liveTelemetry.spent = parseFloat(liveMatch[3]);
+        if (liveMatch[4]) {
+          liveTelemetry.tokens = parseInt(liveMatch[4].replace(/,/g, ''), 10);
+        }
+        updateTelemetryDisplay();
+        return false;
+      }
+
+      // 3. Fallback token usage matching
+      const tokMatch = line.match(/\[TOKENS\]\s+Turn usage - input:\s*(\d+),\s*output:\s*(\d+)/i);
+      if (tokMatch) {
+        const sum = parseInt(tokMatch[1], 10) + parseInt(tokMatch[2], 10);
+        if (liveTelemetry.tokens === 0) {
+          liveTelemetry.tokens += sum;
+          updateTelemetryDisplay();
+        }
+      }
+
+      return false;
+    }
+
     function clearConsole() {
       document.getElementById('terminalOutput').textContent = '';
     }
 
     function appendLog(line) {
+      if (parseTelemetryLine(line)) {
+        return; // Suppress raw control line from cluttering the terminal
+      }
       const term = document.getElementById('terminalOutput');
       term.textContent += line + '\n';
       const autoScroll = document.getElementById('autoScrollCheck');
@@ -2615,7 +2802,15 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           const text = await res.text();
           const term = document.getElementById('terminalOutput');
           if (text.trim() && (force || text.length > term.textContent.length || !term.textContent.includes(text.slice(-50)))) {
-            term.textContent = text;
+            const lines = text.split('\n');
+            for (let i = lines.length - 1; i >= 0; i--) {
+              if (lines[i].includes('[TELEMETRY]') || lines[i].includes('[LIVE]')) {
+                parseTelemetryLine(lines[i]);
+                break;
+              }
+            }
+            const cleanText = lines.filter(l => !l.includes('[TELEMETRY]')).join('\n');
+            term.textContent = cleanText;
             const autoScroll = document.getElementById('autoScrollCheck');
             if (!autoScroll || autoScroll.checked) {
               term.scrollTop = term.scrollHeight;
@@ -2668,6 +2863,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       activeEventSource.onmessage = (event) => {
         if (event.data === '[DONE]') {
           appendLog('\n[COMPLETED] Benchmark run finished.');
+          stopElapsedTimer();
           try { activeEventSource.close(); } catch(e) {}
           activeEventSource = null;
           if (pText) pText.textContent = 'Completed';
@@ -2702,6 +2898,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const res = await fetch('/api/run/stop', { method: 'POST' });
         if (res.ok) {
           appendLog('[STOP] Benchmark cancellation requested by user.');
+          stopElapsedTimer();
         } else {
           const err = await res.text();
           alert(`Failed to stop run: ${err}`);
@@ -2961,10 +3158,37 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
               if (taskSelect) taskSelect.value = m.task;
             }
             if (m.effort) setEffort(m.effort);
+            if (m.turns !== undefined) liveTelemetry.turns = m.turns;
+            if (m.max_turns !== undefined && m.max_turns > 0) liveTelemetry.maxTurns = m.max_turns;
+            if (m.cost_usd !== undefined) liveTelemetry.spent = m.cost_usd;
+            if (m.tokens !== undefined) liveTelemetry.tokens = m.tokens;
+
+            if (m.started_at && (!liveTelemetry.isRunning || !liveTelemetry.startedAtMs)) {
+              startElapsedTimer(new Date(m.started_at).getTime());
+            }
           }
+          liveTelemetry.isRunning = true;
+          updateTelemetryDisplay();
           fetchConsoleLogs(false);
           if (!activeEventSource) {
             attachLogStream();
+          }
+        } else {
+          if (liveTelemetry.isRunning) {
+            stopElapsedTimer();
+          }
+          if (data.last_run && liveTelemetry.turns === 0 && liveTelemetry.spent === 0) {
+            const lr = data.last_run;
+            liveTelemetry.turns = lr.turns || 0;
+            liveTelemetry.maxTurns = lr.max_turns || 15;
+            liveTelemetry.spent = lr.cost_usd || 0.0;
+            liveTelemetry.tokens = lr.tokens || 0;
+            if (lr.duration_secs) {
+              liveTelemetry.durationSecs = lr.duration_secs;
+              const elapsedEl = document.getElementById('liveMetricElapsed');
+              if (elapsedEl) elapsedEl.textContent = formatElapsed(lr.duration_secs);
+            }
+            updateTelemetryDisplay();
           }
         }
       } catch (e) {
@@ -2991,6 +3215,14 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       switchTab('console');
       clearConsole();
       appendLog(`[INIT] Starting benchmark for ${model} (Effort: ${effort}) on task '${task}'...`);
+
+      // Initialize Live Telemetry
+      liveTelemetry.turns = 0;
+      liveTelemetry.maxTurns = turns;
+      liveTelemetry.spent = 0.0;
+      liveTelemetry.tokens = 0;
+      liveTelemetry.durationSecs = null;
+      startElapsedTimer(Date.now());
 
       const startBtn = document.getElementById('startBtn');
       startBtn.disabled = true;

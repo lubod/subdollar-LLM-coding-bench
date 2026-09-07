@@ -49,6 +49,7 @@ pub struct TailSessionContext {
     pub limits: AgentExecutionLimits,
     pub turn_counter: Arc<std::sync::atomic::AtomicU32>,
     pub accumulated_cost: Arc<Mutex<f64>>,
+    pub accumulated_tokens: Arc<std::sync::atomic::AtomicU64>,
     pub limit_reached: Arc<AtomicBool>,
     pub limit_reason: Arc<Mutex<Option<String>>>,
 }
@@ -396,8 +397,19 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
 
         let turn_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let accumulated_cost = Arc::new(Mutex::new(0.0f64));
+        let accumulated_tokens = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let limit_reached = Arc::new(AtomicBool::new(false));
         let limit_reason = Arc::new(Mutex::new(Option::<String>::None));
+
+        let _ = tx.send(format!(
+            "[TELEMETRY] turn=0 max_turns={} spent=0.000000 tokens=0",
+            limits.max_turns.unwrap_or(0)
+        ));
+        let _ = tx.send(format!(
+            "[LIVE] Agent initialized. Max turns: {}, Budget: ${:.2}",
+            limits.max_turns.unwrap_or(0),
+            limits.max_budget_usd.unwrap_or(0.0)
+        ));
 
         // Spawn thread to tail the active session .jsonl file in real-time
         let tail_ctx = TailSessionContext {
@@ -409,6 +421,7 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
             limits,
             turn_counter: turn_counter.clone(),
             accumulated_cost: accumulated_cost.clone(),
+            accumulated_tokens: accumulated_tokens.clone(),
             limit_reached: limit_reached.clone(),
             limit_reason: limit_reason.clone(),
         };
@@ -626,13 +639,15 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
                 }
                 Ok(_) => {
                     if line_buf.ends_with('\n') {
-                        // Check limits in session line
+                        // Check limits & telemetry in session line
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line_buf.trim())
                         {
+                            let mut assistant_turn = false;
                             // 1. Assistant turn check
                             if val.pointer("/message/role").and_then(|r| r.as_str())
                                 == Some("assistant")
                             {
+                                assistant_turn = true;
                                 let c = ctx.turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
                                 if let Some(max_t) = ctx.limits.max_turns {
                                     if c >= max_t {
@@ -644,12 +659,14 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
                                 }
                             }
                             // 2. Budget check
+                            let mut cost_updated = false;
                             if let Some(cost) = val
                                 .pointer("/message/usage/cost/total")
                                 .and_then(|c| c.as_f64())
                             {
                                 if let Ok(mut c_lock) = ctx.accumulated_cost.lock() {
                                     *c_lock += cost;
+                                    cost_updated = true;
                                     let current_spend = *c_lock;
                                     if let Some(max_b) = ctx.limits.max_budget_usd {
                                         if current_spend >= max_b {
@@ -660,6 +677,42 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
                                         }
                                     }
                                 }
+                            }
+
+                            // 3. Token tracking
+                            if let Some(usage) = val.pointer("/message/usage").or_else(|| val.get("usage")) {
+                                let tin = usage
+                                    .get("input")
+                                    .or_else(|| usage.get("prompt_tokens"))
+                                    .and_then(|x| x.as_u64())
+                                    .unwrap_or(0);
+                                let tout = usage
+                                    .get("output")
+                                    .or_else(|| usage.get("completion_tokens"))
+                                    .and_then(|x| x.as_u64())
+                                    .unwrap_or(0);
+                                if tin + tout > 0 {
+                                    ctx.accumulated_tokens.fetch_add(tin + tout, Ordering::SeqCst);
+                                }
+                            }
+
+                            if assistant_turn || cost_updated {
+                                let cur_turns = ctx.turn_counter.load(Ordering::SeqCst);
+                                let max_t = ctx.limits.max_turns.unwrap_or(0);
+                                let cur_spend = ctx.accumulated_cost.lock().map(|l| *l).unwrap_or(0.0);
+                                let cur_tokens = ctx.accumulated_tokens.load(Ordering::SeqCst);
+
+                                let _ = ctx.tx.send(format!(
+                                    "[TELEMETRY] turn={} max_turns={} spent={:.6} tokens={}",
+                                    cur_turns, max_t, cur_spend, cur_tokens
+                                ));
+                                let _ = ctx.tx.send(format!(
+                                    "[LIVE] Turn {}/{} | Spent: ${:.4} | Tokens: {}",
+                                    cur_turns,
+                                    if max_t > 0 { max_t.to_string() } else { "∞".to_string() },
+                                    cur_spend,
+                                    cur_tokens
+                                ));
                             }
                         }
 
@@ -1157,6 +1210,7 @@ mod tests {
             limits,
             turn_counter,
             accumulated_cost,
+            accumulated_tokens: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             limit_reached,
             limit_reason,
         };
@@ -1301,6 +1355,7 @@ mod tests {
             limits,
             turn_counter: turn_c,
             accumulated_cost,
+            accumulated_tokens: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             limit_reached: lim_reached,
             limit_reason,
         };

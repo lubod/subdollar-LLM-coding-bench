@@ -548,6 +548,14 @@ impl BenchmarkPipeline {
             method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         };
 
+        logger.log(&format!(
+            "[TELEMETRY] turn={} max_turns={} spent={:.6} tokens={}",
+            omp_stats.steps_taken,
+            config.max_turns,
+            cost_usd,
+            total_run_tokens
+        ));
+
         // 11. Optional Archiving and Leaderboard update
         if config.save_results {
             let runs_dir = RunArchiver::resolve_runs_dir();

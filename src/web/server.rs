@@ -35,6 +35,16 @@ pub struct ActiveRunInfo {
     pub task: String,
     pub effort: String,
     pub started_at: String,
+    #[serde(default)]
+    pub turns: u32,
+    #[serde(default)]
+    pub max_turns: u32,
+    #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
+    pub tokens: u64,
+    #[serde(default)]
+    pub duration_secs: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -43,6 +53,7 @@ pub struct AppState {
     pub is_running: Arc<AtomicBool>,
     pub cancel_requested: Arc<AtomicBool>,
     pub current_run: Arc<RwLock<Option<ActiveRunInfo>>>,
+    pub last_run: Arc<RwLock<Option<ActiveRunInfo>>>,
     pub log_buffer: Arc<RwLock<Vec<String>>>,
     pub task_handle: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
@@ -51,14 +62,17 @@ pub struct AppState {
 pub struct StatusResponse {
     pub is_running: bool,
     pub current_run: Option<ActiveRunInfo>,
+    pub last_run: Option<ActiveRunInfo>,
 }
 
 async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let is_running = state.is_running.load(Ordering::SeqCst);
     let current_run = state.current_run.read().unwrap().clone();
+    let last_run = state.last_run.read().unwrap().clone();
     Json(StatusResponse {
         is_running,
         current_run,
+        last_run,
     })
 }
 
@@ -293,6 +307,7 @@ impl UiServer {
             is_running: Arc::new(AtomicBool::new(false)),
             cancel_requested: Arc::new(AtomicBool::new(false)),
             current_run: Arc::new(RwLock::new(None)),
+            last_run: Arc::new(RwLock::new(None)),
             log_buffer: Arc::new(RwLock::new(Vec::new())),
             task_handle: Arc::new(std::sync::Mutex::new(None)),
         };
@@ -855,6 +870,11 @@ async fn start_run(
                 task: req.task.clone(),
                 effort: effort_setting.clone(),
                 started_at,
+                turns: 0,
+                max_turns: req.max_turns,
+                cost_usd: 0.0,
+                tokens: 0,
+                duration_secs: None,
             });
             if trial_idx == 1 {
                 state_clone.log_buffer.write().unwrap().clear();
@@ -863,19 +883,54 @@ async fn start_run(
             struct WebLogger {
                 tx: broadcast::Sender<String>,
                 log_buf: Arc<RwLock<Vec<String>>>,
+                current_run: Arc<RwLock<Option<ActiveRunInfo>>>,
             }
             impl PipelineLogger for WebLogger {
                 fn log(&self, msg: &str) {
                     let ts = Utc::now().format("%H:%M:%S").to_string();
-                    let formatted = format!("[{}] {}", ts, msg);
-                    self.log_buf.write().unwrap().push(formatted.clone());
-                    let _ = self.tx.send(formatted);
+                    for line in msg.lines() {
+                        let clean = line.trim_end();
+                        let formatted = format!("[{}] {}", ts, clean);
+                        self.log_buf.write().unwrap().push(formatted.clone());
+                        let _ = self.tx.send(formatted);
+                    }
+
+                    if msg.contains("[TELEMETRY]") {
+                        if let Some(telemetry_part) = msg.split("[TELEMETRY]").nth(1) {
+                            let mut turns = None;
+                            let mut max_turns = None;
+                            let mut spent = None;
+                            let mut tokens = None;
+
+                            for token in telemetry_part.split_whitespace() {
+                                if let Some((k, v)) = token.split_once("=") {
+                                    match k {
+                                        "turn" => turns = v.parse::<u32>().ok(),
+                                        "max_turns" => max_turns = v.parse::<u32>().ok(),
+                                        "spent" => spent = v.parse::<f64>().ok(),
+                                        "tokens" => tokens = v.parse::<u64>().ok(),
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                            if let Ok(mut run_lock) = self.current_run.write() {
+                                if let Some(ref mut info) = *run_lock {
+                                    if let Some(t) = turns { info.turns = t; }
+                                    if let Some(mt) = max_turns { info.max_turns = mt; }
+                                    if let Some(s) = spent { info.cost_usd = s; }
+                                    if let Some(tok) = tokens { info.tokens = tok; }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             let logger = Arc::new(WebLogger {
                 tx: tx.clone(),
                 log_buf: state_clone.log_buffer.clone(),
+                current_run: state_clone.current_run.clone(),
             });
 
             let task_type = match req.task.as_str() {
@@ -990,7 +1045,10 @@ async fn start_run(
             );
         }
 
-        *state_clone.current_run.write().unwrap() = None;
+        if let Ok(mut cur_lock) = state_clone.current_run.write() {
+            *state_clone.last_run.write().unwrap() = cur_lock.clone();
+            *cur_lock = None;
+        }
         *state_clone.task_handle.lock().unwrap() = None;
         state_clone.is_running.store(false, Ordering::SeqCst);
         let _ = tx.send("[DONE]".to_string());
@@ -1007,14 +1065,24 @@ async fn stream_logs(
 
     let initial_events: Vec<Event> = {
         let buf = state.log_buffer.read().unwrap();
-        buf.iter()
-            .map(|line: &String| Event::default().data(line.clone()))
-            .collect()
+        let mut evts = Vec::new();
+        for item in buf.iter() {
+            for line in item.lines() {
+                let clean = line.trim_end();
+                if !clean.is_empty() {
+                    evts.push(Event::default().data(clean.to_string()));
+                }
+            }
+        }
+        evts
     };
     let initial_stream = tokio_stream::iter(initial_events.into_iter().map(Ok));
 
     let live_stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
-        Ok(line) => Some(Ok(Event::default().data(line))),
+        Ok(line) => {
+            let clean = line.replace("\r", "").replace("\n", " ");
+            Some(Ok(Event::default().data(clean)))
+        }
         Err(_) => None,
     });
 
@@ -1035,6 +1103,7 @@ mod tests {
             is_running: Arc::new(AtomicBool::new(false)),
             cancel_requested: Arc::new(AtomicBool::new(false)),
             current_run: Arc::new(RwLock::new(None)),
+            last_run: Arc::new(RwLock::new(None)),
             log_buffer: Arc::new(RwLock::new(Vec::new())),
             task_handle: Arc::new(std::sync::Mutex::new(None)),
         }
