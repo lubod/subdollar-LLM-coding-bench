@@ -153,7 +153,7 @@ impl OmpRunner {
             let models_yaml_content = format!(
                 r#"providers:
   openai:
-    baseUrl: http://host.docker.internal:8000/v1
+    baseUrl: http://host.docker.internal:3000/v1
     api: openai-completions
     apiKey: dummy
     models:
@@ -245,7 +245,7 @@ impl OmpRunner {
                 .arg(format!("OPENAI_BASE_URL={}", openai_base));
         } else if is_local_openai {
             cmd.arg("-e")
-                .arg("OPENAI_BASE_URL=http://host.docker.internal:8000/v1");
+                .arg("OPENAI_BASE_URL=http://host.docker.internal:3000/v1");
         }
 
         if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {

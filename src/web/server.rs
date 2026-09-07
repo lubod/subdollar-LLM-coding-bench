@@ -272,6 +272,11 @@ impl UiServer {
             .route("/api/runs/:id/publish", post(publish_run))
             .route("/api/summary", get(get_summary).post(regenerate_summary))
             .route("/api/env", get(get_env))
+            .route("/v1/models", get(crate::sandbox::tool_normalizer::handle_models))
+            .route("/v1/chat/completions", post(crate::sandbox::tool_normalizer::handle_chat_completions))
+            .route("/api/local-llm/v1/models", get(crate::sandbox::tool_normalizer::handle_models))
+            .route("/api/local-llm/v1/chat/completions", post(crate::sandbox::tool_normalizer::handle_chat_completions))
+            .route("/api/local-llm/health", get(crate::sandbox::tool_normalizer::handle_health))
             .with_state(state)
     }
 
@@ -897,7 +902,7 @@ async fn start_run(
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                 }
                 if ready {
-                    logger.log("[LOCAL RUNNER] llama-server is healthy at http://host.docker.internal:8000/v1 ($0.00 / free)!");
+                    logger.log("[LOCAL RUNNER] llama-server is healthy via hardware GPU normalizer at http://host.docker.internal:3000/v1 ($0.00 / free)!");
                 } else {
                     logger.log("[LOCAL RUNNER WARNING] llama-server still initializing, proceeding with run...");
                 }
