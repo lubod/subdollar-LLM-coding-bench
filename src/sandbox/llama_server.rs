@@ -146,6 +146,7 @@ impl LlamaServerManager {
                 "16384",
                 "-t",
                 "16",
+                "--jinja",
             ])
             .output()
             .map_err(|e| anyhow!("Failed to execute docker run: {}", e))?;
@@ -191,17 +192,35 @@ impl LlamaServerManager {
     }
 
     pub async fn ensure_running_for_model(model: &str) -> Result<()> {
-        let st = Self::status().await;
-        if st.running {
-            return Ok(());
-        }
-
-        let preset = if model.contains("7b") {
+        let model_lower = model.to_lowercase();
+        let target_preset = if model_lower.contains("7b") {
             "qwen2.5-coder-7b"
+        } else if model_lower.contains("3.2") || model_lower.contains("3b") {
+            "llama-3.2-3b"
         } else {
             "qwen2.5-coder-1.5b"
         };
-        Self::start(preset)
+        let target_repo = Self::resolve_preset(target_preset).to_lowercase();
+
+        let st = Self::status().await;
+        if st.running {
+            if let Some(ref current_model) = st.model {
+                let curr = current_model.to_lowercase();
+                let is_matching = curr == target_repo
+                    || (target_preset == "qwen2.5-coder-7b" && (curr.contains("7b") || curr.contains("coder-7b")))
+                    || (target_preset == "qwen2.5-coder-1.5b" && (curr.contains("1.5b") || curr.contains("coder-1.5b")))
+                    || (target_preset == "llama-3.2-3b" && curr.contains("3.2"));
+                if is_matching {
+                    return Ok(());
+                }
+            }
+            info!(
+                "Running llama-server model ({:?}) differs from requested '{}'. Restarting...",
+                st.model, target_preset
+            );
+        }
+
+        Self::start(target_preset)
     }
 }
 

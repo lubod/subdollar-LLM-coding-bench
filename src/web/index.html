@@ -904,7 +904,7 @@
           </div>
 
           <label for="localModelPreset" style="font-size: 0.75rem; margin-bottom: 4px; display: block;">Preset GGUF Model</label>
-          <select id="localModelPreset" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 8px; width: 100%;">
+          <select id="localModelPreset" onchange="selectLocalModel(); checkLocalModelStatus(false);" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 8px; width: 100%;">
             <option value="qwen2.5-coder-1.5b" selected>Qwen 2.5 Coder 1.5B Instruct (Q4_K_M ~980MB - Fast test)</option>
             <option value="qwen2.5-coder-7b">Qwen 2.5 Coder 7B Instruct (Q4_K_M ~4.7GB - Full SWE)</option>
             <option value="llama-3.2-3b">Llama 3.2 3B Instruct (Q4_K_M ~2.0GB)</option>
@@ -1385,13 +1385,20 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         select.appendChild(opt);
       });
 
-      const current = document.getElementById('model').value.replace('openrouter/', '');
+      let matched = false;
+      const modelVal = document.getElementById('model').value;
+      const current = modelVal.replace('openrouter/', '');
       for (let i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === current) {
+        if (select.options[i].value === current || select.options[i].value === modelVal) {
           select.selectedIndex = i;
           onModelSelected();
+          matched = true;
           break;
         }
+      }
+      if (!matched && select.options.length > 0 && !select.options[0].disabled) {
+        select.selectedIndex = 0;
+        onModelSelected();
       }
     }
 
@@ -1401,11 +1408,11 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       if (!opt || !opt.value) return;
 
       const modelId = opt.value;
-      if (modelId.startsWith('openai/') || modelId.startsWith('local/')) {
-        document.getElementById('model').value = modelId;
-      } else {
-        document.getElementById('model').value = `openrouter/${modelId}`;
-      }
+      const targetModel = (modelId.startsWith('openai/') || modelId.startsWith('local/'))
+        ? modelId
+        : `openrouter/${modelId}`;
+      document.getElementById('model').value = targetModel;
+      localStorage.setItem('selected_benchmark_model', targetModel);
 
       const pill = document.getElementById('selectedPricePill');
       pill.style.display = 'inline-flex';
@@ -3023,19 +3030,44 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             badge.textContent = '🟢 Running';
             badge.style.background = 'rgba(16, 185, 129, 0.2)';
             badge.style.color = '#10b981';
-            if (startBtn) startBtn.disabled = true;
             if (stopBtn) stopBtn.disabled = false;
+
+            const selectedPreset = document.getElementById('localModelPreset').value;
+            const modelLoaded = (data.model || '').toLowerCase();
+            const presetMatched = (selectedPreset === 'qwen2.5-coder-7b' && (modelLoaded.includes('7b') || modelLoaded.includes('coder-7b'))) ||
+                                  (selectedPreset === 'qwen2.5-coder-1.5b' && (modelLoaded.includes('1.5b') || modelLoaded.includes('coder-1.5b'))) ||
+                                  (selectedPreset === 'llama-3.2-3b' && modelLoaded.includes('3.2'));
+
+            if (startBtn) {
+              if (presetMatched) {
+                startBtn.disabled = true;
+                startBtn.innerHTML = '✔ Active';
+              } else {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '🔄 Switch Model';
+              }
+            }
+            const currentModel = document.getElementById('model').value;
+            if (!localStorage.getItem('selected_benchmark_model') && currentModel.includes('gemini')) {
+              selectLocalModel();
+            }
           } else if (data.status_text && data.status_text.includes('Loading')) {
             badge.textContent = '🟡 Loading';
             badge.style.background = 'rgba(245, 158, 11, 0.2)';
             badge.style.color = '#f59e0b';
-            if (startBtn) startBtn.disabled = true;
+            if (startBtn) {
+              startBtn.disabled = true;
+              startBtn.innerHTML = '⏳ Loading...';
+            }
             if (stopBtn) stopBtn.disabled = false;
           } else {
             badge.textContent = '⚪ Stopped';
             badge.style.background = 'rgba(100, 116, 139, 0.2)';
             badge.style.color = 'var(--text-muted)';
-            if (startBtn) startBtn.disabled = false;
+            if (startBtn) {
+              startBtn.disabled = false;
+              startBtn.innerHTML = '▶ Start Server';
+            }
             if (stopBtn) stopBtn.disabled = true;
           }
         }
@@ -3123,6 +3155,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       
       const modelId = `openai/${preset}`;
       modelInput.value = modelId;
+      localStorage.setItem('selected_benchmark_model', modelId);
 
       // 1. Trigger animation on #btnUseLocalModel
       if (btn) {
@@ -3195,6 +3228,11 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     }
 
     // Initial load & persistent status sync
+    const savedModel = localStorage.getItem('selected_benchmark_model');
+    if (savedModel) {
+      const modelInput = document.getElementById('model');
+      if (modelInput) modelInput.value = savedModel;
+    }
     fetchModels();
     const initialSavedTask = localStorage.getItem('selected_benchmark_task') || 'redis';
     onTaskChange(initialSavedTask);

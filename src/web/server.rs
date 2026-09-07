@@ -789,23 +789,23 @@ async fn start_run(
             .into_response());
     }
 
-    let is_local = req.model.contains("local") || req.model.starts_with("openai/qwen");
+    let is_local = req.model.contains("local")
+        || req.model.starts_with("openai/qwen")
+        || req.model.starts_with("openai/llama")
+        || req.model.starts_with("local/");
     if is_local {
-        let status = crate::sandbox::llama_server::LlamaServerManager::status().await;
-        if !status.running {
-            if let Err(e) =
-                crate::sandbox::llama_server::LlamaServerManager::ensure_running_for_model(
-                    &req.model,
-                )
-                .await
-            {
-                state.is_running.store(false, Ordering::SeqCst);
-                return Err((
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to auto-start llama-server: {}", e),
-                )
-                    .into_response());
-            }
+        if let Err(e) =
+            crate::sandbox::llama_server::LlamaServerManager::ensure_running_for_model(
+                &req.model,
+            )
+            .await
+        {
+            state.is_running.store(false, Ordering::SeqCst);
+            return Err((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to auto-start llama-server: {}", e),
+            )
+                .into_response());
         }
     }
 
@@ -880,15 +880,19 @@ async fn start_run(
             };
 
             if trial_idx == 1 && is_local {
-                logger.log("[LOCAL RUNNER] Local model selected. Waiting for llama.cpp server to be ready...");
+                logger.log("[LOCAL RUNNER] Local model selected. Ensuring llama.cpp server is ready...");
                 let mut ready = false;
-                for _ in 0..30 {
-                    if crate::sandbox::llama_server::LlamaServerManager::status()
-                        .await
-                        .running
-                    {
+                for i in 1..=120 {
+                    let st = crate::sandbox::llama_server::LlamaServerManager::status().await;
+                    if st.running {
                         ready = true;
                         break;
+                    }
+                    if i % 10 == 0 {
+                        logger.log(&format!(
+                            "[LOCAL RUNNER] Status: {} (waiting {}s/120s)...",
+                            st.status_text, i
+                        ));
                     }
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                 }

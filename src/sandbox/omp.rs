@@ -136,6 +136,7 @@ impl OmpRunner {
         let mount_omp = format!("{}:/home/ubuntu/.omp", host_omp_dir.display());
 
         let is_local_openai = model.starts_with("openai/qwen")
+            || model.starts_with("openai/llama")
             || model.starts_with("openai/local")
             || model == "openai/local-llama"
             || model.starts_with("local/");
@@ -160,22 +161,27 @@ impl OmpRunner {
         name: "{}"
         contextWindow: 16384
         maxTokens: 4096
+        supportsTools: true
       - id: qwen2.5-coder-1.5b
         name: Qwen 2.5 Coder 1.5B
         contextWindow: 16384
         maxTokens: 4096
+        supportsTools: true
       - id: qwen2.5-coder-7b
         name: Qwen 2.5 Coder 7B
         contextWindow: 16384
         maxTokens: 4096
+        supportsTools: true
       - id: local-llama
         name: Local Llama
         contextWindow: 16384
         maxTokens: 4096
+        supportsTools: true
       - id: llama-3.2-3b
         name: Llama 3.2 3B
         contextWindow: 16384
         maxTokens: 4096
+        supportsTools: true
 "#,
                 model_id_short, model_id_short
             );
