@@ -25,11 +25,11 @@ Instead of evaluating trivial single-function code snippets ([HumanEval](https:/
 +-----------------------------------------------------------------------------------------+
 |                              DOCKER SANDBOX ISOLATION LAYER                             |
 |                                                                                         |
-|  +---------------------------+     tcp:6380 / 8081      +----------------------------+  |
-|  |     OMP Agent Sandbox     | -----------------------> |  Ground-Truth Reference    |  |
-|  |   'subdollar-sandbox'     |  (Inspects reference     | (Official Redis / Nginx)   |  |
-|  | (Rust, Go, Node, Python,  |   behavior via bash)     +----------------------------+  |
-|  |  GCC, Bun, OMP runtime)   |                                                          |
+|  +---------------------------+  private run network      +----------------------------+  |
+|  |     OMP Agent Sandbox     |  subdollar-net-<run_id>   |  Ground-Truth Reference    |  |
+|  |   'subdollar-sandbox'     | ------------------------> | (redis:alpine / nginx /    |  |
+|  | (Rust, Go, Node, Python,  |  ref-redis / ref-http /   |  coredns under stable      |  |
+|  |  GCC, Bun, OMP runtime)   |  ref-dns DNS aliases      |  network aliases)          |  |
 |  +-------------+-------------+                                                          |
 |                | produces candidate code                                                |
 |                v                                                                        |
@@ -49,10 +49,11 @@ Instead of evaluating trivial single-function code snippets ([HumanEval](https:/
 1. **Model Selects the Language & Architecture:**
    The model has complete freedom to choose any programming language (Go, Rust, Python, Node.js, C/C++) and architecture. This directly tests SWE pragmatism—balancing execution speed, memory safety, concurrency models, and compiler feedback loops.
 
-2. **Dual-Tier Docker Isolation & Controlled Sandboxing:**
-   - **OMP Agent Sandbox (`subdollar-sandbox`):** The LLM operates strictly inside an isolated Docker container with pre-installed toolchains (Rust, Go, Node, Python, Clang/GCC, Bun) and workspace volume mounting.
-   - **Ground-Truth Reference:** An official reference server (`redis:alpine` on port 6380, reference web server on port 8081) runs concurrently. The agent can issue black-box requests (e.g. `redis-cli -p 6380` or `curl http://localhost:8081`) to inspect actual protocol responses.
-   - **Candidate Isolation (`subdollar-candidate`):** The generated code is compiled and launched in a clean container, mapping candidate ports (6379 for Redis, 8080 for HTTP).
+2. **Dual-Tier Docker Isolation & Private Run Network:**
+   - **OMP Agent Sandbox (`subdollar-sandbox`):** The LLM operates strictly inside an isolated Docker container with pre-installed toolchains (Rust, Go, Node, Python, Clang/GCC, Bun) and workspace volume mounting. The agent is attached to a **per-run user-defined Docker network** (`subdollar-net-<run_id>`) — never the host network — so loopback-bound host services (including the UI at its default `127.0.0.1` bind) are unreachable from model-executed code. Note: services deliberately exposed on `0.0.0.0` remain reachable via the bridge gateway, as from any container on the host.
+   - **Ground-Truth Reference:** An official reference server (`redis:alpine`, `nginx:alpine`, or `coredns`) runs on the same private network under a stable DNS alias (`ref-redis` / `ref-http` / `ref-dns`). The agent issues black-box requests (e.g. `redis-cli -h ref-redis -p 6379` or `curl http://ref-http/`) to inspect actual protocol responses. Reference ports are additionally published on the host (6380/8081/5354) for manual debugging.
+   - **Candidate Isolation (`subdollar-candidate-<run_id>`):** The generated code is compiled and launched in a clean run-scoped container, mapping candidate ports (6379 for Redis, 8080 for HTTP, 5353 for DNS).
+   - **Known Limitation (roadmap):** the run network still NATs to the internet, which the agent requires for the OpenRouter API and language toolchains. Static anti-cheat scanning (framework/daemon blocklists, Dockerfile inspection) guards against prebuilt-server shortcuts; a domain-allowlist egress proxy (OpenRouter-only) is the planned next step for full network-level integrity.
 
 3. **Packaging Freedom (`Dockerfile` or `./start.sh`):**
    The harness automatically detects if the model built a standalone `Dockerfile` (root or nested project directory) and builds a clean container. If no Dockerfile is found, it automatically wraps `./start.sh` inside the multi-language sandbox environment.

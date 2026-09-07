@@ -53,34 +53,44 @@ pub struct TailSessionContext {
     pub limit_reason: Arc<Mutex<Option<String>>>,
 }
 
+/// All launch parameters for one agent session. Bundled in a struct so the
+/// runner API does not grow a positional argument per new knob.
+#[derive(Clone)]
+pub struct AgentRunSpec<'a> {
+    pub model: &'a str,
+    pub prompt: &'a str,
+    pub workdir: &'a Path,
+    pub api_key: Option<&'a str>,
+    pub limits: AgentExecutionLimits,
+    pub effort: Option<&'a str>,
+    pub network: Option<&'a str>,
+}
+
 pub struct OmpRunner;
 
 impl OmpRunner {
-    pub fn run_agent(
-        model: &str,
-        prompt: &str,
-        workdir: &Path,
-        api_key: Option<&str>,
-        limits: AgentExecutionLimits,
-        effort: Option<&str>,
-    ) -> Result<OmpSessionStats> {
-        Self::run_agent_with_logger(model, prompt, workdir, api_key, limits, effort, |line| {
+    pub fn run_agent(spec: AgentRunSpec<'_>) -> Result<OmpSessionStats> {
+        Self::run_agent_with_logger(spec, |line| {
             println!("{}", line);
         })
     }
 
     pub fn run_agent_with_logger<F>(
-        model: &str,
-        prompt: &str,
-        workdir: &Path,
-        api_key: Option<&str>,
-        limits: AgentExecutionLimits,
-        effort: Option<&str>,
+        spec: AgentRunSpec<'_>,
         mut log_fn: F,
     ) -> Result<OmpSessionStats>
     where
         F: FnMut(String) + Send + 'static,
     {
+        let AgentRunSpec {
+            model,
+            prompt,
+            workdir,
+            api_key,
+            limits,
+            effort,
+            network,
+        } = spec;
         info!(
             "Launching OMP agent in Docker sandbox with model: {}, effort: {:?}, limits: {:?}",
             model, effort, limits
@@ -134,7 +144,6 @@ impl OmpRunner {
             .arg("--memory=3g")
             .arg("--cpus=3.0")
             .arg("--pids-limit=512")
-            .arg("--network=bridge")
             .arg("-v")
             .arg(&mount_workdir)
             .arg("-v")
@@ -145,6 +154,15 @@ impl OmpRunner {
             .arg("PI_NO_PTY=1")
             .arg("-e")
             .arg("HOME=/home/ubuntu");
+
+        // Attach to the run's private network (reference aliases ref-redis/ref-http/ref-dns)
+        // when provided; fall back to the default bridge. The agent is never on the host
+        // network, so host services stay unreachable from model-executed code.
+        if let Some(net) = network {
+            cmd.arg("--network").arg(net);
+        } else {
+            cmd.arg("--network=bridge");
+        }
 
         let effective_key = api_key
             .map(|s| s.to_string())
@@ -1060,14 +1078,15 @@ mod tests {
             timeout_seconds: Some(5),
         };
 
-        let res = OmpRunner::run_agent(
-            "nonexistent-test-model-xyz",
-            "test prompt",
-            &temp_dir,
-            None,
+        let res = OmpRunner::run_agent(AgentRunSpec {
+            model: "nonexistent-test-model-xyz",
+            prompt: "test prompt",
+            workdir: &temp_dir,
+            api_key: None,
             limits,
-            Some("auto"),
-        );
+            effort: Some("auto"),
+            network: None,
+        });
 
         // omp should fail on nonexistent model with error
         assert!(res.is_err());
@@ -1086,14 +1105,15 @@ mod tests {
             timeout_seconds: Some(5),
         };
 
-        let res = OmpRunner::run_agent(
-            "nonexistent-test-model-xyz",
-            "test prompt",
-            rel_dir,
-            None,
+        let res = OmpRunner::run_agent(AgentRunSpec {
+            model: "nonexistent-test-model-xyz",
+            prompt: "test prompt",
+            workdir: rel_dir,
+            api_key: None,
             limits,
-            Some("auto"),
-        );
+            effort: Some("auto"),
+            network: None,
+        });
 
         if let Err(e) = res {
             let err_str = e.to_string();

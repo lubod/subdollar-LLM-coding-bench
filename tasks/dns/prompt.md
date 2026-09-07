@@ -25,6 +25,11 @@ Your implementation must meet high professional software engineering standards:
   1. **Working Dockerfile (Recommended)**: Create a working `Dockerfile` exposing UDP port 5353.
   2. **Executable `./start.sh`**: Or create an executable `./start.sh` script that starts your server listening on `0.0.0.0:5353/udp`.
 
+
+### Reference Server Available for Testing
+A reference DNS resolver (CoreDNS) is running on this benchmark's private Docker network at hostname `ref-dns`, port `53`.
+You can inspect standard RFC 1035 response framing with `dig @ref-dns -p 53 example.com`. Note: the reference resolves live records, while your server must serve the fixed zone data specified below.
+
 ### Required Behavior & DNS Zone Records
 Your server must listen on UDP port 5353 and respond to standard queries (QR=1, AA=1):
 

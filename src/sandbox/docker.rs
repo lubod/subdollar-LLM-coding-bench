@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -49,11 +49,39 @@ impl SandboxManager {
         format!("subdollar-ref-dns-{}", self.instance_id)
     }
 
+    pub fn network_name(&self) -> String {
+        format!("subdollar-net-{}", self.instance_id)
+    }
+
+    /// Idempotently create this run's private Docker network.
+    ///
+    /// Reference containers join it under stable DNS aliases (`ref-redis`,
+    /// `ref-http`, `ref-dns`) and the OMP agent container is attached to it,
+    /// so the agent can probe ground truth by hostname while remaining
+    /// isolated from host-network services.
+    pub fn ensure_network(&self) -> Result<()> {
+        let net = self.network_name();
+        let out = Command::new("docker")
+            .args(["network", "create", &net])
+            .output()?;
+        if out.status.success() {
+            info!("Created run network {}", net);
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        if stderr.contains("already exists") {
+            return Ok(());
+        }
+        Err(anyhow!("docker network create failed: {}", stderr))
+    }
+
     pub fn start_reference_redis(&self, port: u16) -> Result<()> {
         let name = self.ref_redis_name();
+        let net = self.network_name();
+        self.ensure_network()?;
         info!(
-            "Starting ground-truth reference Redis in Docker on port {} ({})",
-            port, name
+            "Starting ground-truth reference Redis in Docker on port {} ({}, alias ref-redis on {})",
+            port, name, net
         );
         let _ = Command::new("docker").args(["rm", "-f", &name]).output();
 
@@ -64,6 +92,10 @@ impl SandboxManager {
                 "--rm",
                 "--name",
                 &name,
+                "--network",
+                &net,
+                "--network-alias",
+                "ref-redis",
                 "-p",
                 &format!("{}:6379", port),
                 "redis:alpine",
@@ -75,9 +107,11 @@ impl SandboxManager {
 
     pub fn start_reference_http(&self, port: u16) -> Result<()> {
         let name = self.ref_http_name();
+        let net = self.network_name();
+        self.ensure_network()?;
         info!(
-            "Starting reference Nginx in Docker on port {} ({})",
-            port, name
+            "Starting reference Nginx in Docker on port {} ({}, alias ref-http on {})",
+            port, name, net
         );
         let _ = Command::new("docker").args(["rm", "-f", &name]).output();
 
@@ -88,6 +122,10 @@ impl SandboxManager {
                 "--rm",
                 "--name",
                 &name,
+                "--network",
+                &net,
+                "--network-alias",
+                "ref-http",
                 "--memory=512m",
                 "--cpus=1.0",
                 "-p",
@@ -101,11 +139,23 @@ impl SandboxManager {
 
     pub fn start_reference_dns(&self, port: u16) -> Result<()> {
         let name = self.ref_dns_name();
+        let net = self.network_name();
+        self.ensure_network()?;
         info!(
-            "Starting reference DNS server in Docker on UDP port {} ({})",
-            port, name
+            "Starting reference DNS server in Docker on UDP port {} ({}, alias ref-dns on {})",
+            port, name, net
         );
         let _ = Command::new("docker").args(["rm", "-f", &name]).output();
+
+        // The stock coredns image defaults to the `whoami` plugin, which echoes the
+        // client's own address for every query instead of resolving. Mount a
+        // forwarding Corefile so the reference behaves like a real recursive
+        // resolver that the agent can inspect black-box.
+        let corefile = Self::coredns_corefile_path(&self.instance_id);
+        let _ = fs::write(
+            &corefile,
+            ".:53 {\n    errors\n    log\n    forward . /etc/resolv.conf\n    cache 30\n}\n",
+        );
 
         let _ = Command::new("docker")
             .args([
@@ -114,15 +164,27 @@ impl SandboxManager {
                 "--rm",
                 "--name",
                 &name,
+                "--network",
+                &net,
+                "--network-alias",
+                "ref-dns",
                 "--memory=512m",
                 "--cpus=1.0",
                 "-p",
                 &format!("{}:53/udp", port),
+                "-v",
+                &format!("{}:/Corefile:ro", corefile.display()),
                 "coredns/coredns",
+                "-conf",
+                "/Corefile",
             ])
             .output();
 
         Ok(())
+    }
+
+    fn coredns_corefile_path(instance_id: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("subdollar-coredns-{}.corefile", instance_id))
     }
 
     /// Recursively find a file by name within directory
@@ -355,6 +417,7 @@ impl SandboxManager {
         let ref_redis = self.ref_redis_name();
         let ref_http = self.ref_http_name();
         let ref_dns = self.ref_dns_name();
+        let net = self.network_name();
         let agent_pid = format!("subdollar-omp-agent-{}", std::process::id());
         let _ = Command::new("docker")
             .args([
@@ -372,6 +435,10 @@ impl SandboxManager {
                 "subdollar-omp-agent",
             ])
             .output();
+        let _ = Command::new("docker")
+            .args(["network", "rm", &net])
+            .output();
+        let _ = fs::remove_file(Self::coredns_corefile_path(&self.instance_id));
     }
 }
 
@@ -455,6 +522,45 @@ mod tests {
         let res_dns = sm.start_reference_dns(59992);
         assert!(res_dns.is_ok());
         sm.cleanup();
+    }
+
+    #[test]
+    fn test_run_network_reference_alias_reachable() {
+        let sm = SandboxManager::with_id("net-alias-test");
+        sm.cleanup();
+        assert!(sm.ensure_network().is_ok());
+        // Idempotent: second create must not fail
+        assert!(sm.ensure_network().is_ok());
+        assert!(sm.start_reference_redis(59991).is_ok());
+        // Give the reference a moment to accept connections
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+
+        let net = sm.network_name();
+        let out = Command::new("docker")
+            .args([
+                "run",
+                "--rm",
+                "--network",
+                &net,
+                "redis:alpine",
+                "redis-cli",
+                "-h",
+                "ref-redis",
+                "-p",
+                "6379",
+                "ping",
+            ])
+            .output();
+        sm.cleanup();
+
+        let stdout = out
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        assert!(
+            stdout.contains("PONG"),
+            "expected PONG via ref-redis network alias, got: {:?}",
+            stdout
+        );
     }
 
     #[test]

@@ -919,8 +919,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_routes_lifecycle() {
+        // Drop guard restores SUMMARY.md even if the test panics mid-run,
+        // preventing git working-tree pollution from summary regeneration.
+        struct SummaryRestoreGuard {
+            path: PathBuf,
+            original: Option<String>,
+        }
+        impl Drop for SummaryRestoreGuard {
+            fn drop(&mut self) {
+                if let Some(orig) = self.original.take() {
+                    let _ = fs::write(&self.path, orig);
+                }
+            }
+        }
         let summary_path = crate::config::get_repo_root().join("SUMMARY.md");
-        let initial_summary = fs::read_to_string(&summary_path).ok();
+        let _summary_guard = SummaryRestoreGuard {
+            original: fs::read_to_string(&summary_path).ok(),
+            path: summary_path,
+        };
 
         let state = create_test_state();
         state
@@ -1431,10 +1447,7 @@ mod tests {
             }
         }
 
-        // Restore original SUMMARY.md to avoid dirtying git working tree during tests
-        if let Some(orig) = initial_summary {
-            let _ = fs::write(&summary_path, orig);
-        }
+        // SUMMARY.md restore happens in SummaryRestoreGuard::drop
     }
 
     #[test]

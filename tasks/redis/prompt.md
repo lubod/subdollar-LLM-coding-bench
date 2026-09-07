@@ -11,7 +11,7 @@ Your implementation must meet high professional software engineering standards:
 ### CRITICAL INTEGRITY RULE: NO ACCESSING OR CONSULTING SOURCE CODE
 - **Strict Prohibition**: You are strictly FORBIDDEN from downloading, curling, scraping, cloning, reading, or consulting the source code of the reference implementation or any external implementation (e.g., Redis C source code on GitHub, raw files, or third-party repositories).
 - **Allowed Resources**: You may consult official documentation, API references, and protocol/RFC specifications (e.g., redis.io command docs).
-- **Black-Box Testing**: You may test runtime behavior against the running reference server using CLI tools (`redis-cli -p 6380 <cmd>`).
+- **Black-Box Testing**: You may test runtime behavior against the running reference server using CLI tools (`redis-cli -h ref-redis -p 6379 <cmd>`).
 - **Originality**: All code must be your own original implementation designed from specifications and observable behavior. Any access to reference source code invalidates the benchmark run.
 
 ### Constraints & Packaging Freedom (Dockerfile or start.sh)
@@ -24,9 +24,9 @@ Your implementation must meet high professional software engineering standards:
   (Both options are fully supported by the benchmark runner!)
 
 ### Reference Server Available for Testing
-An official Redis server is already running in this environment on port 6380!
-You can use `redis-cli -p 6380 <command>` at any time using your bash tool to check ground-truth behavior and wire responses.
-You can also run `redis-cli -p 6379 <command>` to test your own server.
+An official Redis reference server is running on this benchmark's private Docker network at hostname `ref-redis`, port `6379`!
+You can use `redis-cli -h ref-redis -p 6379 <command>` at any time using your bash tool to check ground-truth behavior and wire responses.
+You can also run `redis-cli -p 6379 <command>` (localhost) to test your own server.
 
 ### Required RESP Protocol & Commands
 Your server must accept TCP connections on port 6379 and parse the Redis Serialization Protocol (RESP):

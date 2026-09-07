@@ -13,7 +13,7 @@ use crate::cost::ModelPricing;
 use crate::report::archive::{RunArchiver, RunManifest, RunTokenUsage};
 use crate::report::leaderboard::{BenchmarkRunResult, LeaderboardManager};
 use crate::sandbox::docker::SandboxManager;
-use crate::sandbox::omp::{AgentExecutionLimits, OmpRunner, OmpSessionStats};
+use crate::sandbox::omp::{AgentExecutionLimits, AgentRunSpec, OmpRunner, OmpSessionStats};
 use crate::verifier::compliance::ComplianceChecker;
 use crate::verifier::dns::DnsVerifier;
 use crate::verifier::http::HttpVerifier;
@@ -123,6 +123,18 @@ impl BenchmarkPipeline {
 
         let sandbox = SandboxManager::with_id(&run_id);
 
+        // 1b. Create the run's private Docker network (reference aliases + agent attach)
+        match sandbox.ensure_network() {
+            Ok(()) => logger.log(&format!(
+                "[SETUP] Private run network '{}' ready (reference aliases: ref-redis / ref-http / ref-dns)",
+                sandbox.network_name()
+            )),
+            Err(e) => logger.log(&format!(
+                "[SETUP] Warning: could not create run network: {}. Reference servers may be unavailable.",
+                e
+            )),
+        }
+
         if let Some(ref cf) = cancel_flag {
             if cf.load(Ordering::SeqCst) {
                 sandbox.cleanup();
@@ -143,17 +155,32 @@ impl BenchmarkPipeline {
             ));
         }
 
-        // 3. Start reference containers
+        // 3. Start reference containers (attached to the run network under stable aliases)
         logger.log("[SETUP] Starting official reference server in Docker...");
         match config.task {
             TaskType::Redis => {
-                let _ = sandbox.start_reference_redis(6380);
+                if let Err(e) = sandbox.start_reference_redis(6380) {
+                    logger.log(&format!(
+                        "[SETUP] Warning: reference Redis unavailable: {}",
+                        e
+                    ));
+                }
             }
             TaskType::Http => {
-                let _ = sandbox.start_reference_http(8081);
+                if let Err(e) = sandbox.start_reference_http(8081) {
+                    logger.log(&format!(
+                        "[SETUP] Warning: reference HTTP unavailable: {}",
+                        e
+                    ));
+                }
             }
             TaskType::Dns => {
-                let _ = sandbox.start_reference_dns(5354);
+                if let Err(e) = sandbox.start_reference_dns(5354) {
+                    logger.log(&format!(
+                        "[SETUP] Warning: reference DNS unavailable: {}",
+                        e
+                    ));
+                }
             }
         }
 
@@ -197,19 +224,21 @@ impl BenchmarkPipeline {
             let work_path_buf = config.workdir.clone();
             let api_key_c = config.api_key.clone();
             let effort_c = config.effort.clone();
+            let net_name = sandbox.network_name();
 
             let omp_res = tokio::task::spawn_blocking(move || {
-                OmpRunner::run_agent_with_logger(
-                    &model_c,
-                    &prompt_c,
-                    &work_path_buf,
-                    api_key_c.as_deref(),
+                let spec = AgentRunSpec {
+                    model: &model_c,
+                    prompt: &prompt_c,
+                    workdir: &work_path_buf,
+                    api_key: api_key_c.as_deref(),
                     limits,
-                    Some(&effort_c),
-                    move |line| {
-                        logger_sub.log(&line);
-                    },
-                )
+                    effort: Some(&effort_c),
+                    network: Some(net_name.as_str()),
+                };
+                OmpRunner::run_agent_with_logger(spec, move |line| {
+                    logger_sub.log(&line);
+                })
             })
             .await;
 

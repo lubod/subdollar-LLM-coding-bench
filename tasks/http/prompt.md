@@ -16,7 +16,7 @@ Your implementation must meet high professional software engineering standards:
 ### CRITICAL INTEGRITY RULE: NO ACCESSING OR CONSULTING SOURCE CODE
 - **Strict Prohibition**: You are strictly FORBIDDEN from downloading, curling, scraping, cloning, reading, or consulting the source code of the reference implementation or any external implementation (e.g., Nginx, Apache, or external web server source repositories).
 - **Allowed Resources**: You may consult official documentation, API specifications, and official RFCs (e.g., RFC 7230, RFC 7231).
-- **Black-Box Testing**: You may test runtime behavior against the running reference server using CLI tools (`curl -v http://localhost:8081/...`).
+- **Black-Box Testing**: You may test runtime behavior against the running reference server using CLI tools (`curl -v http://ref-http/...`).
 - **Originality**: All code must be your own original implementation designed from specifications and observable behavior. Any access to reference source code invalidates the benchmark run.
 
 ### Constraints & Packaging Freedom (Dockerfile or start.sh)
@@ -28,8 +28,8 @@ Your implementation must meet high professional software engineering standards:
   (Both options are fully supported by the benchmark runner!)
 
 ### Reference Server Available for Testing
-An official reference web server is running on port 8081.
-You can use `curl -v http://localhost:8081/...` to inspect standard behavior.
+An official reference web server (nginx) is running on this benchmark's private Docker network at hostname `ref-http`, port `80`.
+You can use `curl -v http://ref-http/...` to inspect standard HTTP behavior (status lines, headers, framing).
 You can test your own server with `curl -v http://localhost:8080/...`.
 
 ### Required Endpoints & Behavior
