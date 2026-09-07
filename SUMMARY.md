@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-07 13:33:38 UTC*
+*Last Updated: 2026-09-07 14:25:26 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -25,7 +25,7 @@
 | 6 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Python` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0044)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_084014/) |
 | 7 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Go` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0104)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_092044/) |
 | 8 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0125)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_075504/) |
-| 9 | `openrouter/~z-ai/glm-flash-latest` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0350)* | **0.0** pts/¢ | [Inspect](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
+| 9 | `openrouter/~z-ai/glm-flash-latest` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0271)* | **0.0** pts/¢ | [Inspect](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
 
 ---
 
@@ -74,8 +74,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `bcd24a3` (branch `master`) |
-| **Benchmark Captured** | 2026-09-07T13:33:38.206347581+00:00 |
+| **Git Baseline** | Commit `7acb006` (branch `master`) |
+| **Benchmark Captured** | 2026-09-07T14:25:26.656552349+00:00 |
 
 ---
 

@@ -320,22 +320,19 @@ Content-Length: 0
             )
         };
 
-        let effective_prompt = if is_local_openai {
-            format!(
-                "{}
+        let effective_prompt = format!(
+            "{}
 
 ==================================================
-CRITICAL DIRECTIVES FOR AGENT EXECUTION:
+CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
 1. TOOL CALL REQUIREMENT: You are an autonomous AI coding agent with filesystem tools (`write`, `bash`, `read`, `edit`). You MUST execute your tools immediately to create your implementation files directly in /workspace. DO NOT merely explain the plan in conversational text without calling `write`.
 2. RAW TCP SOCKETS ONLY (MANDATORY):
 {}
 3. ENTRYPOINT: Create a working executable `./start.sh` or `Dockerfile` listening on port {}. Test your server with `{}` using `bash` before finishing.
+4. CONCISE REASONING: Keep internal thinking brief (< 150 words). Do not spend output tokens on exhaustive planning in thought blocks. Immediately invoke tools (`write`, `bash`, `read`) on turn 1 to start creating the server and verifying it.
 ==================================================",
-                prompt, guidance_snippet, target_port, test_cmd
-            )
-        } else {
-            prompt.to_string()
-        };
+            prompt, guidance_snippet, target_port, test_cmd
+        );
 
         // Write AGENTS.md into workspace so omp auto-loads instructions across all turns
         let agents_md_path = canonical_workdir.join("AGENTS.md");
@@ -345,6 +342,7 @@ CRITICAL DIRECTIVES FOR AGENT EXECUTION:
 2. **RAW TCP SOCKETS ONLY (CRITICAL)**:
 {}
 3. **ENTRYPOINT REQUIRED**: You must create a working `Dockerfile` or executable `./start.sh` listening on port {}. Test your server with `{}` using the `bash` tool before finishing.
+4. **CONCISE REASONING**: Keep internal thoughts brief (< 150 words). Do not exhaust output tokens on lengthy mental planning loops. Immediately invoke tools to write code and test it.
 "#,
             guidance_snippet, target_port, test_cmd
         );
@@ -371,7 +369,7 @@ CRITICAL DIRECTIVES FOR AGENT EXECUTION:
 
         if let Some(eff) = effort {
             let eff_clean = eff.trim().to_lowercase();
-            if !eff_clean.is_empty() && eff_clean != "auto" && eff_clean != "default" {
+            if !eff_clean.is_empty() && eff_clean != "default" {
                 cmd.arg(format!("--thinking={}", eff_clean));
             }
             cmd.arg("--print-thoughts");
@@ -527,7 +525,10 @@ CRITICAL DIRECTIVES FOR AGENT EXECUTION:
 
         let _ = std::fs::remove_file(canonical_workdir.join("AGENTS.md"));
         let final_path = active_file.lock().unwrap().clone();
-        let stats = Self::extract_latest_session_stats(final_path.as_deref()).unwrap_or_default();
+        let stats = match final_path.as_deref() {
+            Some(p) => Self::extract_latest_session_stats(Some(p)).unwrap_or_default(),
+            None => OmpSessionStats::default(),
+        };
 
         let has_runnable = canonical_workdir.join("Dockerfile").exists()
             || canonical_workdir.join("start.sh").exists();
