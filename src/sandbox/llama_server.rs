@@ -144,6 +144,8 @@ impl LlamaServerManager {
                 "8080",
                 "-c",
                 "16384",
+                "-t",
+                "16",
             ])
             .output()
             .map_err(|e| anyhow!("Failed to execute docker run: {}", e))?;

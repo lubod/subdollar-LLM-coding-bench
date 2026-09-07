@@ -2603,7 +2603,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
       activeEventSource.onmessage = (event) => {
         if (event.data === '[DONE]') {
-          appendLog('\n[COMPLETED] Benchmark run finished successfully.');
+          appendLog('\n[COMPLETED] Benchmark run finished.');
           try { activeEventSource.close(); } catch(e) {}
           activeEventSource = null;
           if (pText) pText.textContent = 'Completed';

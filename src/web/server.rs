@@ -927,11 +927,16 @@ async fn start_run(
                 Ok(output) => {
                     if output.benchmark_result.pass_rate == 100.0 {
                         passing_trials += 1;
+                        logger.log(&format!(
+                            "[PIPELINE SUCCESS] Completed trial {}/{} with pass rate: 100.0%",
+                            trial_idx, total_trials
+                        ));
+                    } else {
+                        logger.log(&format!(
+                            "[PIPELINE RESULT] Completed trial {}/{} with pass rate: {:.1}%",
+                            trial_idx, total_trials, output.benchmark_result.pass_rate
+                        ));
                     }
-                    logger.log(&format!(
-                        "[PIPELINE] Completed trial {}/{} with pass rate: {:.1}%",
-                        trial_idx, total_trials, output.benchmark_result.pass_rate
-                    ));
                 }
                 Err(e) => {
                     if state_clone.cancel_requested.load(Ordering::SeqCst) {
@@ -960,6 +965,19 @@ async fn start_run(
                 "[MULTI-TRIAL] Trials: {}, Passing: {}, Pass@1: {:.1}%, Pass@{}: {:.1}%",
                 total_trials, passing_trials, pass_at_1, total_trials, pass_at_k
             ));
+        }
+
+        if passing_trials == total_trials as usize && total_trials > 0 {
+            let _ = tx.send("[STATUS] All trials passed (100% pass rate).".to_string());
+        } else if passing_trials > 0 {
+            let _ = tx.send(format!(
+                "[STATUS] Partial pass: {}/{} trials passed.",
+                passing_trials, total_trials
+            ));
+        } else {
+            let _ = tx.send(
+                "[STATUS] Benchmark completed with 0 passing trials (0.0% pass rate).".to_string(),
+            );
         }
 
         *state_clone.current_run.write().unwrap() = None;

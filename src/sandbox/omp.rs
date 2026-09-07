@@ -119,22 +119,76 @@ impl OmpRunner {
             .map(PathBuf::from)
             .unwrap_or_else(|_| crate::config::get_repo_root())
             .join(".omp");
-        let host_sessions_dir = host_omp_dir.join("agent").join("sessions");
+        let host_agent_dir = host_omp_dir.join("agent");
+        let host_sessions_dir = host_agent_dir.join("sessions");
         let _ = std::fs::create_dir_all(&host_sessions_dir);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&host_omp_dir, std::fs::Permissions::from_mode(0o777));
-            let _ = std::fs::set_permissions(
-                host_omp_dir.join("agent"),
-                std::fs::Permissions::from_mode(0o777),
-            );
+            let _ =
+                std::fs::set_permissions(&host_agent_dir, std::fs::Permissions::from_mode(0o777));
             let _ = std::fs::set_permissions(
                 &host_sessions_dir,
                 std::fs::Permissions::from_mode(0o777),
             );
         }
         let mount_omp = format!("{}:/home/ubuntu/.omp", host_omp_dir.display());
+
+        let is_local_openai = model.starts_with("openai/qwen")
+            || model.starts_with("openai/local")
+            || model == "openai/local-llama"
+            || model.starts_with("local/");
+
+        let effective_model = if model.starts_with("local/") {
+            format!("openai/{}", model.trim_start_matches("local/"))
+        } else {
+            model.to_string()
+        };
+
+        if is_local_openai {
+            let model_id_short = effective_model.trim_start_matches("openai/");
+            let models_yml_path = host_agent_dir.join("models.yml");
+            let models_yaml_content = format!(
+                r#"providers:
+  openai:
+    baseUrl: http://host.docker.internal:8000/v1
+    api: openai-completions
+    apiKey: dummy
+    models:
+      - id: "{}"
+        name: "{}"
+        contextWindow: 16384
+        maxTokens: 4096
+      - id: qwen2.5-coder-1.5b
+        name: Qwen 2.5 Coder 1.5B
+        contextWindow: 16384
+        maxTokens: 4096
+      - id: qwen2.5-coder-7b
+        name: Qwen 2.5 Coder 7B
+        contextWindow: 16384
+        maxTokens: 4096
+      - id: local-llama
+        name: Local Llama
+        contextWindow: 16384
+        maxTokens: 4096
+      - id: llama-3.2-3b
+        name: Llama 3.2 3B
+        contextWindow: 16384
+        maxTokens: 4096
+"#,
+                model_id_short, model_id_short
+            );
+            let _ = std::fs::write(&models_yml_path, models_yaml_content);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(
+                    &models_yml_path,
+                    std::fs::Permissions::from_mode(0o666),
+                );
+            }
+        }
 
         let mut cmd = Command::new("docker");
         cmd.arg("run")
@@ -180,11 +234,6 @@ impl OmpRunner {
                 .arg("OLLAMA_BASE_URL=http://host.docker.internal:11434");
         }
 
-        let is_local_openai = model.starts_with("openai/qwen")
-            || model.starts_with("openai/local")
-            || model == "openai/local-llama"
-            || model.starts_with("local/");
-
         if let Ok(openai_base) = std::env::var("OPENAI_BASE_URL") {
             cmd.arg("-e")
                 .arg(format!("OPENAI_BASE_URL={}", openai_base));
@@ -198,12 +247,6 @@ impl OmpRunner {
         } else if is_local_openai {
             cmd.arg("-e").arg("OPENAI_API_KEY=dummy");
         }
-
-        let effective_model = if model.starts_with("local/") {
-            format!("openai/{}", model.trim_start_matches("local/"))
-        } else {
-            model.to_string()
-        };
 
         cmd.arg("subdollar-sandbox")
             .arg("omp")
