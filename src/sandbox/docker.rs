@@ -260,6 +260,64 @@ impl SandboxManager {
             }
         }
 
+        // Auto-detect common language entrypoints and create default start.sh
+        let entrypoint_patterns: &[(&str, &str)] = &[
+            ("main.py", "#!/bin/bash\nexec python3 main.py\n"),
+            ("app.py", "#!/bin/bash\nexec python3 app.py\n"),
+            ("server.py", "#!/bin/bash\nexec python3 server.py\n"),
+            ("main.go", "#!/bin/bash\nexec go run main.go\n"),
+            ("Cargo.toml", "#!/bin/bash\nexec cargo run --release\n"),
+            ("index.js", "#!/bin/bash\nexec node index.js\n"),
+            ("server.js", "#!/bin/bash\nexec node server.js\n"),
+            ("main.js", "#!/bin/bash\nexec node main.js\n"),
+        ];
+
+        for (entry_file, start_content) in entrypoint_patterns {
+            if workdir.join(entry_file).exists() {
+                info!(
+                    "Auto-detected entrypoint '{}'. Creating default start.sh...",
+                    entry_file
+                );
+                let _ = fs::write(&root_start_sh, start_content);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&root_start_sh, fs::Permissions::from_mode(0o755));
+                }
+                return Ok(true);
+            }
+            if let Some(found) = Self::find_file_recursive(workdir, entry_file) {
+                if let Ok(rel_path) = found.strip_prefix(workdir) {
+                    let parent_dir = rel_path.parent().unwrap_or(Path::new(""));
+                    let file_name = rel_path.file_name().unwrap_or_default().to_string_lossy();
+                    let cd_part = if parent_dir.as_os_str().is_empty() {
+                        "".to_string()
+                    } else {
+                        format!("cd /workspace/{}\n", parent_dir.display())
+                    };
+                    let run_cmd = match file_name.as_ref() {
+                        "Cargo.toml" => "exec cargo run --release\n",
+                        f if f.ends_with(".py") => "exec python3 main.py\n",
+                        f if f.ends_with(".go") => "exec go run main.go\n",
+                        f if f.ends_with(".js") => "exec node main.js\n",
+                        _ => "exec ./start.sh\n",
+                    };
+                    let bridge = format!("#!/bin/bash\n{}{}", cd_part, run_cmd);
+                    info!(
+                        "Found nested entrypoint '{}' at {:?}. Creating root start.sh...",
+                        entry_file, found
+                    );
+                    let _ = fs::write(&root_start_sh, bridge);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&root_start_sh, fs::Permissions::from_mode(0o755));
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+
         Ok(false)
     }
 

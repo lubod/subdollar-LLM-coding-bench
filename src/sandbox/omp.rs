@@ -254,12 +254,21 @@ impl OmpRunner {
             cmd.arg("-e").arg("OPENAI_API_KEY=dummy");
         }
 
+        let effective_prompt = if is_local_openai {
+            format!(
+                "{}\n\n==================================================\nCRITICAL DIRECTIVE FOR AGENT EXECUTION:\nYou are an autonomous AI coding agent with direct filesystem tools (`write`, `bash`, `read`, `edit`).\nYou MUST execute your tools immediately to create your implementation files directly in the workspace (e.g. use the `write` tool to create `Dockerfile` or `start.sh` and source files).\nDO NOT merely explain the plan or print code blocks in conversational text without invoking tools. The files MUST actually be written to disk using tool calls.\n==================================================",
+                prompt
+            )
+        } else {
+            prompt.to_string()
+        };
+
         cmd.arg("subdollar-sandbox")
             .arg("omp")
             .arg("--approval-mode=yolo")
             .arg("--tools=read,bash,edit,write,grep,glob,lsp")
             .arg("-p")
-            .arg(prompt)
+            .arg(&effective_prompt)
             .arg(format!("--model={}", effective_model))
             .arg("--cwd=/workspace")
             .arg("--session-dir=/home/ubuntu/.omp/agent/sessions");
@@ -426,6 +435,15 @@ impl OmpRunner {
 
         let final_path = active_file.lock().unwrap().clone();
         let stats = Self::extract_latest_session_stats(final_path.as_deref()).unwrap_or_default();
+
+        let has_runnable = canonical_workdir.join("Dockerfile").exists()
+            || canonical_workdir.join("start.sh").exists();
+        if !has_runnable {
+            if let Some(ref sp) = final_path {
+                Self::fallback_extract_files_from_session(sp, &canonical_workdir);
+            }
+        }
+
         Ok(stats)
     }
 
@@ -843,6 +861,62 @@ impl OmpRunner {
             total_tokens: prompt_tokens + cached_tokens + completion_tokens,
             steps_taken: steps,
         })
+    }
+    pub fn fallback_extract_files_from_session(session_path: &Path, workdir: &Path) {
+        if let Ok(content) = std::fs::read_to_string(session_path) {
+            let mut extracted_count = 0;
+            for line in content.lines() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                    if v.get("message")
+                        .and_then(|m| m.get("role"))
+                        .and_then(|r| r.as_str())
+                        == Some("assistant")
+                    {
+                        if let Some(content_arr) = v
+                            .get("message")
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| c.as_array())
+                        {
+                            for item in content_arr {
+                                if let Some(txt) = item.get("text").and_then(|s| s.as_str()) {
+                                    if let Some(tools) =
+                                        crate::sandbox::tool_normalizer::extract_code_blocks_as_writes(txt)
+                                    {
+                                        for tc in tools {
+                                            if tc.name == "write" {
+                                                if let Ok(args) =
+                                                    serde_json::from_str::<serde_json::Value>(&tc.arguments)
+                                                {
+                                                    if let (Some(p), Some(c)) = (
+                                                        args.get("path").and_then(|s| s.as_str()),
+                                                        args.get("content").and_then(|s| s.as_str()),
+                                                    ) {
+                                                        let target = workdir.join(p);
+                                                        if let Some(parent) = target.parent() {
+                                                            let _ = std::fs::create_dir_all(parent);
+                                                        }
+                                                        if std::fs::write(&target, c).is_ok() {
+                                                            info!("Fallback-extracted session file written: {:?}", target);
+                                                            extracted_count += 1;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if extracted_count > 0 {
+                info!(
+                    "Fallback extracted {} file(s) from session into workspace {:?}",
+                    extracted_count, workdir
+                );
+            }
+        }
     }
 }
 

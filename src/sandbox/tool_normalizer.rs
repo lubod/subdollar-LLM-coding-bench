@@ -16,6 +16,98 @@ pub struct ExtractedToolCall {
     pub arguments: String,
 }
 
+/// Extracts files defined in markdown code blocks when local models output
+/// implementation files in conversational text instead of invoking tool calls directly.
+pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolCall>> {
+    let block_re = Regex::new(r"(?s)```([a-zA-Z0-9_-]*)\r?\n(.*?)\r?\n```").ok()?;
+    let mut files = Vec::new();
+    let mut seen_paths = std::collections::HashSet::new();
+
+    let comment_re = Regex::new(
+        r#"^(?:#|//|--|/\*|<!--)\s*(?:file(?:name)?:\s*|File:\s*)?([a-zA-Z0-9_\.\-/]+\.[a-zA-Z0-9]+|Dockerfile[a-zA-Z0-9_\.-]*|Makefile)\b"#,
+    ).ok()?;
+
+    let preceding_re = Regex::new(
+        r#"(?i)(?:file|script|create|implement|in|the|\b)\s*[`*]*([a-zA-Z0-9_\.-]+\.(?:py|go|rs|js|ts|c|cpp|h|sh|json|yaml|yml|toml|txt|html|css)|Dockerfile|start\.sh)[`*]*\s*:?\s*$"#,
+    ).ok()?;
+
+    for cap in block_re.captures_iter(content) {
+        let lang = cap.get(1).map(|m| m.as_str().to_lowercase()).unwrap_or_default();
+        let code_body = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+        let start_idx = cap.get(0).unwrap().start();
+
+        let mut detected_filename: Option<String> = None;
+
+        // Check line 1 and line 2 of the code block for a filename comment
+        for line in code_body.lines().take(2) {
+            let trimmed_line = line.trim();
+            if let Some(c) = comment_re.captures(trimmed_line) {
+                if let Some(f) = c.get(1) {
+                    detected_filename = Some(f.as_str().to_string());
+                    break;
+                }
+            }
+        }
+
+        // If not found in code comments, check text immediately preceding the block
+        if detected_filename.is_none() {
+            let pre_window = &content[start_idx.saturating_sub(250)..start_idx];
+            if let Some(c) = preceding_re.captures(pre_window.trim_end()) {
+                if let Some(f) = c.get(1) {
+                    detected_filename = Some(f.as_str().to_string());
+                }
+            }
+        }
+
+        // If still not found, but language tag is dockerfile
+        if detected_filename.is_none() && (lang == "dockerfile" || lang == "docker") {
+            detected_filename = Some("Dockerfile".to_string());
+        }
+
+        if let Some(raw_path) = detected_filename {
+            let clean_path = raw_path
+                .trim()
+                .trim_matches(|c| c == '`' || c == '*' || c == '\'' || c == '"')
+                .trim_start_matches("/workspace/")
+                .trim_start_matches("./")
+                .to_string();
+
+            if clean_path.is_empty()
+                || clean_path.contains("..")
+                || clean_path.starts_with('/')
+                || clean_path.starts_with("http")
+            {
+                continue;
+            }
+
+            // Exclude shell commands mistakenly marked with sh if they are not real scripts
+            if (clean_path.ends_with(".sh") || clean_path == "start.sh")
+                && (code_body.trim().starts_with("curl ") || code_body.trim().starts_with("docker run") || code_body.trim().starts_with("wrk "))
+            {
+                continue;
+            }
+
+            if !seen_paths.contains(&clean_path) {
+                seen_paths.insert(clean_path.clone());
+                files.push(ExtractedToolCall {
+                    name: "write".to_string(),
+                    arguments: json!({
+                        "path": clean_path,
+                        "content": code_body,
+                    })
+                    .to_string(),
+                });
+            }
+        }
+    }
+
+    if !files.is_empty() {
+        Some(files)
+    } else {
+        None
+    }
+}
+
 /// Robustly extracts tool calls from local model outputs.
 pub fn extract_tool_calls(content: &str) -> Option<Vec<ExtractedToolCall>> {
     let trimmed = content.trim();
@@ -137,6 +229,11 @@ pub fn extract_tool_calls(content: &str) -> Option<Vec<ExtractedToolCall>> {
         }
     }
 
+    // 5. Detect files in markdown code blocks
+    if let Some(files) = extract_code_blocks_as_writes(content) {
+        return Some(files);
+    }
+
     None
 }
 
@@ -227,6 +324,7 @@ pub async fn handle_chat_completions(
         .and_then(|s| s.as_str())
         .unwrap_or("qwen2.5-coder-7b")
         .to_string();
+    let usage_val = llama_resp.get("usage").cloned();
 
     if !is_stream {
         if let Some(tools) = extracted_tc {
@@ -314,7 +412,7 @@ pub async fn handle_chat_completions(
         }
 
         // Chunk 3: finish_reason tool_calls
-        let chunk3 = json!({
+        let mut chunk3 = json!({
             "id": resp_id,
             "object": "chat.completion.chunk",
             "created": now_ts,
@@ -325,6 +423,9 @@ pub async fn handle_chat_completions(
                 "finish_reason": "tool_calls"
             }]
         });
+        if let Some(ref u) = usage_val {
+            chunk3["usage"] = u.clone();
+        }
         sse_data.push_str(&format!("data: {}\n\n", chunk3));
     } else {
         // Pass-through existing tool_calls or plain text content
@@ -365,7 +466,7 @@ pub async fn handle_chat_completions(
                 });
                 sse_data.push_str(&format!("data: {}\n\n", chunk1));
             }
-            let chunk_fin = json!({
+            let mut chunk_fin = json!({
                 "id": resp_id,
                 "object": "chat.completion.chunk",
                 "created": now_ts,
@@ -376,6 +477,9 @@ pub async fn handle_chat_completions(
                     "finish_reason": "tool_calls"
                 }]
             });
+            if let Some(ref u) = usage_val {
+                chunk_fin["usage"] = u.clone();
+            }
             sse_data.push_str(&format!("data: {}\n\n", chunk_fin));
         } else {
             let chunk1 = json!({
@@ -394,7 +498,7 @@ pub async fn handle_chat_completions(
             });
             sse_data.push_str(&format!("data: {}\n\n", chunk1));
 
-            let chunk2 = json!({
+            let mut chunk2 = json!({
                 "id": resp_id,
                 "object": "chat.completion.chunk",
                 "created": now_ts,
@@ -405,7 +509,23 @@ pub async fn handle_chat_completions(
                     "finish_reason": "stop"
                 }]
             });
+            if let Some(ref u) = usage_val {
+                chunk2["usage"] = u.clone();
+            }
             sse_data.push_str(&format!("data: {}\n\n", chunk2));
+        }
+
+        // Trailing usage chunk (OpenAI standard)
+        if let Some(ref u) = usage_val {
+            let usage_chunk = json!({
+                "id": resp_id,
+                "object": "chat.completion.chunk",
+                "created": now_ts,
+                "model": model_name,
+                "choices": [],
+                "usage": u
+            });
+            sse_data.push_str(&format!("data: {}\n\n", usage_chunk));
         }
     }
 
@@ -554,6 +674,66 @@ echo hello
     #[test]
     fn test_extract_ignores_normal_conversation() {
         let content = "I have finished implementing the HTTP server. It listens on port 8080.";
+        assert!(extract_tool_calls(content).is_none());
+    }
+    #[test]
+    fn test_extract_code_blocks_with_comments() {
+        let content = r#"To implement the HTTP server:
+```python
+# tcp_listener.py
+import socket
+print("listening")
+```
+
+```python
+# main.py
+import tcp_listener
+print("server started")
+```
+
+```dockerfile
+# Dockerfile
+FROM python:3.9-slim
+CMD ["python", "main.py"]
+```"#;
+        let extracted = extract_tool_calls(content).expect("Should extract code block files");
+        assert_eq!(extracted.len(), 3);
+        assert_eq!(extracted[0].name, "write");
+        let a0: Value = serde_json::from_str(&extracted[0].arguments).unwrap();
+        assert_eq!(a0["path"], "tcp_listener.py");
+        let a1: Value = serde_json::from_str(&extracted[1].arguments).unwrap();
+        assert_eq!(a1["path"], "main.py");
+        let a2: Value = serde_json::from_str(&extracted[2].arguments).unwrap();
+        assert_eq!(a2["path"], "Dockerfile");
+    }
+
+    #[test]
+    fn test_extract_code_blocks_with_headers() {
+        let content = r#"Here are the files:
+1. **server.py**:
+```python
+print("server")
+```
+
+2. **Dockerfile**:
+```dockerfile
+FROM alpine
+```"#;
+        let extracted = extract_tool_calls(content).expect("Should extract files from headers");
+        assert_eq!(extracted.len(), 2);
+        let a0: Value = serde_json::from_str(&extracted[0].arguments).unwrap();
+        assert_eq!(a0["path"], "server.py");
+        let a1: Value = serde_json::from_str(&extracted[1].arguments).unwrap();
+        assert_eq!(a1["path"], "Dockerfile");
+    }
+
+    #[test]
+    fn test_extract_code_blocks_ignores_curl() {
+        let content = r#"You can test your server using curl:
+```sh
+# Test root endpoint
+curl -v http://localhost:8080/
+```"#;
         assert!(extract_tool_calls(content).is_none());
     }
 }
