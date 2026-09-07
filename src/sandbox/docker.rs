@@ -402,6 +402,7 @@ impl SandboxManager {
 
         // CASE B: Standard Sandbox with start.sh
         let mount_arg = format!("{}:/workspace", canonical_workdir.display());
+        let launch_cmd = "cd /workspace && if [ -f start.sh ]; then chmod +x start.sh && exec ./start.sh; elif [ -f main.py ]; then exec python3 main.py; elif [ -f app.py ]; then exec python3 app.py; elif [ -f server.py ]; then exec python3 server.py; elif [ -f main.go ]; then exec go run main.go; elif [ -f Cargo.toml ]; then exec cargo run --release; elif [ -f main.js ]; then exec node main.js; elif [ -f index.js ]; then exec node index.js; else chmod +x start.sh 2>/dev/null && exec ./start.sh; fi";
         let _ = Command::new("docker")
             .args([
                 "run",
@@ -420,7 +421,7 @@ impl SandboxManager {
                 "subdollar-sandbox",
                 "/bin/bash",
                 "-c",
-                "cd /workspace && chmod +x start.sh && ./start.sh",
+                launch_cmd,
             ])
             .output();
 

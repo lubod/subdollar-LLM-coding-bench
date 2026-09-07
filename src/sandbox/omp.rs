@@ -256,12 +256,27 @@ impl OmpRunner {
 
         let effective_prompt = if is_local_openai {
             format!(
-                "{}\n\n==================================================\nCRITICAL DIRECTIVE FOR AGENT EXECUTION:\nYou are an autonomous AI coding agent with direct filesystem tools (`write`, `bash`, `read`, `edit`).\nYou MUST execute your tools immediately to create your implementation files directly in the workspace (e.g. use the `write` tool to create `Dockerfile` or `start.sh` and source files).\nDO NOT merely explain the plan or print code blocks in conversational text without invoking tools. The files MUST actually be written to disk using tool calls.\n==================================================",
+                "{}\n\n==================================================\nCRITICAL DIRECTIVES FOR AGENT EXECUTION:\n1. TOOL CALL REQUIREMENT: You are an autonomous AI coding agent with filesystem tools (`write`, `bash`, `read`, `edit`). You MUST execute your tools immediately to create your implementation files directly in /workspace. DO NOT merely explain the plan in conversational text without calling `write`.\n2. RAW TCP SOCKETS ONLY (MANDATORY): You must build the server from scratch using raw TCP sockets and stream I/O (e.g., Python's `socket.socket`, Go's `net.Listen` with `net.Conn`, Rust's `std::net::TcpListener`, C POSIX sockets).\n   STRICT PROHIBITION: DO NOT use `net/http`, `http.server`, `gin`, `express`, `flask`, `fastapi`, `actix-web`, `axum`, or ANY HTTP framework. Any import of `net/http` or HTTP frameworks will fail anti-cheat compliance immediately!\n3. ENTRYPOINT: Create a working `Dockerfile` or `./start.sh` on port 8080. Test your server with `curl -v http://localhost:8080/` using `bash` before finishing.\n==================================================",
                 prompt
             )
         } else {
             prompt.to_string()
         };
+
+        // Write AGENTS.md into workspace so omp auto-loads instructions across all turns
+        let agents_md_path = canonical_workdir.join("AGENTS.md");
+        let agents_md_content = r#"# Instructions for Autonomous Coding Agent
+1. **TOOL CALL REQUIREMENT**: You have tools (`write`, `bash`, `edit`, `read`). You MUST use the `write` tool to create every file directly in /workspace. NEVER output code in conversational text without calling `write`.
+2. **RAW TCP SOCKETS ONLY (CRITICAL)**: You must build using raw TCP sockets and stream I/O (e.g. Python `socket.socket`, Go `net.Listen` with `net.Conn`, Rust `std::net::TcpListener`).
+   - **STRICT PROHIBITION**: Do NOT use `net/http`, `http.server`, `gin`, `express`, `flask`, or ANY HTTP framework.
+3. **ENTRYPOINT REQUIRED**: You must create a working `Dockerfile` or executable `./start.sh` listening on port 8080. Test your server with `curl -v http://localhost:8080/` using the `bash` tool before finishing.
+"#;
+        let _ = std::fs::write(&agents_md_path, agents_md_content);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&agents_md_path, std::fs::Permissions::from_mode(0o666));
+        }
 
         cmd.arg("subdollar-sandbox")
             .arg("omp")
@@ -433,6 +448,7 @@ impl OmpRunner {
             }
         }
 
+        let _ = std::fs::remove_file(canonical_workdir.join("AGENTS.md"));
         let final_path = active_file.lock().unwrap().clone();
         let stats = Self::extract_latest_session_stats(final_path.as_deref()).unwrap_or_default();
 

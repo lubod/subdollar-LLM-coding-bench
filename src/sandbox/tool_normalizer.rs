@@ -27,8 +27,12 @@ pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolC
         r#"^(?:#|//|--|/\*|<!--)\s*(?:file(?:name)?:\s*|File:\s*)?([a-zA-Z0-9_\.\-/]+\.[a-zA-Z0-9]+|Dockerfile[a-zA-Z0-9_\.-]*|Makefile)\b"#,
     ).ok()?;
 
-    let preceding_re = Regex::new(
-        r#"(?i)(?:file|script|create|implement|in|the|\b)\s*[`*]*([a-zA-Z0-9_\.-]+\.(?:py|go|rs|js|ts|c|cpp|h|sh|json|yaml|yml|toml|txt|html|css)|Dockerfile|start\.sh)[`*]*\s*:?\s*$"#,
+    let bt_re = Regex::new(
+        r#"[`*]+([a-zA-Z0-9_\.\-/]+\.(?:py|go|rs|js|ts|c|cpp|h|sh|json|yaml|yml|toml|txt|html|css)|Dockerfile|start\.sh)[`*]+"#,
+    ).ok()?;
+
+    let word_re = Regex::new(
+        r#"(?i)\b(?:file|script|create|implement|write|in)\s+[`*]*([a-zA-Z0-9_\.\-/]+\.(?:py|go|rs|js|ts|c|cpp|h|sh|json|yaml|yml|toml|txt|html|css)|Dockerfile|start\.sh)\b"#,
     ).ok()?;
 
     for cap in block_re.captures_iter(content) {
@@ -38,7 +42,7 @@ pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolC
 
         let mut detected_filename: Option<String> = None;
 
-        // Check line 1 and line 2 of the code block for a filename comment
+        // 1. Check line 1 and line 2 of the code block for a filename comment
         for line in code_body.lines().take(2) {
             let trimmed_line = line.trim();
             if let Some(c) = comment_re.captures(trimmed_line) {
@@ -49,25 +53,52 @@ pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolC
             }
         }
 
-        // If not found in code comments, check text immediately preceding the block
+        // 2. Search preceding text window for backtick/bold filename or word patterns
         if detected_filename.is_none() {
-            let pre_window = &content[start_idx.saturating_sub(250)..start_idx];
-            if let Some(c) = preceding_re.captures(pre_window.trim_end()) {
-                if let Some(f) = c.get(1) {
+            let pre_window = &content[start_idx.saturating_sub(300)..start_idx];
+            for bc in bt_re.captures_iter(pre_window) {
+                if let Some(f) = bc.get(1) {
                     detected_filename = Some(f.as_str().to_string());
+                }
+            }
+            if detected_filename.is_none() {
+                for wc in word_re.captures_iter(pre_window) {
+                    if let Some(f) = wc.get(1) {
+                        detected_filename = Some(f.as_str().to_string());
+                    }
                 }
             }
         }
 
-        // If still not found, but language tag is dockerfile
-        if detected_filename.is_none() && (lang == "dockerfile" || lang == "docker") {
-            detected_filename = Some("Dockerfile".to_string());
+        // 3. Fallback to language and content heuristics
+        if detected_filename.is_none() {
+            if lang == "dockerfile" || lang == "docker" {
+                detected_filename = Some("Dockerfile".to_string());
+            } else if lang == "go" && code_body.contains("package main") {
+                detected_filename = Some("main.go".to_string());
+            } else if (lang == "python" || lang == "py")
+                && (code_body.contains("import socket")
+                    || code_body.contains("if __name__")
+                    || code_body.contains("def main")
+                    || code_body.contains("def run"))
+            {
+                detected_filename = Some("main.py".to_string());
+            } else if (lang == "rust" || lang == "rs") && code_body.contains("fn main") {
+                detected_filename = Some("main.rs".to_string());
+            } else if (lang == "sh" || lang == "bash")
+                && (code_body.contains("go run")
+                    || code_body.contains("python")
+                    || code_body.contains("cargo")
+                    || code_body.starts_with("#!"))
+            {
+                detected_filename = Some("start.sh".to_string());
+            }
         }
 
         if let Some(raw_path) = detected_filename {
             let clean_path = raw_path
                 .trim()
-                .trim_matches(|c| c == '`' || c == '*' || c == '\'' || c == '"')
+                .trim_matches(|c| c == '`' || c == '*' || c == '\x27' || c == '"')
                 .trim_start_matches("/workspace/")
                 .trim_start_matches("./")
                 .to_string();
@@ -82,7 +113,9 @@ pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolC
 
             // Exclude shell commands mistakenly marked with sh if they are not real scripts
             if (clean_path.ends_with(".sh") || clean_path == "start.sh")
-                && (code_body.trim().starts_with("curl ") || code_body.trim().starts_with("docker run") || code_body.trim().starts_with("wrk "))
+                && (code_body.trim().starts_with("curl ")
+                    || code_body.trim().starts_with("docker run")
+                    || code_body.trim().starts_with("wrk "))
             {
                 continue;
             }
@@ -248,6 +281,10 @@ pub async fn handle_chat_completions(
 
     // Always fetch non-streaming from upstream llama-server so we can normalize tool calls reliably
     payload["stream"] = json!(false);
+    // Apply slight repetition penalty to prevent small models from infinite code loops
+    if payload.get("repeat_penalty").is_none() {
+        payload["repeat_penalty"] = json!(1.15);
+    }
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -735,5 +772,30 @@ FROM alpine
 curl -v http://localhost:8080/
 ```"#;
         assert!(extract_tool_calls(content).is_none());
+    }
+    #[test]
+    fn test_extract_code_blocks_run_092044() {
+        let content = r#"Next, let's create the Go server implementation. We'll start by creating a `main.go` file with the required endpoints.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+}
+```"#;
+        let extracted = extract_tool_calls(content).expect("Should extract main.go from run 092044 snippet");
+        assert_eq!(extracted.len(), 1);
+        assert_eq!(extracted[0].name, "write");
+        let a0: Value = serde_json::from_str(&extracted[0].arguments).unwrap();
+        assert_eq!(a0["path"], "main.go");
     }
 }
