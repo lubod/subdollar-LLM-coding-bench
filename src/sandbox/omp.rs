@@ -137,6 +137,11 @@ impl OmpRunner {
 
         let is_local_openai = model.starts_with("openai/qwen")
             || model.starts_with("openai/llama")
+            || model.starts_with("openai/deepseek")
+            || model.starts_with("openai/glm")
+            || model.starts_with("openai/gemma")
+            || model.starts_with("openai/phi")
+            || model.starts_with("openai/starcoder")
             || model.starts_with("openai/local")
             || model == "openai/local-llama"
             || model.starts_with("local/");

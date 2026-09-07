@@ -42,6 +42,12 @@ impl ModelPricing {
             || m.starts_with("local/")
             || m.starts_with("openai/qwen")
             || m.starts_with("openai/local")
+            || m.starts_with("openai/llama")
+            || m.starts_with("openai/deepseek")
+            || m.starts_with("openai/glm")
+            || m.starts_with("openai/gemma")
+            || m.starts_with("openai/phi")
+            || m.starts_with("openai/starcoder")
             || m == "openai/local-llama"
         {
             ModelPricing {
@@ -212,6 +218,12 @@ impl ModelPricing {
             || m.starts_with("local/")
             || m.starts_with("openai/qwen")
             || m.starts_with("openai/local")
+            || m.starts_with("openai/llama")
+            || m.starts_with("openai/deepseek")
+            || m.starts_with("openai/glm")
+            || m.starts_with("openai/gemma")
+            || m.starts_with("openai/phi")
+            || m.starts_with("openai/starcoder")
             || m == "openai/local-llama"
         {
             return Self::for_model(model_name);
@@ -418,5 +430,17 @@ mod tests {
         let p_qwen = ModelPricing::for_model("openai/qwen2.5-coder-1.5b");
         assert_eq!(p_qwen.prompt_per_million, 0.0);
         assert_eq!(p_qwen.completion_per_million, 0.0);
+
+        let p_glm = ModelPricing::for_model("openai/glm-4-9b");
+        assert_eq!(p_glm.prompt_per_million, 0.0);
+        assert_eq!(p_glm.completion_per_million, 0.0);
+
+        let p_deepseek = ModelPricing::for_model("openai/deepseek-coder-6.7b");
+        assert_eq!(p_deepseek.prompt_per_million, 0.0);
+        assert_eq!(p_deepseek.completion_per_million, 0.0);
+
+        let p_llama3 = ModelPricing::for_model("openai/llama-3.2-3b");
+        assert_eq!(p_llama3.prompt_per_million, 0.0);
+        assert_eq!(p_llama3.completion_per_million, 0.0);
     }
 }

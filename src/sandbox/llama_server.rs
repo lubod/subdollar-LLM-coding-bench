@@ -21,18 +21,39 @@ pub struct LlamaServerManager;
 
 impl LlamaServerManager {
     pub fn resolve_preset(preset: &str) -> String {
-        let p = preset.trim();
-        match p {
+        let clean = preset.trim().trim_start_matches("openai/").to_lowercase();
+        match clean.as_str() {
             "qwen2.5-coder-1.5b" | "qwen-1.5b" | "qwen1.5b" => {
                 "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M".to_string()
             }
             "qwen2.5-coder-7b" | "qwen-7b" | "qwen7b" => {
                 "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M".to_string()
             }
+            "qwen2.5-coder-14b" | "qwen-14b" | "qwen14b" => {
+                "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF:Q4_K_M".to_string()
+            }
             "llama-3.2-3b" | "llama3.2-3b" => {
                 "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M".to_string()
             }
-            custom => custom.to_string(),
+            "llama-3.1-8b" | "llama3.1-8b" => {
+                "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M".to_string()
+            }
+            "deepseek-coder-6.7b" | "deepseek-6.7b" => {
+                "bartowski/deepseek-coder-6.7b-instruct-GGUF:Q4_K_M".to_string()
+            }
+            "glm-4-9b" | "glm4-9b" | "glm-4" => {
+                "THUDM/glm-4-9b-chat-GGUF:Q4_K_M".to_string()
+            }
+            "gemma-2-9b" | "gemma2-9b" => {
+                "bartowski/gemma-2-9b-it-GGUF:Q4_K_M".to_string()
+            }
+            "phi-3.5-mini" | "phi-3.5" => {
+                "bartowski/Phi-3.5-mini-instruct-GGUF:Q4_K_M".to_string()
+            }
+            "starcoder2-7b" => {
+                "bartowski/starcoder2-7b-GGUF:Q4_K_M".to_string()
+            }
+            _ => preset.trim().trim_start_matches("openai/").to_string(),
         }
     }
 
@@ -213,13 +234,29 @@ impl LlamaServerManager {
     }
 
     pub async fn ensure_running_for_model(model: &str) -> Result<()> {
-        let model_lower = model.to_lowercase();
-        let target_preset = if model_lower.contains("7b") {
+        let model_clean = model.trim().trim_start_matches("openai/").to_lowercase();
+        let target_preset: &str = if model_clean.contains("14b") {
+            "qwen2.5-coder-14b"
+        } else if model_clean.contains("7b") && model_clean.contains("coder") {
             "qwen2.5-coder-7b"
-        } else if model_lower.contains("3.2") || model_lower.contains("3b") {
+        } else if model_clean.contains("6.7b") || model_clean.contains("deepseek") {
+            "deepseek-coder-6.7b"
+        } else if model_clean.contains("glm") {
+            "glm-4-9b"
+        } else if model_clean.contains("gemma") {
+            "gemma-2-9b"
+        } else if model_clean.contains("phi") {
+            "phi-3.5-mini"
+        } else if model_clean.contains("starcoder") {
+            "starcoder2-7b"
+        } else if model_clean.contains("3.1") || (model_clean.contains("8b") && model_clean.contains("llama")) {
+            "llama-3.1-8b"
+        } else if model_clean.contains("3.2") || model_clean.contains("3b") {
             "llama-3.2-3b"
-        } else {
+        } else if model_clean.contains("1.5b") {
             "qwen2.5-coder-1.5b"
+        } else {
+            "qwen2.5-coder-7b"
         };
         let target_repo = Self::resolve_preset(target_preset).to_lowercase();
 
@@ -228,8 +265,14 @@ impl LlamaServerManager {
             if let Some(ref current_model) = st.model {
                 let curr = current_model.to_lowercase();
                 let is_matching = curr == target_repo
+                    || (target_preset == "qwen2.5-coder-14b" && curr.contains("14b"))
                     || (target_preset == "qwen2.5-coder-7b" && (curr.contains("7b") || curr.contains("coder-7b")))
                     || (target_preset == "qwen2.5-coder-1.5b" && (curr.contains("1.5b") || curr.contains("coder-1.5b")))
+                    || (target_preset == "deepseek-coder-6.7b" && curr.contains("6.7b"))
+                    || (target_preset == "glm-4-9b" && curr.contains("glm"))
+                    || (target_preset == "gemma-2-9b" && curr.contains("gemma"))
+                    || (target_preset == "phi-3.5-mini" && curr.contains("phi"))
+                    || (target_preset == "llama-3.1-8b" && curr.contains("3.1"))
                     || (target_preset == "llama-3.2-3b" && curr.contains("3.2"));
                 if is_matching {
                     return Ok(());
@@ -258,6 +301,22 @@ mod tests {
         assert_eq!(
             LlamaServerManager::resolve_preset("qwen2.5-coder-7b"),
             "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M"
+        );
+        assert_eq!(
+            LlamaServerManager::resolve_preset("qwen2.5-coder-14b"),
+            "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF:Q4_K_M"
+        );
+        assert_eq!(
+            LlamaServerManager::resolve_preset("glm-4-9b"),
+            "THUDM/glm-4-9b-chat-GGUF:Q4_K_M"
+        );
+        assert_eq!(
+            LlamaServerManager::resolve_preset("llama-3.1-8b"),
+            "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M"
+        );
+        assert_eq!(
+            LlamaServerManager::resolve_preset("deepseek-coder-6.7b"),
+            "bartowski/deepseek-coder-6.7b-instruct-GGUF:Q4_K_M"
         );
         assert_eq!(
             LlamaServerManager::resolve_preset("my-user/my-repo:Q5_K_M"),

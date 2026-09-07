@@ -379,7 +379,7 @@ async fn get_models(
                     .unwrap_or(0.0)
                     * 1_000_000.0;
 
-                if prompt_p <= 1.0 && comp_p <= 1.0 && (prompt_p > 0.0 || comp_p > 0.0) {
+                if prompt_p <= 1.0 && comp_p <= 5.0 && (prompt_p > 0.0 || comp_p > 0.0) {
                     models.push(SubDollarModel {
                         id: item.id,
                         name: item.name,
@@ -399,47 +399,40 @@ async fn get_models(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Prepend local llama.cpp models ($0.00 / free offline)
+    // Prepend comprehensive local llama.cpp models ($0.00 / free offline)
     let llama_st = crate::sandbox::llama_server::LlamaServerManager::status().await;
     let local_name = if let Some(ref m) = llama_st.model {
         format!("Local: llama.cpp ({})", m)
     } else {
-        "Local: llama.cpp (Auto-start)".to_string()
+        "Local: llama.cpp (Auto-start / Active)".to_string()
     };
 
-    models.insert(
-        0,
-        SubDollarModel {
-            id: "openai/local-llama".to_string(),
-            name: local_name,
-            prompt_price_per_m: 0.0,
-            completion_price_per_m: 0.0,
-            context_length: 16384,
-            created: 1720000000,
-        },
-    );
-    models.insert(
-        1,
-        SubDollarModel {
-            id: "openai/qwen2.5-coder-1.5b".to_string(),
-            name: "Local: Qwen 2.5 Coder 1.5B (llama.cpp · $0.00)".to_string(),
-            prompt_price_per_m: 0.0,
-            completion_price_per_m: 0.0,
-            context_length: 16384,
-            created: 1720000000,
-        },
-    );
-    models.insert(
-        2,
-        SubDollarModel {
-            id: "openai/qwen2.5-coder-7b".to_string(),
-            name: "Local: Qwen 2.5 Coder 7B (llama.cpp · $0.00)".to_string(),
-            prompt_price_per_m: 0.0,
-            completion_price_per_m: 0.0,
-            context_length: 16384,
-            created: 1720000000,
-        },
-    );
+    let local_presets: &[(&str, &str)] = &[
+        ("openai/local-llama", local_name.as_str()),
+        ("openai/qwen2.5-coder-1.5b", "Local: Qwen 2.5 Coder 1.5B (llama.cpp · $0.00)"),
+        ("openai/qwen2.5-coder-7b", "Local: Qwen 2.5 Coder 7B (llama.cpp · $0.00)"),
+        ("openai/qwen2.5-coder-14b", "Local: Qwen 2.5 Coder 14B (llama.cpp · $0.00)"),
+        ("openai/llama-3.2-3b", "Local: Llama 3.2 3B (llama.cpp · $0.00)"),
+        ("openai/llama-3.1-8b", "Local: Meta Llama 3.1 8B (llama.cpp · $0.00)"),
+        ("openai/deepseek-coder-6.7b", "Local: DeepSeek Coder 6.7B (llama.cpp · $0.00)"),
+        ("openai/glm-4-9b", "Local: GLM-4 9B Chat (llama.cpp · $0.00)"),
+        ("openai/gemma-2-9b", "Local: Gemma 2 9B (llama.cpp · $0.00)"),
+        ("openai/phi-3.5-mini", "Local: Phi 3.5 Mini (llama.cpp · $0.00)"),
+    ];
+
+    for (idx, (id, name)) in local_presets.iter().enumerate() {
+        models.insert(
+            idx,
+            SubDollarModel {
+                id: id.to_string(),
+                name: name.to_string(),
+                prompt_price_per_m: 0.0,
+                completion_price_per_m: 0.0,
+                context_length: 16384,
+                created: 1720000000 + idx as i64,
+            },
+        );
+    }
 
     Json(models)
 }
@@ -797,6 +790,11 @@ async fn start_run(
     let is_local = req.model.contains("local")
         || req.model.starts_with("openai/qwen")
         || req.model.starts_with("openai/llama")
+        || req.model.starts_with("openai/deepseek")
+        || req.model.starts_with("openai/glm")
+        || req.model.starts_with("openai/gemma")
+        || req.model.starts_with("openai/phi")
+        || req.model.starts_with("openai/starcoder")
         || req.model.starts_with("local/");
     if is_local {
         if let Err(e) =
