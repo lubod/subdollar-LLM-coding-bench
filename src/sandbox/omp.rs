@@ -67,9 +67,37 @@ pub struct AgentRunSpec<'a> {
     pub network: Option<&'a str>,
 }
 
+#[derive(Debug, Clone)]
+pub struct OmpExecutionError {
+    pub message: String,
+    pub partial_stats: OmpSessionStats,
+}
+
+impl std::fmt::Display for OmpExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for OmpExecutionError {}
+
 pub struct OmpRunner;
 
 impl OmpRunner {
+    pub fn get_host_omp_dir() -> PathBuf {
+        let ubuntu_omp = PathBuf::from("/home/ubuntu/.omp");
+        if ubuntu_omp.is_dir() {
+            ubuntu_omp
+        } else if Path::new("/home/ubuntu").is_dir() {
+            let _ = std::fs::create_dir_all(&ubuntu_omp);
+            ubuntu_omp
+        } else if let Ok(home) = std::env::var("HOME") {
+            PathBuf::from(home).join(".omp")
+        } else {
+            crate::config::get_repo_root().join(".omp")
+        }
+    }
+
     pub fn run_agent(spec: AgentRunSpec<'_>) -> Result<OmpSessionStats> {
         Self::run_agent_with_logger(spec, |line| {
             println!("{}", line);
@@ -116,23 +144,42 @@ impl OmpRunner {
         };
         let mount_workdir = format!("{}:/workspace", canonical_workdir.display());
 
-        let host_omp_dir = std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| crate::config::get_repo_root())
-            .join(".omp");
+        let host_omp_dir = Self::get_host_omp_dir();
         let host_agent_dir = host_omp_dir.join("agent");
         let host_sessions_dir = host_agent_dir.join("sessions");
+        let host_data_dir = host_agent_dir.join("data");
+        let host_state_dir = host_agent_dir.join("state");
+        let host_cache_dir = host_agent_dir.join("cache");
+        let host_run_dir = host_omp_dir.join("run");
         let _ = std::fs::create_dir_all(&host_sessions_dir);
+        let _ = std::fs::create_dir_all(&host_data_dir);
+        let _ = std::fs::create_dir_all(&host_state_dir);
+        let _ = std::fs::create_dir_all(&host_cache_dir);
+        let _ = std::fs::create_dir_all(&host_run_dir);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&host_omp_dir, std::fs::Permissions::from_mode(0o777));
-            let _ =
-                std::fs::set_permissions(&host_agent_dir, std::fs::Permissions::from_mode(0o777));
-            let _ = std::fs::set_permissions(
+            for dir in [
+                &host_omp_dir,
+                &host_agent_dir,
                 &host_sessions_dir,
-                std::fs::Permissions::from_mode(0o777),
-            );
+                &host_data_dir,
+                &host_state_dir,
+                &host_cache_dir,
+                &host_run_dir,
+            ] {
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o777));
+            }
+            if let Ok(entries) = std::fs::read_dir(&host_agent_dir) {
+                for entry in entries.flatten() {
+                    if let Ok(ft) = entry.file_type() {
+                        if ft.is_file() {
+                            let _ = std::fs::set_permissions(&entry.path(), std::fs::Permissions::from_mode(0o666));
+                        }
+                    }
+                }
+            }
+            let _ = std::fs::set_permissions(&canonical_workdir, std::fs::Permissions::from_mode(0o777));
         }
         let mount_omp = format!("{}:/home/ubuntu/.omp", host_omp_dir.display());
 
@@ -149,6 +196,10 @@ impl OmpRunner {
 
         let effective_model = if model.starts_with("local/") {
             format!("openai/{}", model.trim_start_matches("local/"))
+        } else if is_local_openai {
+            model.to_string()
+        } else if !model.starts_with("openrouter/") && !model.starts_with("ollama/") {
+            format!("openrouter/{}", model)
         } else {
             model.to_string()
         };
@@ -524,18 +575,6 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
         }
 
         let stopped_by_limit = limit_reached.load(Ordering::SeqCst);
-        if !stopped_by_limit {
-            if let Some(s) = status {
-                if !s.success() {
-                    warn!("OMP agent exited with non-zero status: {:?}", s.code());
-                    return Err(anyhow!(
-                        "OMP agent exited with non-zero status: {:?}",
-                        s.code()
-                    ));
-                }
-            }
-        }
-
         let _ = std::fs::remove_file(canonical_workdir.join("AGENTS.md"));
         let final_path = active_file.lock().unwrap().clone();
         let stats = match final_path.as_deref() {
@@ -551,14 +590,34 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
             }
         }
 
+        if !stopped_by_limit {
+            if let Some(s) = status {
+                if !s.success() {
+                    warn!("OMP agent exited with non-zero status: {:?}", s.code());
+                    return Err(anyhow::Error::new(OmpExecutionError {
+                        message: format!("OMP agent exited with non-zero status: {:?}", s.code()),
+                        partial_stats: stats,
+                    }));
+                }
+            }
+        }
+
         Ok(stats)
     }
 
     fn get_sessions_dirs() -> Vec<PathBuf> {
         let mut dirs = Vec::new();
+        let host_sessions = Self::get_host_omp_dir().join("agent/sessions");
+        if host_sessions.exists() {
+            dirs.push(host_sessions);
+        }
+        let u = PathBuf::from("/home/ubuntu/.omp/agent/sessions");
+        if u.exists() && !dirs.contains(&u) {
+            dirs.push(u);
+        }
         if let Ok(home) = std::env::var("HOME") {
             let p = PathBuf::from(home).join(".omp/agent/sessions");
-            if p.exists() {
+            if p.exists() && !dirs.contains(&p) {
                 dirs.push(p);
             }
         }
@@ -566,10 +625,6 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
         let r_omp = root.join(".omp/agent/sessions");
         if r_omp.exists() && !dirs.contains(&r_omp) {
             dirs.push(r_omp);
-        }
-        let u = PathBuf::from("/home/ubuntu/.omp/agent/sessions");
-        if u.exists() && !dirs.contains(&u) {
-            dirs.push(u);
         }
         let r = PathBuf::from("/root/.omp/agent/sessions");
         if r.exists() && !dirs.contains(&r) {
@@ -781,6 +836,7 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
         None
     }
 
+    #[allow(dead_code)]
     fn find_newest_session_file_across(dirs: &[PathBuf]) -> Option<PathBuf> {
         let mut candidates = Vec::new();
         for dir in dirs {
@@ -949,13 +1005,7 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
     pub fn extract_latest_session_stats(preferred_file: Option<&Path>) -> Result<OmpSessionStats> {
         let session_file = match preferred_file {
             Some(p) if p.exists() => p.to_path_buf(),
-            _ => {
-                let dirs = Self::get_sessions_dirs();
-                match Self::find_newest_session_file_across(&dirs) {
-                    Some(f) => f,
-                    None => return Err(anyhow!("No session jsonl file found")),
-                }
-            }
+            _ => return Err(anyhow!("No valid session jsonl file provided")),
         };
         let content = std::fs::read_to_string(&session_file)?;
 
@@ -966,7 +1016,12 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
 
         for line in content.lines() {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                steps += 1;
+                let is_assistant = v.pointer("/message/role").and_then(|r| r.as_str()) == Some("assistant");
+                let is_test_usage = v.pointer("/message/role").is_none()
+                    && (v.get("usage").is_some() || v.pointer("/message/usage").is_some());
+                if is_assistant || is_test_usage {
+                    steps += 1;
+                }
                 let usage_opt = v
                     .get("usage")
                     .or_else(|| v.get("message").and_then(|m| m.get("usage")));
@@ -1158,6 +1213,7 @@ mod tests {
         assert_eq!(stats.cached_tokens, 2000);
         assert_eq!(stats.total_tokens, 6850);
         assert_eq!(stats.steps_taken, 2);
+        assert!(OmpRunner::extract_latest_session_stats(None).is_err());
 
         let found = OmpRunner::find_newest_session_file_across(std::slice::from_ref(&temp_dir));
         assert_eq!(found, Some(session_file));

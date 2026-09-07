@@ -119,6 +119,11 @@ impl BenchmarkPipeline {
                 let _ = fs::remove_dir_all(&config.workdir);
             }
             fs::create_dir_all(&config.workdir)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&config.workdir, fs::Permissions::from_mode(0o777));
+            }
         }
 
         let sandbox = SandboxManager::with_id(&run_id);
@@ -256,8 +261,10 @@ impl BenchmarkPipeline {
                 Ok(Err(e)) => {
                     logger.log(&format!("[OMP ERROR] Agent execution failed: {}", e));
                     agent_failed = true;
-                    let partial_stats =
-                        OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
+                    let partial_stats = e
+                        .downcast_ref::<crate::sandbox::omp::OmpExecutionError>()
+                        .map(|oe| oe.partial_stats.clone())
+                        .unwrap_or_default();
                     let p = partial_stats.prompt_tokens;
                     let c = partial_stats.cached_tokens;
                     let comp = partial_stats.completion_tokens;
@@ -266,8 +273,7 @@ impl BenchmarkPipeline {
                 Err(join_err) => {
                     logger.log(&format!("[OMP ERROR] Task execution error: {}", join_err));
                     agent_failed = true;
-                    let partial_stats =
-                        OmpRunner::extract_latest_session_stats(None).unwrap_or_default();
+                    let partial_stats = OmpSessionStats::default();
                     let p = partial_stats.prompt_tokens;
                     let c = partial_stats.cached_tokens;
                     let comp = partial_stats.completion_tokens;
