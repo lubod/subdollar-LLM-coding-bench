@@ -144,6 +144,7 @@ impl OmpRunner {
             .arg("--memory=3g")
             .arg("--cpus=3.0")
             .arg("--pids-limit=512")
+            .arg("--add-host=host.docker.internal:host-gateway")
             .arg("-v")
             .arg(&mount_workdir)
             .arg("-v")
@@ -169,6 +170,22 @@ impl OmpRunner {
             .or_else(|| std::env::var("OPENROUTER_API_KEY").ok());
         if let Some(ref key) = effective_key {
             cmd.arg("-e").arg(format!("OPENROUTER_API_KEY={}", key));
+        }
+
+        // Support local Ollama & OpenAI-compatible backends
+        if let Ok(ollama_url) = std::env::var("OLLAMA_BASE_URL") {
+            cmd.arg("-e").arg(format!("OLLAMA_BASE_URL={}", ollama_url));
+        } else if model.starts_with("ollama/") {
+            cmd.arg("-e")
+                .arg("OLLAMA_BASE_URL=http://host.docker.internal:11434");
+        }
+
+        if let Ok(openai_base) = std::env::var("OPENAI_BASE_URL") {
+            cmd.arg("-e")
+                .arg(format!("OPENAI_BASE_URL={}", openai_base));
+        }
+        if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {
+            cmd.arg("-e").arg(format!("OPENAI_API_KEY={}", openai_key));
         }
 
         cmd.arg("subdollar-sandbox")

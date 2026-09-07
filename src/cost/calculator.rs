@@ -38,7 +38,13 @@ impl ModelPricing {
 
     pub fn for_model(model_name: &str) -> Self {
         let m = model_name.to_lowercase();
-        if m.contains("gemini-2.5-flash") {
+        if m.starts_with("ollama/") || m.starts_with("local/") {
+            ModelPricing {
+                prompt_per_million: 0.0,
+                completion_per_million: 0.0,
+                cache_read_per_million: 0.0,
+            }
+        } else if m.contains("gemini-2.5-flash") {
             ModelPricing {
                 prompt_per_million: 0.15,
                 completion_per_million: 0.60,
@@ -378,5 +384,17 @@ mod tests {
         let unknown = ModelPricing::for_model_async("completely-unknown-xyz").await;
         assert_eq!(unknown.prompt_per_million, 0.20);
         assert_eq!(unknown.completion_per_million, 0.60);
+    }
+
+    #[test]
+    fn test_pricing_for_local_models() {
+        let p_ollama = ModelPricing::for_model("ollama/qwen2.5-coder:7b");
+        assert_eq!(p_ollama.prompt_per_million, 0.0);
+        assert_eq!(p_ollama.completion_per_million, 0.0);
+        assert_eq!(p_ollama.cache_read_per_million, 0.0);
+
+        let p_local = ModelPricing::for_model("local/my-model");
+        assert_eq!(p_local.prompt_per_million, 0.0);
+        assert_eq!(p_local.completion_per_million, 0.0);
     }
 }
