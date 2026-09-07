@@ -18,6 +18,93 @@ pub struct ExtractedToolCall {
 
 /// Extracts files defined in markdown code blocks when local models output
 /// implementation files in conversational text instead of invoking tool calls directly.
+
+/// Parses pseudo-command write invocations emitted by models such as:
+/// write content='#!/bin/sh\npython3 /workspace/tcp_listener.py' i="Create executable start script" path="/workspace/start.sh"
+/// or:
+/// write(path="/workspace/start.sh", content="#!/bin/sh\npython3 main.py")
+pub fn parse_pseudo_write(text: &str) -> Option<(Option<String>, String)> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with("write ") && !trimmed.starts_with("write(") {
+        return None;
+    }
+
+    // 1. Check keyword arguments: path=... and content=...
+    let content_kw_re = Regex::new(r#"(?s)\bcontent=(?:"""(.*?)"""|'''(.*?)'''|"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')"#).ok()?;
+    if let Some(content_cap) = content_kw_re.captures(trimmed) {
+        let raw_content = content_cap
+            .get(1)
+            .or_else(|| content_cap.get(2))
+            .or_else(|| content_cap.get(3))
+            .or_else(|| content_cap.get(4))?
+            .as_str();
+
+        let path_re = Regex::new(r#"(?s)\bpath=(?:["']([^"']+)["'])"#).ok()?;
+        let path = path_re
+            .captures(trimmed)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string());
+
+        let unescaped = raw_content
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+            .replace("\\'", "'");
+
+        return Some((path, unescaped));
+    }
+
+    // 2. Check positional arguments: write("path", "content")
+    let positional_re = Regex::new(r#"(?s)^write\(\s*["']([^"']+)["']\s*,\s*(?:"""(.*?)"""|'''(.*?)'''|"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')\s*\)"#).ok()?;
+    if let Some(cap) = positional_re.captures(trimmed) {
+        let path = cap.get(1).map(|m| m.as_str().to_string());
+        let raw_content = cap
+            .get(2)
+            .or_else(|| cap.get(3))
+            .or_else(|| cap.get(4))
+            .or_else(|| cap.get(5))?
+            .as_str();
+
+        let unescaped = raw_content
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+            .replace("\\'", "'");
+
+        return Some((path, unescaped));
+    }
+
+    None
+}
+
+/// Sanitizes extracted tool calls, unpacking pseudo-command write invocations if present
+pub fn sanitize_tool_call(mut tc: ExtractedToolCall) -> ExtractedToolCall {
+    if tc.name == "write" {
+        if let Ok(mut args_val) = serde_json::from_str::<Value>(&tc.arguments) {
+            if let Some(c_str) = args_val.get("content").and_then(|c| c.as_str()) {
+                if let Some((pseudo_path, pseudo_content)) = parse_pseudo_write(c_str) {
+                    args_val["content"] = json!(pseudo_content);
+                    if let Some(p) = pseudo_path {
+                        let clean_p = p
+                            .trim()
+                            .trim_matches(|c| c == '`' || c == '*' || c == '\x27' || c == '"')
+                            .trim_start_matches("/workspace/")
+                            .trim_start_matches("./")
+                            .to_string();
+                        if !clean_p.is_empty() {
+                            args_val["path"] = json!(clean_p);
+                        }
+                    }
+                    tc.arguments = args_val.to_string();
+                }
+            }
+        }
+    }
+    tc
+}
+
 pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolCall>> {
     let block_re = Regex::new(r"(?s)```([a-zA-Z0-9_-]*)\r?\n(.*?)\r?\n```").ok()?;
     let mut files = Vec::new();
@@ -41,6 +128,14 @@ pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolC
         let start_idx = cap.get(0).unwrap().start();
 
         let mut detected_filename: Option<String> = None;
+        let mut file_content = code_body.to_string();
+
+        if let Some((pseudo_path, pseudo_content)) = parse_pseudo_write(code_body) {
+            file_content = pseudo_content;
+            if let Some(p) = pseudo_path {
+                detected_filename = Some(p);
+            }
+        }
 
         // 1. Check line 1 and line 2 of the code block for a filename comment
         for line in code_body.lines().take(2) {
@@ -126,7 +221,7 @@ pub fn extract_code_blocks_as_writes(content: &str) -> Option<Vec<ExtractedToolC
                     name: "write".to_string(),
                     arguments: json!({
                         "path": clean_path,
-                        "content": code_body,
+                        "content": file_content,
                     })
                     .to_string(),
                 });
@@ -253,18 +348,41 @@ pub fn extract_tool_calls(content: &str) -> Option<Vec<ExtractedToolCall>> {
                     } else {
                         serde_json::to_string(&args).unwrap_or_else(|_| "{}".to_string())
                     };
-                    return Some(vec![ExtractedToolCall {
+                    let tc = ExtractedToolCall {
                         name: name.to_string(),
                         arguments: args_str,
-                    }]);
+                    };
+                    return Some(vec![sanitize_tool_call(tc)]);
                 }
+            }
+        }
+    }
+
+    // 4b. Bare pseudo-command write calls in conversational text
+    if let Some((pseudo_path, pseudo_content)) = parse_pseudo_write(trimmed) {
+        if let Some(p) = pseudo_path {
+            let clean_p = p
+                .trim()
+                .trim_matches(|c| c == '`' || c == '*' || c == '\x27' || c == '"')
+                .trim_start_matches("/workspace/")
+                .trim_start_matches("./")
+                .to_string();
+            if !clean_p.is_empty() {
+                return Some(vec![ExtractedToolCall {
+                    name: "write".to_string(),
+                    arguments: json!({
+                        "path": clean_p,
+                        "content": pseudo_content,
+                    })
+                    .to_string(),
+                }]);
             }
         }
     }
 
     // 5. Detect files in markdown code blocks
     if let Some(files) = extract_code_blocks_as_writes(content) {
-        return Some(files);
+        return Some(files.into_iter().map(sanitize_tool_call).collect());
     }
 
     None
@@ -333,7 +451,24 @@ pub async fn handle_chat_completions(
                 .map(|a| !a.is_empty())
                 .unwrap_or(false);
 
-            if !has_existing_tc {
+            if has_existing_tc {
+                if let Some(tc_arr) = msg.get_mut("tool_calls").and_then(|tc| tc.as_array_mut()) {
+                    for tc in tc_arr {
+                        if let Some(func) = tc.get_mut("function") {
+                            if func.get("name").and_then(|n| n.as_str()) == Some("write") {
+                                if let Some(args_str) = func.get("arguments").and_then(|a| a.as_str()) {
+                                    let temp_tc = ExtractedToolCall {
+                                        name: "write".to_string(),
+                                        arguments: args_str.to_string(),
+                                    };
+                                    let clean_tc = sanitize_tool_call(temp_tc);
+                                    func["arguments"] = json!(clean_tc.arguments);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
                 let content = msg.get("content").and_then(|s| s.as_str()).unwrap_or("");
                 if let Some(tools) = extract_tool_calls(content) {
                     info!(
@@ -477,6 +612,15 @@ pub async fn handle_chat_completions(
                 let fn_obj = tc.get("function");
                 let name = fn_obj.and_then(|f| f.get("name")).and_then(|s| s.as_str()).unwrap_or("");
                 let args = fn_obj.and_then(|f| f.get("arguments")).and_then(|s| s.as_str()).unwrap_or("{}");
+                let clean_args = if name == "write" {
+                    let temp_tc = ExtractedToolCall {
+                        name: "write".to_string(),
+                        arguments: args.to_string(),
+                    };
+                    sanitize_tool_call(temp_tc).arguments
+                } else {
+                    args.to_string()
+                };
 
                 let chunk1 = json!({
                     "id": resp_id,
@@ -494,7 +638,7 @@ pub async fn handle_chat_completions(
                                 "type": "function",
                                 "function": {
                                     "name": name,
-                                    "arguments": args,
+                                    "arguments": clean_args,
                                 }
                             }]
                         },
@@ -797,5 +941,42 @@ func main() {
         assert_eq!(extracted[0].name, "write");
         let a0: Value = serde_json::from_str(&extracted[0].arguments).unwrap();
         assert_eq!(a0["path"], "main.go");
+    }
+
+    #[test]
+    fn test_parse_pseudo_write_from_run_114159() {
+        let raw = r#"write content='#!/bin/sh\npython3 /workspace/tcp_listener.py' i="Create executable start script" path="/workspace/start.sh""#;
+        let (path, content) = parse_pseudo_write(raw).expect("Should parse pseudo write");
+        assert_eq!(path, Some("/workspace/start.sh".to_string()));
+        assert_eq!(content, "#!/bin/sh\npython3 /workspace/tcp_listener.py");
+    }
+
+    #[test]
+    fn test_extract_code_blocks_with_pseudo_write() {
+        let content = r#"Here is the start script:
+```sh
+write content='#!/bin/sh\npython3 /workspace/tcp_listener.py' i="Create executable start script" path="/workspace/start.sh"
+```"#;
+        let extracted = extract_tool_calls(content).expect("Should extract pseudo write from code block");
+        assert_eq!(extracted.len(), 1);
+        assert_eq!(extracted[0].name, "write");
+        let a0: Value = serde_json::from_str(&extracted[0].arguments).unwrap();
+        assert_eq!(a0["path"], "start.sh");
+        assert_eq!(a0["content"], "#!/bin/sh\npython3 /workspace/tcp_listener.py");
+    }
+
+    #[test]
+    fn test_sanitize_tool_call_unwraps_pseudo_write() {
+        let tc = ExtractedToolCall {
+            name: "write".to_string(),
+            arguments: json!({
+                "path": "start.sh",
+                "content": "write content='#!/bin/sh\\npython3 /workspace/tcp_listener.py' i=\"Create executable start script\" path=\"/workspace/start.sh\""
+            }).to_string(),
+        };
+        let cleaned = sanitize_tool_call(tc);
+        let a0: Value = serde_json::from_str(&cleaned.arguments).unwrap();
+        assert_eq!(a0["path"], "start.sh");
+        assert_eq!(a0["content"], "#!/bin/sh\npython3 /workspace/tcp_listener.py");
     }
 }

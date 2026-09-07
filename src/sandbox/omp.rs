@@ -254,10 +254,79 @@ impl OmpRunner {
             cmd.arg("-e").arg("OPENAI_API_KEY=dummy");
         }
 
+        let prompt_lower = prompt.to_lowercase();
+        let is_http = prompt_lower.contains("http");
+        let is_redis = prompt_lower.contains("redis");
+        let is_dns = prompt_lower.contains("dns");
+
+        let (target_port, test_cmd, guidance_snippet) = if is_http {
+            (
+                8080,
+                "curl -v http://localhost:8080/",
+                r#"ANTI-CHEAT REQUIREMENT (STRICT):
+- Built-in HTTP modules and frameworks (`http.server`, `BaseHTTPRequestHandler`, `HTTPServer`, `net/http`, `flask`, `fastapi`, `express`) are STRICTLY FORBIDDEN and will result in automatic DISQUALIFICATION!
+- Python Raw Socket Skeleton:
+  ```python
+  import socket, os
+  os.makedirs('/tmp/files', exist_ok=True)
+  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+  s.bind(('0.0.0.0', 8080))
+  s.listen(128)
+  while True:
+      conn, addr = s.accept()
+      try:
+          data = conn.recv(4096).decode('utf-8', errors='ignore')
+          # Parse request and write HTTP response:
+          conn.sendall(b"HTTP/1.1 200 OK
+Content-Length: 0
+
+")
+      finally:
+          conn.close()
+  ```
+- Go: use `net.Listen("tcp", "0.0.0.0:8080")` and `net.Conn`. Do NOT use `net/http`.
+- Rust: use `std::net::TcpListener` or `tokio::net::TcpListener`."#,
+            )
+        } else if is_redis {
+            (
+                6379,
+                "redis-cli -p 6379 ping",
+                r#"ANTI-CHEAT REQUIREMENT (STRICT):
+- Pre-built Redis servers and client libraries are FORBIDDEN.
+- Build from raw TCP sockets on port 6379 parsing RESP wire format (`+PONG
+`, `:1
+`, `$len
+`)."#,
+            )
+        } else if is_dns {
+            (
+                5354,
+                "dig @127.0.0.1 -p 5354 test.local",
+                r#"ANTI-CHEAT REQUIREMENT (STRICT):
+- Pre-built DNS servers (bind9, coredns, dnsmasq) are FORBIDDEN.
+- Build from raw UDP/TCP sockets handling RFC 1035 wire packets."#,
+            )
+        } else {
+            (
+                8080,
+                "curl -v http://localhost:8080/",
+                r#"Build using raw TCP sockets and stream I/O."#,
+            )
+        };
+
         let effective_prompt = if is_local_openai {
             format!(
-                "{}\n\n==================================================\nCRITICAL DIRECTIVES FOR AGENT EXECUTION:\n1. TOOL CALL REQUIREMENT: You are an autonomous AI coding agent with filesystem tools (`write`, `bash`, `read`, `edit`). You MUST execute your tools immediately to create your implementation files directly in /workspace. DO NOT merely explain the plan in conversational text without calling `write`.\n2. RAW TCP SOCKETS ONLY (MANDATORY): You must build the server from scratch using raw TCP sockets and stream I/O (e.g., Python's `socket.socket`, Go's `net.Listen` with `net.Conn`, Rust's `std::net::TcpListener`, C POSIX sockets).\n   STRICT PROHIBITION: DO NOT use `net/http`, `http.server`, `gin`, `express`, `flask`, `fastapi`, `actix-web`, `axum`, or ANY HTTP framework. Any import of `net/http` or HTTP frameworks will fail anti-cheat compliance immediately!\n3. ENTRYPOINT: Create a working `Dockerfile` or `./start.sh` on port 8080. Test your server with `curl -v http://localhost:8080/` using `bash` before finishing.\n==================================================",
-                prompt
+                "{}
+
+==================================================
+CRITICAL DIRECTIVES FOR AGENT EXECUTION:
+1. TOOL CALL REQUIREMENT: You are an autonomous AI coding agent with filesystem tools (`write`, `bash`, `read`, `edit`). You MUST execute your tools immediately to create your implementation files directly in /workspace. DO NOT merely explain the plan in conversational text without calling `write`.
+2. RAW TCP SOCKETS ONLY (MANDATORY):
+{}
+3. ENTRYPOINT: Create a working executable `./start.sh` or `Dockerfile` listening on port {}. Test your server with `{}` using `bash` before finishing.
+==================================================",
+                prompt, guidance_snippet, target_port, test_cmd
             )
         } else {
             prompt.to_string()
@@ -265,12 +334,15 @@ impl OmpRunner {
 
         // Write AGENTS.md into workspace so omp auto-loads instructions across all turns
         let agents_md_path = canonical_workdir.join("AGENTS.md");
-        let agents_md_content = r#"# Instructions for Autonomous Coding Agent
+        let agents_md_content = format!(
+            r#"# Instructions for Autonomous Coding Agent
 1. **TOOL CALL REQUIREMENT**: You have tools (`write`, `bash`, `edit`, `read`). You MUST use the `write` tool to create every file directly in /workspace. NEVER output code in conversational text without calling `write`.
-2. **RAW TCP SOCKETS ONLY (CRITICAL)**: You must build using raw TCP sockets and stream I/O (e.g. Python `socket.socket`, Go `net.Listen` with `net.Conn`, Rust `std::net::TcpListener`).
-   - **STRICT PROHIBITION**: Do NOT use `net/http`, `http.server`, `gin`, `express`, `flask`, or ANY HTTP framework.
-3. **ENTRYPOINT REQUIRED**: You must create a working `Dockerfile` or executable `./start.sh` listening on port 8080. Test your server with `curl -v http://localhost:8080/` using the `bash` tool before finishing.
-"#;
+2. **RAW TCP SOCKETS ONLY (CRITICAL)**:
+{}
+3. **ENTRYPOINT REQUIRED**: You must create a working `Dockerfile` or executable `./start.sh` listening on port {}. Test your server with `{}` using the `bash` tool before finishing.
+"#,
+            guidance_snippet, target_port, test_cmd
+        );
         let _ = std::fs::write(&agents_md_path, agents_md_content);
         #[cfg(unix)]
         {
