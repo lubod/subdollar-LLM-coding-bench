@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-07 14:32:43 UTC*
+*Last Updated: 2026-09-07 14:51:17 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -26,7 +26,8 @@
 | 7 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Python` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0044)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_084014/) |
 | 8 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Go` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0104)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_092044/) |
 | 9 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0125)* | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_075504/) |
-| 10 | `openrouter/~z-ai/glm-flash-latest` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0271)* | **0.0** pts/¢ | [Inspect](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
+| 10 | `openai/gpt-5.6-luna` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0133)* | **0.0** pts/¢ | [Inspect](runs/http_openai_gpt-5.6-luna_20260907_145111/) |
+| 11 | `openrouter/~z-ai/glm-flash-latest` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 *(eff: $0.0271)* | **0.0** pts/¢ | [Inspect](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
 
 ---
 
@@ -58,6 +59,7 @@ The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server fr
 | `openai/qwen2.5-coder-7b` | `auto` | `Python` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_084014/](runs/http_openai_qwen2.5-coder-7b_20260907_084014/) |
 | `openai/qwen2.5-coder-7b` | `auto` | `Go` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_092044/](runs/http_openai_qwen2.5-coder-7b_20260907_092044/) |
 | `openai/qwen2.5-coder-7b` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_075504/](runs/http_openai_qwen2.5-coder-7b_20260907_075504/) |
+| `openai/gpt-5.6-luna` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_gpt-5.6-luna_20260907_145111/](runs/http_openai_gpt-5.6-luna_20260907_145111/) |
 | `openrouter/~z-ai/glm-flash-latest` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/](runs/http_openrouter_~z-ai_glm-flash-latest_20260907_125946/) |
 
 ---
@@ -76,8 +78,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `1f7c34e` (branch `master`) |
-| **Benchmark Captured** | 2026-09-07T14:32:43.984877717+00:00 |
+| **Git Baseline** | Commit `6d28f74` (branch `master`) |
+| **Benchmark Captured** | 2026-09-07T14:51:17.159238722+00:00 |
 
 ---
 

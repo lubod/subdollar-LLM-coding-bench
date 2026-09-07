@@ -912,32 +912,12 @@
             Run 100% free zero-cost local benchmarks ($0.00 / 1M tokens) on CPU/GPU via Docker.
           </div>
 
-          <label for="localModelPreset" style="font-size: 0.75rem; margin-bottom: 4px; display: block;">Preset GGUF Model</label>
-          <select id="localModelPreset" onchange="onLocalPresetChange()" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 8px; width: 100%;">
-            <option value="qwen2.5-coder-1.5b" selected>Qwen 2.5 Coder 1.5B Instruct (Q4_K_M ~980MB - Fast test)</option>
-            <option value="qwen2.5-coder-7b">Qwen 2.5 Coder 7B Instruct (Q4_K_M ~4.7GB - Full SWE)</option>
-            <option value="qwen2.5-coder-14b">Qwen 2.5 Coder 14B Instruct (Q4_K_M ~9.0GB - Strongest)</option>
-            <option value="llama-3.2-3b">Llama 3.2 3B Instruct (Q4_K_M ~2.0GB - Lightweight)</option>
-            <option value="llama-3.1-8b">Meta Llama 3.1 8B Instruct (Q4_K_M ~4.9GB)</option>
-            <option value="deepseek-coder-6.7b">DeepSeek Coder 6.7B Instruct (Q4_K_M ~4.1GB - Coding)</option>
-            <option value="glm-4-9b">THUDM GLM-4 9B Chat (Q4_K_M ~5.5GB - GLM)</option>
-            <option value="gemma-2-9b">Google Gemma 2 9B Instruct (Q4_K_M ~5.8GB)</option>
-            <option value="phi-3.5-mini">Microsoft Phi 3.5 Mini (Q4_K_M ~2.4GB - Reasoning)</option>
-            <option value="custom">⚙️ Custom HuggingFace GGUF Repo (Enter below)</option>
-          </select>
-          <div id="customGgufContainer" style="display: none; margin-bottom: 8px;">
-            <input type="text" id="customGgufRepo" placeholder="e.g. bartowski/deepseek-coder-6.7b-instruct-GGUF:Q4_K_M" style="font-size: 0.75rem; padding: 4px 8px; width: 100%;" oninput="selectLocalModel()" />
-          </div>
-
-          <div style="display: flex; gap: 6px; margin-bottom: 6px;">
-            <button type="button" id="btnStartLocalModel" class="btn-primary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; background: #059669;" onclick="startLocalModel()">
-              ▶ Start Server
+          <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+            <button type="button" id="btnStartLocalModel" class="btn-primary" style="flex: 1; padding: 7px 12px; font-size: 0.78rem; background: #059669; display: flex; align-items: center; justify-content: center; gap: 5px;" onclick="startLocalModel()">
+              <span>▶</span> Start Server
             </button>
-            <button type="button" id="btnStopLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem;" onclick="stopLocalModel()">
-              ⏹ Stop
-            </button>
-            <button type="button" id="btnUseLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; color: #10b981; border-color: #10b981; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);" onclick="selectLocalModel()">
-              ✔ Select Model
+            <button type="button" id="btnStopLocalModel" class="btn-secondary" style="flex: 1; padding: 7px 12px; font-size: 0.78rem; display: flex; align-items: center; justify-content: center; gap: 5px;" onclick="stopLocalModel()">
+              <span>⏹</span> Stop Server
             </button>
           </div>
 
@@ -1473,17 +1453,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       void pill.offsetWidth;
       pill.classList.add('btn-action-pulse');
 
-      if (modelId.includes('local') || modelId.startsWith('openai/qwen')) {
-        const btn = document.getElementById('btnUseLocalModel');
-        if (btn) {
-          btn.classList.remove('btn-action-pulse');
-          void btn.offsetWidth;
-          btn.classList.add('btn-action-pulse');
-          btn.style.background = 'rgba(16, 185, 129, 0.25)';
-          setTimeout(() => {
-            btn.style.background = 'rgba(16, 185, 129, 0.1)';
-          }, 400);
-        }
+      if (modelId.includes('local') || modelId.startsWith('openai/')) {
+        checkLocalModelStatus(false);
       }
       pill.innerHTML = `
         <span>📅 Released: <b>${escapeHtml(opt.dataset.relDate)}</b></span> • 
@@ -3290,36 +3261,34 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
         if (badge) {
           if (data.running) {
-            badge.textContent = '🟢 Running';
+            const shortModel = data.model ? data.model.replace(/-GGUF:.*$/i, '').replace(/^[^\/]+\//, '') : 'Ready';
+            badge.textContent = `🟢 Running (${shortModel})`;
             badge.style.background = 'rgba(16, 185, 129, 0.2)';
             badge.style.color = '#10b981';
             if (stopBtn) stopBtn.disabled = false;
 
-            const selectedPreset = document.getElementById('localModelPreset').value;
+            const currentModelVal = (document.getElementById('model').value || '').toLowerCase();
             const modelLoaded = (data.model || '').toLowerCase();
-            const presetMatched = (selectedPreset === 'qwen2.5-coder-14b' && modelLoaded.includes('14b')) ||
-                                  (selectedPreset === 'qwen2.5-coder-7b' && (modelLoaded.includes('7b') || modelLoaded.includes('coder-7b'))) ||
-                                  (selectedPreset === 'qwen2.5-coder-1.5b' && (modelLoaded.includes('1.5b') || modelLoaded.includes('coder-1.5b'))) ||
-                                  (selectedPreset === 'deepseek-coder-6.7b' && modelLoaded.includes('6.7b')) ||
-                                  (selectedPreset === 'glm-4-9b' && modelLoaded.includes('glm')) ||
-                                  (selectedPreset === 'gemma-2-9b' && modelLoaded.includes('gemma')) ||
-                                  (selectedPreset === 'phi-3.5-mini' && modelLoaded.includes('phi')) ||
-                                  (selectedPreset === 'llama-3.1-8b' && modelLoaded.includes('3.1')) ||
-                                  (selectedPreset === 'llama-3.2-3b' && modelLoaded.includes('3.2')) ||
-                                  (selectedPreset === 'custom' && modelLoaded.toLowerCase().includes(document.getElementById('customGgufRepo') ? document.getElementById('customGgufRepo').value.toLowerCase() : ''));
+            const isLocalSelected = currentModelVal.startsWith('openai/') || currentModelVal.startsWith('local/');
 
-            if (startBtn) {
-              if (presetMatched) {
-                startBtn.disabled = true;
-                startBtn.innerHTML = '✔ Active';
-              } else {
-                startBtn.disabled = false;
-                startBtn.innerHTML = '🔄 Switch Model';
+            let isCurrentRunning = false;
+            if (isLocalSelected) {
+              const baseName = currentModelVal.replace(/^openai\//, '').replace(/^local\//, '');
+              if (baseName === 'local-llama' || modelLoaded.includes(baseName.replace('qwen2.5-', '').replace('-instruct', '')) || modelLoaded.includes(baseName)) {
+                isCurrentRunning = true;
               }
             }
-            const currentModel = document.getElementById('model').value;
-            if (!localStorage.getItem('selected_benchmark_model') && currentModel.includes('gemini')) {
-              selectLocalModel();
+
+            if (startBtn) {
+              if (isLocalSelected && !isCurrentRunning) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '🔄 Switch Model';
+                startBtn.style.background = '#d97706';
+              } else {
+                startBtn.disabled = true;
+                startBtn.innerHTML = '✔ Running';
+                startBtn.style.background = '#059669';
+              }
             }
           } else if (data.status_text && data.status_text.includes('Loading')) {
             badge.textContent = '🟡 Loading';
@@ -3328,6 +3297,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             if (startBtn) {
               startBtn.disabled = true;
               startBtn.innerHTML = '⏳ Loading...';
+              startBtn.style.background = '#059669';
             }
             if (stopBtn) stopBtn.disabled = false;
           } else {
@@ -3337,6 +3307,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
             if (startBtn) {
               startBtn.disabled = false;
               startBtn.innerHTML = '▶ Start Server';
+              startBtn.style.background = '#059669';
             }
             if (stopBtn) stopBtn.disabled = true;
           }
@@ -3362,29 +3333,22 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
-    function onLocalPresetChange() {
-      const preset = document.getElementById('localModelPreset').value;
-      const customBox = document.getElementById('customGgufContainer');
-      if (customBox) {
-        customBox.style.display = (preset === 'custom') ? 'block' : 'none';
-      }
-      selectLocalModel();
-      checkLocalModelStatus(false);
-    }
-
     async function startLocalModel() {
-      let preset = document.getElementById('localModelPreset').value;
-      if (preset === 'custom') {
-        const customVal = document.getElementById('customGgufRepo') ? document.getElementById('customGgufRepo').value.trim() : '';
-        if (!customVal) {
-          alert('Please enter a HuggingFace GGUF repo (e.g. bartowski/deepseek-coder-6.7b-instruct-GGUF:Q4_K_M)');
-          return;
+      const currentModel = (document.getElementById('model').value || '').trim();
+      let preset = 'qwen2.5-coder-7b';
+      if (currentModel.startsWith('openai/') || currentModel.startsWith('local/')) {
+        const raw = currentModel.replace(/^openai\//, '').replace(/^local\//, '');
+        if (raw && raw !== 'local-llama') {
+          preset = raw;
         }
-        preset = customVal;
       }
+
       const startBtn = document.getElementById('btnStartLocalModel');
       const badge = document.getElementById('localModelStatusBadge');
-      if (startBtn) startBtn.disabled = true;
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.innerHTML = '⏳ Starting...';
+      }
       if (badge) {
         badge.textContent = '🟡 Starting...';
         badge.style.background = 'rgba(245, 158, 11, 0.2)';
@@ -3401,7 +3365,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           const err = await res.text();
           throw new Error(err || `HTTP ${res.status}`);
         }
-        selectLocalModel();
+
         let attempts = 0;
         const poll = setInterval(async () => {
           attempts++;
@@ -3435,42 +3399,14 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
-    function selectLocalModel() {
-      const presetSelect = document.getElementById('localModelPreset');
-      let preset = presetSelect ? presetSelect.value : 'qwen2.5-coder-7b';
-      if (preset === 'custom') {
-        const customVal = document.getElementById('customGgufRepo') ? document.getElementById('customGgufRepo').value.trim() : '';
-        preset = customVal || 'custom-gguf';
-      }
+    function selectLocalModel(preset = 'qwen2.5-coder-7b') {
+      const modelId = preset.startsWith('openai/') ? preset : `openai/${preset}`;
       const modelInput = document.getElementById('model');
-      const pill = document.getElementById('selectedPricePill');
-      const btn = document.getElementById('btnUseLocalModel');
-      
-      const modelId = `openai/${preset}`;
-      modelInput.value = modelId;
-      localStorage.setItem('selected_benchmark_model', modelId);
-
-      // 1. Trigger animation on #btnUseLocalModel
-      if (btn) {
-        btn.classList.remove('btn-action-pulse');
-        void btn.offsetWidth;
-        btn.classList.add('btn-action-pulse');
-        btn.innerHTML = '✔ Selected!';
-        btn.style.background = '#10b981';
-        btn.style.borderColor = '#10b981';
-        btn.style.color = '#000';
-        btn.style.fontWeight = '700';
-
-        setTimeout(() => {
-          btn.innerHTML = '✔ Select Model';
-          btn.style.background = 'rgba(16, 185, 129, 0.2)';
-          btn.style.borderColor = '#10b981';
-          btn.style.color = '#10b981';
-          btn.style.fontWeight = '600';
-        }, 1200);
+      if (modelInput) {
+        modelInput.value = modelId;
+        localStorage.setItem('selected_benchmark_model', modelId);
       }
 
-      // 2. Sync and animate "Local (🦙)" preset button in Quick Family Filters
       const localPresetBtn = Array.from(document.querySelectorAll('.presets .preset-btn')).find(b =>
         b.textContent.includes('Local')
       );
@@ -3481,14 +3417,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           }
         });
         localPresetBtn.classList.add('active');
-        localPresetBtn.classList.remove('btn-action-pulse');
-        void localPresetBtn.offsetWidth;
-        localPresetBtn.classList.add('btn-action-pulse');
         activeFamily = 'local';
         filterModelsList();
       }
 
-      // 3. Highlight/select matching option in #modelSelect dropdown
       const select = document.getElementById('modelSelect');
       if (select) {
         for (let i = 0; i < select.options.length; i++) {
@@ -3499,17 +3431,19 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         }
       }
 
-      // 4. Update and animate the price pill
-      pill.style.display = 'inline-flex';
-      pill.classList.remove('btn-action-pulse');
-      void pill.offsetWidth;
-      pill.classList.add('btn-action-pulse');
-      pill.innerHTML = `
-        <span>🦙 <b>Local llama.cpp</b></span> • 
-        <span>📥 Input: <b>$0.00/1M</b></span> • 
-        <span>📤 Output: <b>$0.00/1M</b></span> • 
-        <span>🧠 Ctx: <b>16,384</b></span>
-      `;
+      const pill = document.getElementById('selectedPricePill');
+      if (pill) {
+        pill.style.display = 'inline-flex';
+        pill.classList.remove('btn-action-pulse');
+        void pill.offsetWidth;
+        pill.classList.add('btn-action-pulse');
+        pill.innerHTML = `
+          <span>🦙 <b>Local llama.cpp</b></span> • 
+          <span>📥 Input: <b>$0.00/1M</b></span> • 
+          <span>📤 Output: <b>$0.00/1M</b></span> • 
+          <span>🧠 Ctx: <b>16,384</b></span>
+        `;
+      }
     }
 
     function resetStatus() {

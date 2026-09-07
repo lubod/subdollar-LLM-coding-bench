@@ -418,10 +418,13 @@ async fn get_models(
 
     // Prepend comprehensive local llama.cpp models ($0.00 / free offline)
     let llama_st = crate::sandbox::llama_server::LlamaServerManager::status().await;
+    let running_tag = if llama_st.running { " [🟢 Server Running]" } else { "" };
     let local_name = if let Some(ref m) = llama_st.model {
-        format!("Local: llama.cpp ({})", m)
+        format!("Local: llama.cpp ({}){}", m, running_tag)
+    } else if llama_st.running {
+        "Local: llama.cpp Active Server (🟢 Running · $0.00)".to_string()
     } else {
-        "Local: llama.cpp (Auto-start / Active)".to_string()
+        "Local: llama.cpp (Auto-start · $0.00)".to_string()
     };
 
     let local_presets: &[(&str, &str)] = &[
@@ -942,6 +945,11 @@ async fn start_run(
 
             if trial_idx == 1 && is_local {
                 logger.log("[LOCAL RUNNER] Local model selected. Ensuring llama.cpp server is ready...");
+                let st = crate::sandbox::llama_server::LlamaServerManager::status().await;
+                if !st.running {
+                    logger.log(&format!("[LOCAL RUNNER] Auto-starting llama-server for model '{}'...", req.model));
+                    let _ = crate::sandbox::llama_server::LlamaServerManager::start(&req.model);
+                }
                 let mut ready = false;
                 for i in 1..=120 {
                     let st = crate::sandbox::llama_server::LlamaServerManager::status().await;
