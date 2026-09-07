@@ -155,6 +155,11 @@
       gap: 4px;
       margin-top: 4px;
     }
+    @keyframes btnPop {
+      0% { transform: scale(0.93); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
     .preset-btn {
       background: #21262d;
       border: 1px solid var(--border);
@@ -163,16 +168,23 @@
       border-radius: 4px;
       font-size: 0.7rem;
       cursor: pointer;
-      transition: 0.2s;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .preset-btn:hover {
       border-color: var(--primary);
       color: #fff;
     }
+    .preset-btn:active, .btn-secondary:active, .btn:active {
+      transform: scale(0.95);
+    }
     .preset-btn.active {
       background: var(--primary);
       color: #000;
       font-weight: 600;
+      animation: btnPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-action-pulse {
+      animation: btnPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     /* Price tag */
@@ -905,7 +917,7 @@
             <button type="button" id="btnStopLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem;" onclick="stopLocalModel()">
               ⏹ Stop
             </button>
-            <button type="button" id="btnUseLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; color: #10b981; border-color: #10b981;" onclick="selectLocalModel()">
+            <button type="button" id="btnUseLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; color: #10b981; border-color: #10b981; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);" onclick="selectLocalModel()">
               ✔ Select Model
             </button>
           </div>
@@ -1397,6 +1409,22 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
 
       const pill = document.getElementById('selectedPricePill');
       pill.style.display = 'inline-flex';
+      pill.classList.remove('btn-action-pulse');
+      void pill.offsetWidth;
+      pill.classList.add('btn-action-pulse');
+
+      if (modelId.includes('local') || modelId.startsWith('openai/qwen')) {
+        const btn = document.getElementById('btnUseLocalModel');
+        if (btn) {
+          btn.classList.remove('btn-action-pulse');
+          void btn.offsetWidth;
+          btn.classList.add('btn-action-pulse');
+          btn.style.background = 'rgba(16, 185, 129, 0.25)';
+          setTimeout(() => {
+            btn.style.background = 'rgba(16, 185, 129, 0.1)';
+          }, 400);
+        }
+      }
       pill.innerHTML = `
         <span>📅 Released: <b>${escapeHtml(opt.dataset.relDate)}</b></span> • 
         <span>📥 Input: <b>$${escapeHtml(opt.dataset.promptPrice)}/1M</b></span> • 
@@ -3091,11 +3119,65 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const preset = document.getElementById('localModelPreset').value;
       const modelInput = document.getElementById('model');
       const pill = document.getElementById('selectedPricePill');
+      const btn = document.getElementById('btnUseLocalModel');
       
       const modelId = `openai/${preset}`;
       modelInput.value = modelId;
 
+      // 1. Trigger animation on #btnUseLocalModel
+      if (btn) {
+        btn.classList.remove('btn-action-pulse');
+        void btn.offsetWidth;
+        btn.classList.add('btn-action-pulse');
+        btn.innerHTML = '✔ Selected!';
+        btn.style.background = '#10b981';
+        btn.style.borderColor = '#10b981';
+        btn.style.color = '#000';
+        btn.style.fontWeight = '700';
+
+        setTimeout(() => {
+          btn.innerHTML = '✔ Select Model';
+          btn.style.background = 'rgba(16, 185, 129, 0.2)';
+          btn.style.borderColor = '#10b981';
+          btn.style.color = '#10b981';
+          btn.style.fontWeight = '600';
+        }, 1200);
+      }
+
+      // 2. Sync and animate "Local (🦙)" preset button in Quick Family Filters
+      const localPresetBtn = Array.from(document.querySelectorAll('.presets .preset-btn')).find(b =>
+        b.textContent.includes('Local')
+      );
+      if (localPresetBtn) {
+        document.querySelectorAll('.presets .preset-btn').forEach(b => {
+          if (b.parentElement && b.parentElement.id !== 'effortPresets') {
+            b.classList.remove('active');
+          }
+        });
+        localPresetBtn.classList.add('active');
+        localPresetBtn.classList.remove('btn-action-pulse');
+        void localPresetBtn.offsetWidth;
+        localPresetBtn.classList.add('btn-action-pulse');
+        activeFamily = 'local';
+        filterModelsList();
+      }
+
+      // 3. Highlight/select matching option in #modelSelect dropdown
+      const select = document.getElementById('modelSelect');
+      if (select) {
+        for (let i = 0; i < select.options.length; i++) {
+          if (select.options[i].value === modelId || select.options[i].value.includes(preset)) {
+            select.selectedIndex = i;
+            break;
+          }
+        }
+      }
+
+      // 4. Update and animate the price pill
       pill.style.display = 'inline-flex';
+      pill.classList.remove('btn-action-pulse');
+      void pill.offsetWidth;
+      pill.classList.add('btn-action-pulse');
       pill.innerHTML = `
         <span>🦙 <b>Local llama.cpp</b></span> • 
         <span>📥 Input: <b>$0.00/1M</b></span> • 

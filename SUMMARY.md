@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-06 05:28:05 UTC*
+*Last Updated: 2026-09-07 07:21:57 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -15,7 +15,9 @@
 
 ## 📊 Global Leaderboard
 
-*No benchmark runs recorded yet. Run a benchmark to populate the leaderboard!*
+| Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |
+|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🥇 1 | `openai/qwen2.5-coder-7b` | `auto` | HTTP/1.1 | `Unknown` | 0% (0/5) | N/A | $0.0000 | **0.0** pts/¢ | [Inspect](runs/http_openai_qwen2.5-coder-7b_20260907_072100/) |
 
 ---
 
@@ -36,6 +38,10 @@ The candidate LLM is instructed to build an RFC 7230/7231 HTTP/1.1 web server fr
 - **Packaging Freedom**: Working `Dockerfile` or executable `./start.sh`.
 - **Verification**: 5-stage automated conformance suite + `wrk -t2 -c20 -d3s http://127.0.0.1:8080/`.
 
+| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `openai/qwen2.5-coder-7b` | `auto` | `Unknown` | 0% | N/A | $0.0000 | 0.0 pts/¢ | [runs/http_openai_qwen2.5-coder-7b_20260907_072100/](runs/http_openai_qwen2.5-coder-7b_20260907_072100/) |
+
 ---
 
 ## 🖥️ Benchmark Testbed Environment Specs
@@ -52,8 +58,8 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | rustc 1.92.0 (ded5c06cf 2025-12-08) |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `1379eeb` (branch `master`) |
-| **Benchmark Captured** | 2026-09-06T05:28:05.712691042+00:00 |
+| **Git Baseline** | Commit `16c46ba` (branch `master`) |
+| **Benchmark Captured** | 2026-09-07T07:21:57.496998428+00:00 |
 
 ---
 
