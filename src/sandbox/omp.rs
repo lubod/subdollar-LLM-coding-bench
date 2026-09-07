@@ -180,13 +180,30 @@ impl OmpRunner {
                 .arg("OLLAMA_BASE_URL=http://host.docker.internal:11434");
         }
 
+        let is_local_openai = model.starts_with("openai/qwen")
+            || model.starts_with("openai/local")
+            || model == "openai/local-llama"
+            || model.starts_with("local/");
+
         if let Ok(openai_base) = std::env::var("OPENAI_BASE_URL") {
             cmd.arg("-e")
                 .arg(format!("OPENAI_BASE_URL={}", openai_base));
+        } else if is_local_openai {
+            cmd.arg("-e")
+                .arg("OPENAI_BASE_URL=http://host.docker.internal:8000/v1");
         }
+
         if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {
             cmd.arg("-e").arg(format!("OPENAI_API_KEY={}", openai_key));
+        } else if is_local_openai {
+            cmd.arg("-e").arg("OPENAI_API_KEY=dummy");
         }
+
+        let effective_model = if model.starts_with("local/") {
+            format!("openai/{}", model.trim_start_matches("local/"))
+        } else {
+            model.to_string()
+        };
 
         cmd.arg("subdollar-sandbox")
             .arg("omp")
@@ -194,7 +211,7 @@ impl OmpRunner {
             .arg("--tools=read,bash,edit,write,grep,glob,lsp")
             .arg("-p")
             .arg(prompt)
-            .arg(format!("--model={}", model))
+            .arg(format!("--model={}", effective_model))
             .arg("--cwd=/workspace")
             .arg("--session-dir=/home/ubuntu/.omp/agent/sessions");
 

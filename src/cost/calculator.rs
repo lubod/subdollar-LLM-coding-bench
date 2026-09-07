@@ -38,7 +38,12 @@ impl ModelPricing {
 
     pub fn for_model(model_name: &str) -> Self {
         let m = model_name.to_lowercase();
-        if m.starts_with("ollama/") || m.starts_with("local/") {
+        if m.starts_with("ollama/")
+            || m.starts_with("local/")
+            || m.starts_with("openai/qwen")
+            || m.starts_with("openai/local")
+            || m == "openai/local-llama"
+        {
             ModelPricing {
                 prompt_per_million: 0.0,
                 completion_per_million: 0.0,
@@ -202,6 +207,15 @@ impl ModelPricing {
 
     /// Asynchronously resolve pricing, querying OpenRouter live catalog first with fallback to hardcoded rates
     pub async fn for_model_async(model_name: &str) -> Self {
+        let m = model_name.to_lowercase();
+        if m.starts_with("ollama/")
+            || m.starts_with("local/")
+            || m.starts_with("openai/qwen")
+            || m.starts_with("openai/local")
+            || m == "openai/local-llama"
+        {
+            return Self::for_model(model_name);
+        }
         if let Some(pricing) = Self::fetch_openrouter_model_pricing(model_name).await {
             pricing
         } else {
@@ -396,5 +410,13 @@ mod tests {
         let p_local = ModelPricing::for_model("local/my-model");
         assert_eq!(p_local.prompt_per_million, 0.0);
         assert_eq!(p_local.completion_per_million, 0.0);
+
+        let p_llama = ModelPricing::for_model("openai/local-llama");
+        assert_eq!(p_llama.prompt_per_million, 0.0);
+        assert_eq!(p_llama.completion_per_million, 0.0);
+
+        let p_qwen = ModelPricing::for_model("openai/qwen2.5-coder-1.5b");
+        assert_eq!(p_qwen.prompt_per_million, 0.0);
+        assert_eq!(p_qwen.completion_per_million, 0.0);
     }
 }

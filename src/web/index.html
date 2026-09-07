@@ -877,6 +877,42 @@
           <span class="hint">Stored in your browser. Used to query models & run OMP.</span>
         </div>
 
+        <!-- Local Model Runner (llama.cpp) -->
+        <div class="form-group" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius); padding: 12px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 600; font-size: 0.85rem; color: #10b981; display: flex; align-items: center; gap: 6px;">
+              <span>🦙 Local llama.cpp</span>
+              <span id="localModelStatusBadge" class="badge" style="background: rgba(100,116,139,0.2); color: var(--text-muted); font-size: 0.65rem;">Checking...</span>
+            </span>
+            <button type="button" class="btn-secondary" style="padding: 2px 8px; font-size: 0.7rem;" onclick="checkLocalModelStatus(true)">🔄 Check</button>
+          </div>
+          
+          <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px;">
+            Run 100% free zero-cost local benchmarks ($0.00 / 1M tokens) on CPU/GPU via Docker.
+          </div>
+
+          <label for="localModelPreset" style="font-size: 0.75rem; margin-bottom: 4px; display: block;">Preset GGUF Model</label>
+          <select id="localModelPreset" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 8px; width: 100%;">
+            <option value="qwen2.5-coder-1.5b" selected>Qwen 2.5 Coder 1.5B Instruct (Q4_K_M ~980MB - Fast test)</option>
+            <option value="qwen2.5-coder-7b">Qwen 2.5 Coder 7B Instruct (Q4_K_M ~4.7GB - Full SWE)</option>
+            <option value="llama-3.2-3b">Llama 3.2 3B Instruct (Q4_K_M ~2.0GB)</option>
+          </select>
+
+          <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+            <button type="button" id="btnStartLocalModel" class="btn-primary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; background: #059669;" onclick="startLocalModel()">
+              ▶ Start Server
+            </button>
+            <button type="button" id="btnStopLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem;" onclick="stopLocalModel()">
+              ⏹ Stop
+            </button>
+            <button type="button" id="btnUseLocalModel" class="btn-secondary" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; color: #10b981; border-color: #10b981;" onclick="selectLocalModel()">
+              ✔ Select Model
+            </button>
+          </div>
+
+          <div id="localModelLogs" style="font-family: monospace; font-size: 0.65rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; max-height: 70px; overflow-y: auto; white-space: pre-wrap; display: none;"></div>
+        </div>
+
         <!-- Model Filter & Selector -->
         <div class="form-group">
           <label for="modelSelect">
@@ -887,6 +923,7 @@
           <!-- Quick Family Filters -->
           <div class="presets">
             <button class="preset-btn active" onclick="filterByFamily('all', this)">All</button>
+            <button class="preset-btn" onclick="filterByFamily('local', this)">Local (🦙)</button>
             <button class="preset-btn" onclick="filterByFamily('google', this)">Google</button>
             <button class="preset-btn" onclick="filterByFamily('deepseek', this)">DeepSeek</button>
             <button class="preset-btn" onclick="filterByFamily('qwen', this)">Qwen</button>
@@ -1289,7 +1326,12 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const select = document.getElementById('modelSelect');
 
       let filtered = allModels.filter(m => {
-        const matchesFam = (activeFamily === 'all') || m.id.toLowerCase().includes(activeFamily);
+        let matchesFam = (activeFamily === 'all');
+        if (activeFamily === 'local') {
+          matchesFam = m.id.toLowerCase().includes('local') || m.id.toLowerCase().includes('llama') || m.name.toLowerCase().includes('local');
+        } else if (activeFamily !== 'all') {
+          matchesFam = m.id.toLowerCase().includes(activeFamily);
+        }
         const matchesSearch = !search || m.id.toLowerCase().includes(search) || m.name.toLowerCase().includes(search);
         return matchesFam && matchesSearch;
       });
@@ -1347,7 +1389,11 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       if (!opt || !opt.value) return;
 
       const modelId = opt.value;
-      document.getElementById('model').value = `openrouter/${modelId}`;
+      if (modelId.startsWith('openai/') || modelId.startsWith('local/')) {
+        document.getElementById('model').value = modelId;
+      } else {
+        document.getElementById('model').value = `openrouter/${modelId}`;
+      }
 
       const pill = document.getElementById('selectedPricePill');
       pill.style.display = 'inline-flex';
@@ -2870,7 +2916,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const timeoutMin = parseInt(document.getElementById('timeout_min').value, 10) || 15;
       const evalOnly = document.getElementById('evalOnly').checked;
 
-      if (!evalOnly && !apiKey) {
+      const isLocal = model.includes('local') || model.startsWith('openai/qwen');
+      if (!evalOnly && !apiKey && !isLocal) {
         alert('Please provide your OpenRouter API Key before starting the benchmark.');
         return;
       }
@@ -2925,6 +2972,138 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       }
     }
 
+
+    async function checkLocalModelStatus(manual = false) {
+      const badge = document.getElementById('localModelStatusBadge');
+      const logBox = document.getElementById('localModelLogs');
+      const startBtn = document.getElementById('btnStartLocalModel');
+      const stopBtn = document.getElementById('btnStopLocalModel');
+
+      if (manual && badge) {
+        badge.textContent = 'Checking...';
+        badge.style.background = 'rgba(100,116,139,0.2)';
+        badge.style.color = 'var(--text-muted)';
+      }
+
+      try {
+        const res = await fetch('/api/local-model/status');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (badge) {
+          if (data.running) {
+            badge.textContent = '🟢 Running';
+            badge.style.background = 'rgba(16, 185, 129, 0.2)';
+            badge.style.color = '#10b981';
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+          } else if (data.status_text && data.status_text.includes('Loading')) {
+            badge.textContent = '🟡 Loading';
+            badge.style.background = 'rgba(245, 158, 11, 0.2)';
+            badge.style.color = '#f59e0b';
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+          } else {
+            badge.textContent = '⚪ Stopped';
+            badge.style.background = 'rgba(100, 116, 139, 0.2)';
+            badge.style.color = 'var(--text-muted)';
+            if (startBtn) startBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = true;
+          }
+        }
+
+        if (logBox) {
+          if (data.logs && data.logs.trim().length > 0) {
+            logBox.style.display = 'block';
+            logBox.textContent = data.logs.trim();
+          } else {
+            logBox.style.display = 'none';
+          }
+        }
+
+        return data;
+      } catch (e) {
+        console.warn('Failed to check local model status:', e);
+        if (badge && manual) {
+          badge.textContent = 'Error';
+          badge.style.background = 'rgba(239, 68, 68, 0.2)';
+          badge.style.color = '#ef4444';
+        }
+      }
+    }
+
+    async function startLocalModel() {
+      const preset = document.getElementById('localModelPreset').value;
+      const startBtn = document.getElementById('btnStartLocalModel');
+      const badge = document.getElementById('localModelStatusBadge');
+      if (startBtn) startBtn.disabled = true;
+      if (badge) {
+        badge.textContent = '🟡 Starting...';
+        badge.style.background = 'rgba(245, 158, 11, 0.2)';
+        badge.style.color = '#f59e0b';
+      }
+
+      try {
+        const res = await fetch('/api/local-model/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: preset })
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(err || `HTTP ${res.status}`);
+        }
+        selectLocalModel();
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          const st = await checkLocalModelStatus(false);
+          if ((st && st.running) || attempts > 30) {
+            clearInterval(poll);
+            fetchModels();
+          }
+        }, 1500);
+      } catch (e) {
+        alert(`Failed to start local llama-server: ${e.message}`);
+        checkLocalModelStatus(true);
+      }
+    }
+
+    async function stopLocalModel() {
+      const stopBtn = document.getElementById('btnStopLocalModel');
+      if (stopBtn) stopBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/local-model/stop', { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(err || `HTTP ${res.status}`);
+        }
+        checkLocalModelStatus(true);
+        fetchModels();
+      } catch (e) {
+        alert(`Failed to stop local model: ${e.message}`);
+        checkLocalModelStatus(true);
+      }
+    }
+
+    function selectLocalModel() {
+      const preset = document.getElementById('localModelPreset').value;
+      const modelInput = document.getElementById('model');
+      const pill = document.getElementById('selectedPricePill');
+      
+      const modelId = `openai/${preset}`;
+      modelInput.value = modelId;
+
+      pill.style.display = 'inline-flex';
+      pill.innerHTML = `
+        <span>🦙 <b>Local llama.cpp</b></span> • 
+        <span>📥 Input: <b>$0.00/1M</b></span> • 
+        <span>📤 Output: <b>$0.00/1M</b></span> • 
+        <span>🧠 Ctx: <b>16,384</b></span>
+      `;
+    }
+
     function resetStatus() {
       document.getElementById('startBtn').disabled = false;
       const stopBtn = document.getElementById('stopBtn');
@@ -2943,6 +3122,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
     setPromptViewMode(currentPromptViewMode);
     setSummaryViewMode(currentSummaryViewMode);
     checkActiveRun();
+    checkLocalModelStatus(false);
+    setInterval(() => checkLocalModelStatus(false), 8000);
     setInterval(checkActiveRun, 5000);
   </script>
   <!-- =========================================================================
