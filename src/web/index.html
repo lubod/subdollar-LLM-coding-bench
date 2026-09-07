@@ -1838,7 +1838,6 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         const passBadge = r.pass_rate === 100 
           ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
           : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
-        const effBadge = `<span class="badge badge-effort">effort: ${r.effort || 'auto'}</span>`;
         const safeModel = escapeHtml(r.model);
         const safeTask = escapeHtml(r.task);
         const safeLanguage = escapeHtml(r.language);
