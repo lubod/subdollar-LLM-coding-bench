@@ -5,7 +5,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 pub const LLAMA_CONTAINER_NAME: &str = "subdollar-llama";
-pub const LLAMA_IMAGE: &str = "ghcr.io/ggml-org/llama.cpp:server";
+pub const LLAMA_IMAGE: &str = "ghcr.io/ggml-org/llama.cpp:server-vulkan";
 pub const LLAMA_PORT: u16 = 8000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,12 +68,18 @@ impl LlamaServerManager {
             };
 
             let logs = Self::get_recent_logs(8).unwrap_or_default();
+            let gpu_badge = if std::path::Path::new("/dev/dri").exists() {
+                " · ⚡ GPU (Vulkan)"
+            } else {
+                ""
+            };
             return LlamaServerStatus {
                 running: true,
                 model: loaded_model.clone(),
                 status_text: format!(
-                    "Running · {}",
-                    loaded_model.unwrap_or_else(|| "Ready".to_string())
+                    "Running · {}{}",
+                    loaded_model.unwrap_or_else(|| "Ready".to_string()),
+                    gpu_badge
                 ),
                 endpoint,
                 logs,
@@ -123,31 +129,46 @@ impl LlamaServerManager {
             .output();
 
         let port_mapping = format!("{}:8080", LLAMA_PORT);
-        let out = Command::new("docker")
-            .args([
-                "run",
-                "-d",
-                "--name",
-                LLAMA_CONTAINER_NAME,
-                "--restart",
-                "unless-stopped",
-                "-p",
-                &port_mapping,
-                "-v",
-                "subdollar-models:/root/.cache",
-                LLAMA_IMAGE,
-                "--hf-repo",
-                &repo,
-                "--host",
-                "0.0.0.0",
-                "--port",
-                "8080",
-                "-c",
-                "16384",
-                "-t",
-                "16",
-                "--jinja",
-            ])
+        let has_gpu = std::path::Path::new("/dev/dri").exists();
+        let mut cmd = Command::new("docker");
+        cmd.args([
+            "run",
+            "-d",
+            "--name",
+            LLAMA_CONTAINER_NAME,
+            "--restart",
+            "unless-stopped",
+            "-p",
+            &port_mapping,
+            "-v",
+            "subdollar-models:/root/.cache",
+        ]);
+
+        if has_gpu {
+            cmd.arg("--device").arg("/dev/dri");
+        }
+
+        cmd.args([
+            LLAMA_IMAGE,
+            "--hf-repo",
+            &repo,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8080",
+            "-c",
+            "16384",
+        ]);
+
+        if has_gpu {
+            cmd.args(["-ngl", "99"]);
+        } else {
+            cmd.args(["-t", "16"]);
+        }
+
+        cmd.arg("--jinja");
+
+        let out = cmd
             .output()
             .map_err(|e| anyhow!("Failed to execute docker run: {}", e))?;
 
