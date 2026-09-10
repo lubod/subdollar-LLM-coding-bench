@@ -1,8 +1,8 @@
 use crate::config::TaskType;
 use crate::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
 use crate::report::{
-    BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, PublishResult, RunArchiver,
-    RunManifest, RunPublisher, SummaryGenerator,
+    BenchmarkRunResult, EnvironmentInfo, FileInfo, LeaderboardManager, RunArchiver, RunManifest,
+    SummaryGenerator,
 };
 use crate::sandbox::SandboxManager;
 use axum::{
@@ -136,11 +136,6 @@ struct OpenRouterResponse {
 #[derive(Debug, Deserialize)]
 pub struct FileQuery {
     pub file: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PublishRequest {
-    pub message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -290,7 +285,6 @@ impl UiServer {
             .route("/api/runs/:id/log", get(get_run_log))
             .route("/api/runs/:id/files", get(get_run_files))
             .route("/api/runs/:id/file", get(get_run_file))
-            .route("/api/runs/:id/publish", post(publish_run))
             .route("/api/summary", get(get_summary).post(regenerate_summary))
             .route("/api/env", get(get_env))
             .route("/v1/models", get(crate::sandbox::tool_normalizer::handle_models))
@@ -547,31 +541,6 @@ async fn get_run_file(
 async fn get_active_console(State(state): State<AppState>) -> Response {
     let buf = state.log_buffer.read().unwrap();
     buf.join("\n").into_response()
-}
-
-async fn publish_run(
-    AxumPath(run_id): AxumPath<String>,
-    payload: Option<Json<PublishRequest>>,
-) -> Result<Json<PublishResult>, Response> {
-    let repo_root = crate::config::get_repo_root();
-    let runs_dir = RunArchiver::resolve_runs_dir();
-    let results_dir = resolve_results_dir();
-    let custom_msg = payload.and_then(|Json(p)| p.message);
-
-    match RunPublisher::publish_run(
-        &repo_root,
-        &runs_dir,
-        &results_dir,
-        &run_id,
-        custom_msg.as_deref(),
-    ) {
-        Ok(res) => Ok(Json(res)),
-        Err(e) => Err((
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to publish run: {}", e),
-        )
-            .into_response()),
-    }
 }
 
 async fn get_summary() -> Response {
@@ -1038,7 +1007,7 @@ async fn start_run(
             }
         }
 
-        // Publish summary
+        // Regenerate summary
         if req.save_results.unwrap_or(true) {
             let runs_dir = RunArchiver::resolve_runs_dir();
             let repo_root = crate::config::get_repo_root();
@@ -1640,18 +1609,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), 200);
-
-        // Check POST /api/runs/:id/publish error handling
-        let pub_req = PublishRequest {
-            message: Some("Publish test".to_string()),
-        };
-        let res = client
-            .post(format!("{}/api/runs/nonexistent_xyz/publish", base))
-            .json(&pub_req)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(res.status(), 500);
 
         // 22. POST /api/run with runnable start.sh to test Docker candidate branch with DNS task
         let ws_dir = resolve_workspace_dir();

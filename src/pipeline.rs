@@ -12,6 +12,7 @@ use crate::config::{get_repo_root, TaskType};
 use crate::cost::ModelPricing;
 use crate::report::archive::{RunArchiver, RunManifest, RunTokenUsage};
 use crate::report::leaderboard::{BenchmarkRunResult, LeaderboardManager};
+use crate::report::portal::PortalExporter;
 use crate::sandbox::docker::SandboxManager;
 use crate::sandbox::omp::{AgentExecutionLimits, AgentRunSpec, OmpRunner, OmpSessionStats};
 use crate::verifier::compliance::ComplianceChecker;
@@ -602,6 +603,14 @@ impl BenchmarkPipeline {
             let _ = LeaderboardManager::save_result(
                 results_dir.to_str().unwrap_or("./results"),
                 &benchmark_result,
+            );
+            let portal_out = get_repo_root().join("portal");
+            let _ = PortalExporter::export(
+                runs_dir.to_str().unwrap_or("./runs"),
+                results_dir.to_str().unwrap_or("./results"),
+                portal_out.to_str().unwrap_or("./portal"),
+                "",
+                200,
             );
         }
 

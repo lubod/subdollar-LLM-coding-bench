@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use subdollar_bench::config::{Cli, Commands, TaskType};
 use subdollar_bench::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
-use subdollar_bench::report::{LeaderboardManager, RunPublisher, SummaryGenerator};
+use subdollar_bench::report::{LeaderboardManager, PortalExporter, SummaryGenerator};
 use subdollar_bench::verifier::{DnsVerifier, HttpVerifier, RedisVerifier};
 use subdollar_bench::web;
 use subdollar_bench::web::server::compute_pass_at_k;
@@ -173,32 +173,19 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
             }
         }
 
-        Commands::Publish {
-            run_id,
-            message,
+        Commands::Portal {
             runs_dir,
             results_dir,
-            repo_root,
+            out,
+            base_url,
+            keep,
         } => {
-            println!(
-                "{}",
-                format!("Publishing run {} to Git...", run_id).bold().cyan()
-            );
-            let res = RunPublisher::publish_run(
-                Path::new(&repo_root),
-                Path::new(&runs_dir),
-                Path::new(&results_dir),
-                &run_id,
-                message.as_deref(),
-            )?;
-            println!("{}", "✅ Successfully published run to Git!".bold().green());
-            println!("  Commit:  {}", res.commit_hash.yellow());
-            println!("  Message: {}", res.commit_message);
-            println!("  Summary: {}", res.summary_path);
-            println!("  Files committed:");
-            for f in &res.files_committed {
-                println!("   - {}", f);
-            }
+            println!("{}", "Exporting static portal...".bold().cyan());
+            let summary = PortalExporter::export(&runs_dir, &results_dir, &out, &base_url, keep)?;
+            println!("{}", "✅ Portal exported!".bold().green());
+            println!("  Output: {}", out);
+            println!("  Runs:   {}", summary.run_count);
+            println!("  Deploy: rsync -az --delete {}/ <vps>:/srv/bench/", out);
         }
 
         Commands::Summary {
@@ -331,48 +318,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_main_cli_publish() {
-        let temp_dir = std::env::temp_dir().join(format!("test_main_pub_{}", std::process::id()));
-        let repo_root = temp_dir.join("repo");
-        let runs_dir = repo_root.join("runs");
-        let results_dir = repo_root.join("results");
-        let _ = fs::create_dir_all(&repo_root);
-        let _ = fs::create_dir_all(&runs_dir);
-        let _ = fs::create_dir_all(&results_dir);
+    async fn test_main_cli_portal_export() {
+        use subdollar_bench::report::PortalExporter;
 
-        let _ = std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_root)
-            .output();
-        let _ = std::process::Command::new("git")
-            .args(["config", "user.name", "Bench Tester"])
-            .current_dir(&repo_root)
-            .output();
-        let _ = std::process::Command::new("git")
-            .args(["config", "user.email", "tester@bench.local"])
-            .current_dir(&repo_root)
-            .output();
-        fs::write(repo_root.join("README.md"), "# Init").unwrap();
-        let _ = std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo_root)
-            .output();
-        let _ = std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&repo_root)
-            .output();
-
-        let run_id = "test_main_publish_run";
+        let temp_dir = std::env::temp_dir().join(format!("test_main_portal_{}", std::process::id()));
+        let runs_dir = temp_dir.join("runs");
+        let results_dir = temp_dir.join("results");
+        let out_dir = temp_dir.join("portal");
+        let run_id = "redis_test_model_20260910_000000";
         let run_dir = runs_dir.join(run_id);
         let _ = fs::create_dir_all(run_dir.join("workspace"));
-        fs::write(run_dir.join("workspace/main.rs"), "fn main() {}").unwrap();
-
+        fs::write(run_dir.join("workspace/main.py"), "print(1)").unwrap();
         let manifest = RunManifest {
             run_id: run_id.to_string(),
             model: "test_model".to_string(),
             task: "redis".to_string(),
             status: "completed".to_string(),
-            language: "Rust".to_string(),
+            language: "Python".to_string(),
             effort: Some("low".to_string()),
             started_at: "2026-09-04T12:00:00Z".to_string(),
             completed_at: "2026-09-04T12:01:00Z".to_string(),
@@ -382,8 +344,8 @@ mod tests {
             passed_stages: 4,
             total_stages: 4,
             stages: Vec::new(),
-            throughput_req_sec: Some(1000.0),
-            reference_throughput_req_sec: Some(71000.0),
+            throughput_req_sec: None,
+            reference_throughput_req_sec: None,
             tokens: RunTokenUsage {
                 prompt_tokens: 100,
                 cached_tokens: 50,
@@ -393,8 +355,8 @@ mod tests {
             cost_usd: 0.01,
             effective_cost_usd: Some(0.015),
             savings_percent: 10.0,
-            efficiency_score: 100.0,
-            throughput_score: Some(102.8),
+            efficiency_score: 66.6,
+            throughput_score: Some(66.6),
             files: Vec::new(),
             env: None,
             git_commit: None,
@@ -406,17 +368,36 @@ mod tests {
             serde_json::to_string(&manifest).unwrap(),
         )
         .unwrap();
+        fs::write(run_dir.join("console.log"), "key=sk-or-v1-SECRET123 done").unwrap();
+        let _ = fs::create_dir_all(&results_dir);
+        let result = serde_json::json!({
+            "id": run_id, "model": "test_model", "task": "redis",
+            "language": "Python", "effort": "low",
+            "pass_rate": 100.0, "passed_stages": 4, "total_stages": 4,
+            "throughput_req_sec": null, "reference_throughput_req_sec": null,
+            "prompt_tokens": 100, "cached_tokens": 50, "completion_tokens": 20,
+            "total_cost_usd": 0.01, "effective_cost_usd": 0.015,
+            "duration_seconds": 60.0, "turns": 3, "savings_percent": 10.0,
+            "efficiency_score": 66.6, "throughput_score": 66.6,
+            "timestamp": "2026-09-04T12:01:00Z", "method_version": "0.1.0"
+        });
+        fs::write(results_dir.join(format!("{}.json", run_id)), serde_json::to_string(&result).unwrap()).unwrap();
 
         let cli = Cli {
-            command: Commands::Publish {
-                run_id: run_id.to_string(),
-                message: Some("Main test publish".to_string()),
+            command: Commands::Portal {
                 runs_dir: runs_dir.to_string_lossy().to_string(),
                 results_dir: results_dir.to_string_lossy().to_string(),
-                repo_root: repo_root.to_string_lossy().to_string(),
+                out: out_dir.to_string_lossy().to_string(),
+                base_url: "".to_string(),
+                keep: 50,
             },
         };
         assert!(run_cli(cli).await.is_ok());
+
+        let index = fs::read_to_string(out_dir.join("index.html")).unwrap();
+        assert!(index.contains(run_id));
+        let log = fs::read_to_string(out_dir.join("runs").join(run_id).join("console.log")).unwrap();
+        assert!(!log.contains("SECRET123"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

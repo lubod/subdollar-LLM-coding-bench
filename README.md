@@ -67,8 +67,8 @@ Instead of evaluating trivial single-function code snippets ([HumanEval](https:/
 6. **Formula & Live-Spend Cost Accounting:**
    Tracks token consumption with input, output, and context caching discounts. For OpenRouter API keys, directly queries the OpenRouter management API before and after each run to record verified live USD billing deltas.
 
-7. **Production Web GUI & Git Publisher:**
-   Includes a rich single-page web application featuring live Server-Sent Events (SSE) log streaming, responsive run tables, a tabbed modal code inspector, interactive prompt markdown editor, and automated git publishing to `SUMMARY.md`.
+7. **Production Web GUI & Static Portal:**
+   Includes a rich single-page web application featuring live Server-Sent Events (SSE) log streaming, responsive run tables, a tabbed modal code inspector, and an interactive prompt markdown editor. Finished runs refresh a static read-only portal (`./portal/`, secrets redacted) for VPS hosting.
 
 ---
 
@@ -107,7 +107,7 @@ Open `http://localhost:3000` in your browser. From the UI, you can:
 - Configure reasoning effort (`auto`, `max`, `high`, `medium`, `low`, `off`).
 - Watch live agent thoughts, bash actions, and verification stages stream in real-time.
 - Inspect candidate source code in the full-screen modal code browser.
-- Publish verified runs directly to Git and update `SUMMARY.md` with one click.
+- Finished runs refresh the static portal mirror automatically.
 
 ---
 
@@ -168,9 +168,10 @@ cargo run --release -- eval --task dns --port 5353
 cargo run --release -- leaderboard
 ```
 
-#### Publish Run to Git & Update Global Leaderboard
+#### Export Static Portal
 ```bash
-cargo run --release -- publish --run-id redis_openrouter_deepseek_deepseek-chat_20260904_120000
+cargo run --release -- portal --out ./portal
+rsync -az --delete ./portal/ <vps>:/srv/bench/
 ```
 
 #### Regenerate SUMMARY.md
@@ -228,11 +229,12 @@ runs/<run_id>/
 1. Fork and clone this repository.
 2. Build the Docker sandbox: `docker build -t subdollar-sandbox -f Dockerfile.sandbox .`
 3. Launch the Web UI (`cargo run --release -- ui`) or run via CLI.
-4. When a run passes, publish it:
+4. When a run passes, export the portal and sync it to your VPS:
    ```bash
-   cargo run --release -- publish --run-id <run_id>
+   cargo run --release -- portal --out ./portal
+   rsync -az --delete ./portal/ <vps>:/srv/bench/
    ```
-5. Submit a Pull Request with your new `runs/<run_id>/`, updated `results/`, and regenerated `SUMMARY.md`.
+5. Point your domain at the VPS; Caddy serves `./portal/` statically with automatic TLS (see `Caddyfile`).
 
 ---
 

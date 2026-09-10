@@ -81,16 +81,8 @@ pub enum Commands {
         task: String,
     },
 
-    /// Publish a completed run to Git repository and update SUMMARY.md
-    Publish {
-        /// ID of the run to publish (e.g. redis_openrouter_meta_muse-spark-1.3-contributor_20260904_085848)
-        #[arg(short, long)]
-        run_id: String,
-
-        /// Optional custom git commit message
-        #[arg(short, long)]
-        message: Option<String>,
-
+    /// Export a static read-only portal (leaderboard + run pages) for VPS hosting
+    Portal {
         /// Path to runs directory
         #[arg(long, default_value = "./runs")]
         runs_dir: String,
@@ -99,9 +91,17 @@ pub enum Commands {
         #[arg(long, default_value = "./results")]
         results_dir: String,
 
-        /// Path to repository root
-        #[arg(long, default_value = ".")]
-        repo_root: String,
+        /// Output directory for the static portal
+        #[arg(long, default_value = "./portal")]
+        out: String,
+
+        /// Public base URL, used for absolute links (optional)
+        #[arg(long, default_value = "")]
+        base_url: String,
+
+        /// Maximum number of runs to include (newest first)
+        #[arg(long, default_value_t = 200)]
+        keep: usize,
     },
 
     /// Regenerate SUMMARY.md from recorded runs
@@ -435,31 +435,31 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parsing_publish() {
+    fn test_cli_parsing_portal() {
         let args = [
             "subdollar-bench",
-            "publish",
-            "--run-id",
-            "test_run_123",
-            "--message",
-            "custom commit msg",
+            "portal",
+            "--out",
+            "./public",
+            "--keep",
+            "50",
         ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
-            Commands::Publish {
-                run_id,
-                message,
+            Commands::Portal {
                 runs_dir,
                 results_dir,
-                repo_root,
+                out,
+                base_url,
+                keep,
             } => {
-                assert_eq!(run_id, "test_run_123");
-                assert_eq!(message, Some("custom commit msg".to_string()));
                 assert_eq!(runs_dir, "./runs");
                 assert_eq!(results_dir, "./results");
-                assert_eq!(repo_root, ".");
+                assert_eq!(out, "./public");
+                assert_eq!(base_url, "");
+                assert_eq!(keep, 50);
             }
-            _ => panic!("Expected Publish command"),
+            _ => panic!("Expected Portal command"),
         }
     }
 

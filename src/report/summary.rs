@@ -262,7 +262,7 @@ impl SummaryGenerator {
         md.push_str("\n\n---\n\n");
 
         md.push_str("## 🚀 How to Reproduce & Submit Your Results\n\n");
-        md.push_str("Anyone can clone this repository, run benchmarks on their own models or hardware, and publish verified results.\n\n");
+        md.push_str("Anyone can clone this repository, run benchmarks on their own models or hardware; results are mirrored to the public static portal.\n\n");
 
         md.push_str("### 1. Prerequisites\n");
         md.push_str("- **Docker**: Docker CE 24+ installed and running.\n");
@@ -288,7 +288,7 @@ impl SummaryGenerator {
         md.push_str("1. Select an under-$1/1M token model from the live OpenRouter catalog.\n");
         md.push_str("2. Select task (`redis` or `http`) and reasoning effort (`low`, `medium`, `high`, `max`).\n");
         md.push_str("3. Click **Start Benchmark Run** to watch live thoughts, tool actions, and verifications.\n");
-        md.push_str("4. If you are satisfied with the results, click **Publish to Git** right from the UI!\n\n");
+        md.push_str("4. Finished runs are exported to the static portal (./portal/) automatically.\n\n");
 
         md.push_str("#### Option B: Headless CLI\n");
         md.push_str("```bash\n");
@@ -298,13 +298,11 @@ impl SummaryGenerator {
         md.push_str("cargo run --release -- run --task http --model openrouter/meta/muse-spark-1.3-contributor --effort low\n");
         md.push_str("```\n\n");
 
-        md.push_str("### 4. Publishing & Contributing to This Repository\n");
-        md.push_str("When your benchmark completes and you approve the results:\n");
+        md.push_str("### 4. Public Portal Mirror\n");
+        md.push_str("Each completed run refreshes the static portal and SUMMARY.md automatically. Sync it to your VPS:\n");
         md.push_str("```bash\n");
-        md.push_str("# 1. Commit run, snapshot environment info, and update SUMMARY.md:\n");
-        md.push_str("cargo run --release -- publish --run-id <run_id>\n\n");
-        md.push_str("# 2. Push to your branch and submit a Pull Request:\n");
-        md.push_str("git push origin my-benchmark-results\n");
+        md.push_str("cargo run --release -- portal --out ./portal\n");
+        md.push_str("rsync -az --delete ./portal/ <vps>:/srv/bench/\n");
         md.push_str("```\n");
         md.push_str("Your run directory (`runs/<run_id>/`) contains:\n");
         md.push_str("- `workspace/`: The complete candidate codebase produced by the model.\n");
