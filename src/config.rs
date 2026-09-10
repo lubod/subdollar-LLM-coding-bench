@@ -27,7 +27,7 @@ pub enum Commands {
         effort: String,
 
         /// Maximum turns/steps allowed for OMP
-        #[arg(long, default_value_t = 15)]
+        #[arg(long, default_value_t = 50)]
         max_turns: u32,
 
         /// Maximum cost budget in USD (e.g. 0.20 for 20 cents)
@@ -75,6 +75,10 @@ pub enum Commands {
         /// Directory containing result JSON files
         #[arg(short, long, default_value = "./results")]
         results_dir: String,
+
+        /// Filter by task ('http', 'redis', 'dns', or 'all' for per-task + consolidated)
+        #[arg(short, long, default_value = "all")]
+        task: String,
     },
 
     /// Publish a completed run to Git repository and update SUMMARY.md
@@ -274,7 +278,7 @@ mod tests {
                 assert_eq!(task, TaskType::Redis);
                 assert_eq!(effort, "auto");
                 assert_eq!(budget_usd, 0.50);
-                assert_eq!(max_turns, 15);
+                assert_eq!(max_turns, 50);
                 assert_eq!(timeout_min, 15);
                 assert!(!eval_only);
             }
@@ -417,11 +421,14 @@ mod tests {
             "leaderboard",
             "--results-dir",
             "./custom_results",
+            "--task",
+            "redis",
         ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
-            Commands::Leaderboard { results_dir } => {
+            Commands::Leaderboard { results_dir, task } => {
                 assert_eq!(results_dir, "./custom_results");
+                assert_eq!(task, "redis");
             }
             _ => panic!("Expected Leaderboard command"),
         }

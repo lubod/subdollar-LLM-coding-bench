@@ -314,6 +314,7 @@ impl BenchmarkPipeline {
             .unwrap_or(false);
 
         let mut throughput = None;
+        let mut reference_throughput = None;
         let (pass_rate, passed_stages, total_stages, stage_results) = if disqualified {
             let reason = disqualification_reason
                 .unwrap_or_else(|| "Anti-cheat compliance violation".to_string());
@@ -421,24 +422,42 @@ impl BenchmarkPipeline {
                 }
             }
 
+
             // 8. Load testing if 100% pass
             if pr == 100.0 {
-                logger.log("[BENCH] 100% tests passed! Running throughput load test...");
+                logger.log("[BENCH] 100% tests passed! Running live throughput load test on candidate...");
                 match config.task {
                     TaskType::Redis => {
                         if let Ok(tp) = BenchmarkRunner::run_redis_benchmark(port) {
-                            logger.log(&format!("  Throughput: {:.0} req/sec", tp));
+                            logger.log(&format!("  Candidate Throughput: {:.0} req/sec", tp));
                             throughput = Some(tp);
+                        }
+                        logger.log("[BENCH] Calibrating live official Redis baseline (redis:alpine on port 6380)...");
+                        if let Ok(ref_tp) = BenchmarkRunner::run_redis_benchmark(6380) {
+                            logger.log(&format!("  Official Reference Redis: {:.0} req/sec", ref_tp));
+                            reference_throughput = Some(ref_tp);
                         }
                     }
                     TaskType::Http => {
                         if let Ok(tp) = BenchmarkRunner::run_wrk_benchmark(port) {
-                            logger.log(&format!("  Throughput: {:.0} req/sec", tp));
+                            logger.log(&format!("  Candidate Throughput: {:.0} req/sec", tp));
                             throughput = Some(tp);
+                        }
+                        logger.log("[BENCH] Calibrating live official Nginx baseline (nginx:alpine on port 8081)...");
+                        if let Ok(ref_tp) = BenchmarkRunner::run_wrk_benchmark(8081) {
+                            logger.log(&format!("  Official Reference Nginx: {:.0} req/sec", ref_tp));
+                            reference_throughput = Some(ref_tp);
                         }
                     }
                     TaskType::Dns => {
                         // DNS load is integrated into test suite
+                    }
+                }
+
+                if let (Some(cand_tp), Some(ref_tp)) = (throughput, reference_throughput) {
+                    if ref_tp > 0.0 {
+                        let ratio = (cand_tp / ref_tp) * 100.0;
+                        logger.log(&format!("  ⚡ Relative Performance: {:.1}% of official reference", ratio));
                     }
                 }
             }
@@ -482,6 +501,12 @@ impl BenchmarkPipeline {
             ModelPricing::calculate_effective_cost(cost_usd, duration_seconds, total_run_tokens);
         let efficiency_score =
             ModelPricing::calculate_efficiency_score(pass_rate, effective_cost_usd);
+        let throughput_score = ModelPricing::calculate_throughput_score(
+            pass_rate,
+            effective_cost_usd,
+            throughput,
+            reference_throughput,
+        );
 
         let lang = LeaderboardManager::detect_language(&config.workdir);
         let scanned_files = RunArchiver::scan_workspace_files(&config.workdir);
@@ -508,11 +533,13 @@ impl BenchmarkPipeline {
             started_at,
             completed_at: completed_at.clone(),
             duration_seconds,
+            turns: Some(omp_stats.steps_taken),
             pass_rate,
             passed_stages,
             total_stages,
             stages: stage_results,
             throughput_req_sec: throughput,
+            reference_throughput_req_sec: reference_throughput,
             tokens: RunTokenUsage {
                 prompt_tokens,
                 cached_tokens,
@@ -525,6 +552,7 @@ impl BenchmarkPipeline {
             effective_cost_usd: Some(effective_cost_usd),
             savings_percent: breakdown.savings_percent,
             efficiency_score,
+            throughput_score: Some(throughput_score),
             files: scanned_files,
             env: None,
             git_commit: None,
@@ -542,14 +570,17 @@ impl BenchmarkPipeline {
             passed_stages,
             total_stages,
             throughput_req_sec: throughput,
+            reference_throughput_req_sec: reference_throughput,
             prompt_tokens,
             cached_tokens,
             completion_tokens,
             total_cost_usd: cost_usd,
             effective_cost_usd: Some(effective_cost_usd),
             duration_seconds: Some(duration_seconds),
+            turns: Some(omp_stats.steps_taken),
             savings_percent: breakdown.savings_percent,
             efficiency_score,
+            throughput_score: Some(throughput_score),
             timestamp: completed_at,
             method_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         };

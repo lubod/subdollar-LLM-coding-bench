@@ -388,6 +388,40 @@ impl RedisVerifier {
             };
         }
 
+        // TCP Pipelining Check: write multiple commands in a single write buffer
+        let pipe_k1 = format!("{}_p1", key);
+        let pipe_k2 = format!("{}_p2", key);
+        let pipe_payload = format!(
+            "{}{}{}{}",
+            Self::format_resp_cmd(&["SET", &pipe_k1, "v1"]),
+            Self::format_resp_cmd(&["SET", &pipe_k2, "v2"]),
+            Self::format_resp_cmd(&["GET", &pipe_k1]),
+            Self::format_resp_cmd(&["GET", &pipe_k2])
+        );
+        if stream.write_all(pipe_payload.as_bytes()).await.is_ok() {
+            let _ = stream.flush().await;
+            let mut read_buf = Vec::new();
+            let mut temp = [0u8; 1024];
+            let start = std::time::Instant::now();
+            while read_buf.len() < 24 && start.elapsed() < Duration::from_millis(600) {
+                if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_millis(200), stream.read(&mut temp)).await {
+                    if n == 0 { break; }
+                    read_buf.extend_from_slice(&temp[..n]);
+                } else {
+                    break;
+                }
+            }
+            let pipe_resp = String::from_utf8_lossy(&read_buf);
+            if !pipe_resp.contains("+OK") || !pipe_resp.contains("v1") {
+                return StageResult {
+                    stage: 2,
+                    name,
+                    passed: false,
+                    error: Some(format!("TCP pipelining failed, got response: {:?}", pipe_resp)),
+                };
+            }
+        }
+
         StageResult {
             stage: 2,
             name,
@@ -721,6 +755,14 @@ mod tests {
                         let req = String::from_utf8_lossy(&buf[..n]);
                         let upper = req.to_uppercase();
 
+                        if upper.contains("SET") && upper.contains("_P1") {
+                            let _ = socket.write_all(b"+OK\r\n+OK\r\n$2\r\nv1\r\n$2\r\nv2\r\n").await;
+                            continue;
+                        }
+                        if upper.contains("INCR") && (upper.contains("STR_NUM") || upper.contains("BAD_INT") || upper.contains("STR_MYRUN")) {
+                            let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
+                            continue;
+                        }
                         if upper.contains("PING") {
                             let _ = socket.write_all(b"+PONG\r\n").await;
                         } else if upper.contains("ECHO") {
@@ -802,6 +844,14 @@ mod tests {
                         let req = String::from_utf8_lossy(&buf[..n]);
                         let upper = req.to_uppercase();
 
+                        if upper.contains("SET") && upper.contains("_P1") {
+                            let _ = socket.write_all(b"+OK\r\n+OK\r\n$2\r\nv1\r\n$2\r\nv2\r\n").await;
+                            continue;
+                        }
+                        if upper.contains("INCR") && (upper.contains("STR_NUM") || upper.contains("BAD_INT") || upper.contains("STR_MYRUN")) {
+                            let _ = socket.write_all(b"-ERR value is not an integer or out of range\r\n").await;
+                            continue;
+                        }
                         if upper.contains("PING") {
                             let _ = socket.write_all(b"+PONG\r\n").await;
                         } else if upper.contains("ECHO") {

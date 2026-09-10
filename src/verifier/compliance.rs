@@ -190,6 +190,28 @@ impl ComplianceChecker {
         t.trim().to_string()
     }
 
+    /// Returns true when cmd_token is an explicit non-system path to a daemon
+    /// name (e.g. /tmp/redis-server), i.e. the candidate's own build artifact
+    /// rather than a prebuilt system daemon. Bare names never qualify.
+    fn is_allowed_local_build_output(cmd_token: &str, daemon: &str) -> bool {
+        if !cmd_token.contains('/') {
+            return false;
+        }
+        let lower = cmd_token.to_lowercase();
+        let base = lower.split('/').next_back().unwrap_or(&lower);
+        if base != daemon {
+            return false;
+        }
+        for prefix in [
+            "/usr/", "/bin/", "/sbin/", "/etc/", "/opt/", "/snap/", "/lib/",
+        ] {
+            if lower.starts_with(prefix) {
+                return false;
+            }
+        }
+        true
+    }
+
     fn check_command_segment(segment: &str) -> Option<String> {
         let raw_tokens: Vec<&str> = segment.split_whitespace().collect();
         if raw_tokens.is_empty() {
@@ -243,9 +265,14 @@ impl ComplianceChecker {
         let cmd_token = tokens[idx].to_lowercase();
         let cmd_base = cmd_token.split('/').next_back().unwrap_or(&cmd_token);
 
-        // Check if the command itself is a forbidden daemon
+        // Check if the command itself is a forbidden daemon.
+        // Explicit non-system paths (e.g. /tmp/redis-server, ./redis-server,
+        // /workspace/..., /app/...) are the candidate's own build output and
+        // are allowed; bare names and system paths (/usr/bin/...) stay forbidden.
         for daemon in FORBIDDEN_DAEMONS {
-            if cmd_base == *daemon {
+            if cmd_base == *daemon
+                && !Self::is_allowed_local_build_output(&cmd_token, daemon)
+            {
                 return Some(format!("executes forbidden server daemon '{}'", daemon));
             }
         }
@@ -417,6 +444,10 @@ impl ComplianceChecker {
         if filename.ends_with(".sh") || filename.ends_with(".bash") || filename == "start.sh" {
             let logical_lines = Self::normalize_lines(&content);
             for line in logical_lines {
+                let lower = line.to_lowercase();
+                if lower.contains("base64 -d |") || lower.contains("base64 --decode |") {
+                    violations.push(format!("{}: uses obfuscated base64 pipeline execution", filename));
+                }
                 if let Some(v) = Self::check_daemon_command(&line) {
                     violations.push(format!("{}: {}", filename, v));
                 }
@@ -501,6 +532,7 @@ impl ComplianceChecker {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
             "py" => {
+                let lower = content.to_lowercase();
                 if content.contains("http.server") {
                     violations.push(format!("{}: imports built-in http.server", filename));
                 }
@@ -509,6 +541,17 @@ impl ComplianceChecker {
                 }
                 if content.contains("import fastapi") || content.contains("from fastapi") {
                     violations.push(format!("{}: imports fastapi", filename));
+                }
+                // Obfuscated dynamic execution & reflection detection
+                if (lower.contains("base64.b64decode") || lower.contains("codecs.decode"))
+                    && (lower.contains("exec(") || lower.contains("eval("))
+                {
+                    violations.push(format!("{}: uses obfuscated dynamic execution", filename));
+                }
+                if (lower.contains("__import__") || lower.contains("importlib"))
+                    && (lower.contains("http") || lower.contains("server") || lower.contains("socket"))
+                {
+                    violations.push(format!("{}: uses dynamic reflection import", filename));
                 }
             }
             "go" => {
@@ -852,6 +895,48 @@ mod tests {
         )
         .unwrap();
         assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+    #[test]
+    fn test_compliance_checker_allows_own_build_output_named_like_daemon() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_compliance_ownbin_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        // Candidate builds its own Go server as /tmp/redis-server and execs it:
+        // explicit non-system paths are the candidate\x27s own artifact, not a cheat.
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/sh\ncd /workspace\ngo build -o /tmp/redis-server main.go\nexec /tmp/redis-server\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        // Relative-path build output is equally legitimate.
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\ngo build -o ./redis-server .\n./redis-server --port 6379\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_ok());
+
+        // Bare daemon names and system paths stay forbidden.
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\nredis-server --port 6379\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_err());
+        fs::write(
+            temp_dir.join("start.sh"),
+            "#!/bin/bash\n/usr/bin/redis-server --port 6379\n",
+        )
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_err());
+        fs::write(temp_dir.join("start.sh"), "#!/bin/bash\nsudo /usr/sbin/nginx\n")
+        .unwrap();
+        assert!(ComplianceChecker::check_no_frameworks(&temp_dir).is_err());
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

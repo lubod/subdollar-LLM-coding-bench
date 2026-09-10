@@ -1013,7 +1013,7 @@
           </div>
           <div class="form-group">
             <label for="turns">Max Turns</label>
-            <input type="number" id="turns" value="15" min="1" max="100" />
+            <input type="number" id="turns" value="50" min="1" max="500" />
           </div>
           <div class="form-group">
             <label for="timeout_min">Timeout (min)</label>
@@ -1058,6 +1058,9 @@
               </span>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;" title="Toggle preview of written code and tool arguments">
+                <input type="checkbox" id="codeDetailsCheck" checked onchange="toggleCodeDetails(this.checked)"> Code Details
+              </label>
               <label style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;">
                 <input type="checkbox" id="autoRefreshCheck" checked onchange="toggleAutoRefresh(this.checked)"> Auto-Refresh (2s)
               </label>
@@ -1078,7 +1081,7 @@
             <div style="width: 1px; height: 18px; background: var(--border);"></div>
             <div style="display: flex; align-items: center; gap: 7px;">
               <span style="font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">🔄 Turns</span>
-              <span id="liveMetricTurns" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #e3b341; font-size: 1.05rem;">0 / 15</span>
+              <span id="liveMetricTurns" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #e3b341; font-size: 1.05rem;">0 / 50</span>
             </div>
             <div style="width: 1px; height: 18px; background: var(--border);"></div>
             <div style="display: flex; align-items: center; gap: 7px;">
@@ -1219,27 +1222,39 @@ Select a model, choose reasoning effort, and click "Start Benchmark Run" to begi
         </div>
 
         <!-- Tab 4: Leaderboard -->
-        <div id="tab-leaderboard" style="display: none; flex-direction: column; gap: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="hint">Global model rankings sorted by Under-$1 efficiency score (points per cent)</span>
-            <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.78rem;" onclick="loadLeaderboard()">🔄 Refresh Leaderboard</button>
+        <div id="tab-leaderboard" style="display: none; flex-direction: column; gap: 16px;">
+          <!-- Top Header & Search -->
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 700; color: #fff; font-size: 1.05rem;">🏆 Benchmark Leaderboards</span>
+                <span id="lbTotalRunsBadge" class="badge badge-info" style="font-size: 0.72rem;">Loading...</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 3px;">
+                Task-specific & consolidated rankings • Strict 100% pass rate requirement • Live reference-adjusted throughput (pts/¢)
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" id="lbSearchInput" placeholder="🔍 Search model or language..." oninput="onLeaderboardSearch(this.value)" style="padding: 6px 12px; font-size: 0.78rem; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; color: #fff; width: 230px;">
+              <button class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.78rem;" onclick="loadLeaderboard()">🔄 Refresh</button>
+            </div>
           </div>
-          <div style="width: 100%;">
-            <table class="responsive-runs-table">
-              <thead>
-                <tr>
-                  <th style="width: 8%; text-align: center;">Rank</th>
-                  <th style="width: 36%;">Model & Task</th>
-                  <th style="width: 16%;">Pass Rate & Effort</th>
-                  <th style="width: 14%;">Throughput</th>
-                  <th style="width: 12%;">Cost</th>
-                  <th style="width: 14%; text-align: right;">Score / ¢</th>
-                </tr>
-              </thead>
-              <tbody id="leaderboardBody">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No runs recorded yet.</td></tr>
-              </tbody>
-            </table>
+
+          <!-- Task Filter Navigation Pills -->
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;">
+            <div style="display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; background: #090d13;">
+              <button id="lbPillAll" class="btn-toggle active" onclick="setLeaderboardTab('all')">🌐 Consolidated (All Tasks)</button>
+              <button id="lbPillHttp" class="btn-toggle" onclick="setLeaderboardTab('http')">🌐 HTTP/1.1 Server <span id="lbCountHttp" class="badge" style="background: rgba(88,166,255,0.2); color: var(--primary); margin-left: 4px; font-size: 0.65rem;">0</span></button>
+              <button id="lbPillRedis" class="btn-toggle" onclick="setLeaderboardTab('redis')">⚡ Redis Clone <span id="lbCountRedis" class="badge" style="background: rgba(88,166,255,0.2); color: var(--primary); margin-left: 4px; font-size: 0.65rem;">0</span></button>
+              <button id="lbPillDns" class="btn-toggle" onclick="setLeaderboardTab('dns')">📡 DNS Server <span id="lbCountDns" class="badge" style="background: rgba(88,166,255,0.2); color: var(--primary); margin-left: 4px; font-size: 0.65rem;">0</span></button>
+              <button id="lbPillGrouped" class="btn-toggle" onclick="setLeaderboardTab('grouped')">📑 Grouped View</button>
+            </div>
+            <div id="lbSummaryPills" style="display: flex; gap: 8px; align-items: center; font-size: 0.75rem; color: var(--text-muted);"></div>
+          </div>
+
+          <!-- Dynamic Leaderboard Content Area -->
+          <div id="leaderboardDynamicContainer" style="display: flex; flex-direction: column; gap: 20px;">
+            <div style="text-align: center; color: var(--text-muted); padding: 36px;">Loading leaderboard data...</div>
           </div>
         </div>
 
@@ -1508,7 +1523,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       startedAtMs: null,
       durationSecs: null,
       turns: 0,
-      maxTurns: 15,
+      maxTurns: 50,
       spent: 0.0,
       tokens: 0,
       isRunning: false,
@@ -1648,15 +1663,45 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       return false;
     }
 
+    let showCodeDetails = true;
+
+    function toggleCodeDetails(enabled) {
+      showCodeDetails = enabled;
+      fetchConsoleLogs(true);
+    }
+
     function clearConsole() {
       document.getElementById('terminalOutput').textContent = '';
     }
 
     function appendLog(line) {
+      if (!line) return;
       if (parseTelemetryLine(line)) {
         return; // Suppress raw control line from cluttering the terminal
       }
+
+      // Filter code detail lines if toggled off
+      if (!showCodeDetails && (line.includes('  | ') || line.includes('  | ...'))) {
+        return;
+      }
+
       const term = document.getElementById('terminalOutput');
+
+      // Update [WAITING] lines in-place instead of creating dozens of scrolling lines
+      if (line.includes('[WAITING]')) {
+        const text = term.textContent;
+        const lastIdx = text.lastIndexOf('[WAITING]');
+        if (lastIdx !== -1) {
+          const prevPart = text.substring(0, lastIdx);
+          term.textContent = prevPart + line + '\n';
+          const autoScroll = document.getElementById('autoScrollCheck');
+          if (!autoScroll || autoScroll.checked) {
+            term.scrollTop = term.scrollHeight;
+          }
+          return;
+        }
+      }
+
       term.textContent += line + '\n';
       const autoScroll = document.getElementById('autoScrollCheck');
       if (!autoScroll || autoScroll.checked) {
@@ -2126,6 +2171,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
                   </span>
                   <span>·</span>
                   <span>${durationStr}</span>
+                  ${(r.turns !== undefined && r.turns !== null) ? `<span>·</span><span>${r.turns} turns</span>` : ''}
                 </div>
               </div>
             </td>
@@ -2210,74 +2256,500 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       });
     }
 
+    // =========================================================================
+    // Multi-Task & Consolidated Leaderboard Engine
+    // =========================================================================
+    let rawLeaderboardData = [];
+    let currentLbFilter = 'all'; // 'all', 'http', 'redis', 'dns', 'grouped'
+    let lbSearchQuery = '';
+
+    const TASK_SPECS = {
+      http: {
+        name: 'HTTP/1.1 Web Server',
+        icon: '🌐',
+        desc: 'RFC 7230/7231 web server handling GET /, 404s, /echo/{str}, header reflection, POST/GET /files/{name} persistence, keep-alive socket reuse, and path traversal security guards.',
+        stagesCount: 5,
+        refInfo: 'nginx:alpine reference container on port 8081 (~33,000 req/s with wrk load test)',
+        benchTool: 'wrk -t2 -c20 -d3s http://127.0.0.1:8080/'
+      },
+      redis: {
+        name: 'In-Memory Concurrent Redis Clone',
+        icon: '⚡',
+        desc: 'RESP2 protocol TCP server handling pipelined streams, simple strings, bulk strings, integers, errors, PING, ECHO, SET (with PX expiry), GET, DEL, EXISTS, and INCR non-integer guards.',
+        stagesCount: 4,
+        refInfo: 'redis:alpine reference container on port 6380 (~71,000 req/s with redis-benchmark)',
+        benchTool: 'redis-benchmark -p 6379 -n 5000 -c 10 -t get,set -q'
+      },
+      dns: {
+        name: 'RFC 1035 UDP DNS Server',
+        icon: '📡',
+        desc: 'Raw UDP DNS resolver handling RFC 1035 packet headers, query questions, standard flags (QR, Opcode, AA, RD, RA, RCODE), dynamic port listening, and A-record address resolution.',
+        stagesCount: 4,
+        refInfo: 'Standard UDP query resolver benchmarked on port 5353',
+        benchTool: 'UDP raw-socket conformance suite + queryperf'
+      }
+    };
+
+    function setLeaderboardTab(filter) {
+      currentLbFilter = filter;
+      const pills = {
+        all: document.getElementById('lbPillAll'),
+        http: document.getElementById('lbPillHttp'),
+        redis: document.getElementById('lbPillRedis'),
+        dns: document.getElementById('lbPillDns'),
+        grouped: document.getElementById('lbPillGrouped')
+      };
+      Object.keys(pills).forEach(k => {
+        if (pills[k]) {
+          if (k === filter) pills[k].classList.add('active');
+          else pills[k].classList.remove('active');
+        }
+      });
+      renderLeaderboardUI();
+    }
+
+    function onLeaderboardSearch(val) {
+      lbSearchQuery = (val || '').toLowerCase().trim();
+      renderLeaderboardUI();
+    }
+
+    function switchConsoleTask(taskName) {
+      const taskSelect = document.getElementById('task');
+      if (taskSelect) {
+        taskSelect.value = taskName;
+        if (typeof onTaskChange === 'function') onTaskChange(taskName);
+      }
+      switchTab('console');
+    }
+
     async function loadLeaderboard() {
       try {
         const res = await fetch('/api/leaderboard');
         if (!res.ok) return;
-        const data = await res.json();
-        const tbody = document.getElementById('leaderboardBody');
-        tbody.innerHTML = '';
-        if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No runs recorded yet.</td></tr>';
-          return;
-        }
-        data.forEach((r, idx) => {
-          const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
-          const passBadge = r.pass_rate === 100 
-            ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
-            : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
-          const safeEffort = escapeHtml(r.effort || 'auto');
-          const effBadge = `<span class="badge badge-effort">effort: ${safeEffort}</span>`;
-          const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : (r.completion_tokens ? `${((r.prompt_tokens + r.completion_tokens) / 1000).toFixed(1)}k tokens` : 'N/A');
-          
-          let rankBadge = `<span style="font-weight: 700; font-size: 0.95rem; color: var(--text-muted);">#${idx + 1}</span>`;
-          if (idx === 0) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #f1e05a;">🥇 #1</span>`;
-          else if (idx === 1) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #c0c0c0;">🥈 #2</span>`;
-          else if (idx === 2) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #cd7f32;">🥉 #3</span>`;
+        rawLeaderboardData = await res.json();
 
-          const row = `<tr>
-            <td style="text-align: center;">${rankBadge}</td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${escapeHtml(r.model)}</span>
-                  <span class="badge badge-info">${escapeHtml(r.task)}</span>
-                  <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success);">${escapeHtml(r.language)}</span>
-                </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted);">
-                  ${formatTimestamp(r.timestamp)}
-                </div>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div>${passBadge}</div>
-                <div>${effBadge}</div>
-              </div>
-            </td>
-            <td>
-              <span style="font-weight: 600; color: #fff; font-size: 0.85rem;">${tp}</span>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 2px;">
-                <div>
-                  <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${((r.effective_cost_usd !== undefined && r.effective_cost_usd !== null) ? r.effective_cost_usd : r.total_cost_usd).toFixed(4)}</span>
-                  ${(r.effective_cost_usd !== undefined && r.effective_cost_usd !== null && Math.abs(r.effective_cost_usd - r.total_cost_usd) > 0.00001) ? `<span style="font-size: 0.7rem; color: var(--text-muted);" title="Model API Spend">(API: $${r.total_cost_usd.toFixed(4)})</span>` : ''}
-                </div>
-                <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
-              </div>
-            </td>
-            <td style="text-align: right;">
-              <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-                <span style="font-weight: 800; color: var(--primary); font-size: 1.05rem;">${r.efficiency_score.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">Score/¢</span></span>
-                <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.id)}" onclick="inspectRun(this.dataset.runId)">🔍 Inspect</button>
-              </div>
-            </td>
-          </tr>`;
-          tbody.innerHTML += row;
-        });
+        // Update task count badges
+        const httpCount = rawLeaderboardData.filter(r => (r.task || '').toLowerCase() === 'http').length;
+        const redisCount = rawLeaderboardData.filter(r => (r.task || '').toLowerCase() === 'redis').length;
+        const dnsCount = rawLeaderboardData.filter(r => (r.task || '').toLowerCase() === 'dns').length;
+
+        const cHttp = document.getElementById('lbCountHttp');
+        const cRedis = document.getElementById('lbCountRedis');
+        const cDns = document.getElementById('lbCountDns');
+        const totalBadge = document.getElementById('lbTotalRunsBadge');
+
+        if (cHttp) cHttp.textContent = httpCount;
+        if (cRedis) cRedis.textContent = redisCount;
+        if (cDns) cDns.textContent = dnsCount;
+        if (totalBadge) totalBadge.textContent = `${rawLeaderboardData.length} Verified Runs`;
+
+        // Update summary pill
+        const fullPassCount = rawLeaderboardData.filter(r => r.pass_rate >= 100).length;
+        const summaryPills = document.getElementById('lbSummaryPills');
+        if (summaryPills) {
+          summaryPills.innerHTML = `
+            <span class="badge badge-pass" style="font-size: 0.72rem;">✔ ${fullPassCount} Passed (100%)</span>
+            <span class="badge badge-info" style="font-size: 0.72rem;">📊 ${rawLeaderboardData.length} Total Runs</span>
+          `;
+        }
+
+        renderLeaderboardUI();
       } catch (e) {
-        console.error('Failed to load leaderboard', e);
+        console.error('Failed to load leaderboard data:', e);
+        const container = document.getElementById('leaderboardDynamicContainer');
+        if (container) {
+          container.innerHTML = `<div style="text-align: center; color: var(--danger); padding: 24px;">Failed to load leaderboard data: ${escapeHtml(e.message)}</div>`;
+        }
+      }
+    }
+
+    function renderRunsTableRowsHtml(runs, showTaskCol) {
+      if (!runs || runs.length === 0) {
+        const colSpan = showTaskCol ? 9 : 8;
+        return `<tr><td colspan="${colSpan}" style="text-align: center; color: var(--text-muted); padding: 24px;">No matching runs recorded.</td></tr>`;
+      }
+
+      return runs.map((r, idx) => {
+        const tp = r.throughput_req_sec ? `${Math.round(r.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
+        const passBadge = r.pass_rate === 100 
+          ? `<span class="badge badge-pass">✔ 100% (${r.passed_stages}/${r.total_stages})</span>` 
+          : `<span class="badge badge-fail">✕ ${Math.round(r.pass_rate)}% (${r.passed_stages}/${r.total_stages})</span>`;
+        const safeEffort = escapeHtml(r.effort || 'auto');
+        const effBadge = `<span class="badge badge-effort">effort: ${safeEffort}</span>`;
+        const tokensStr = r.tokens ? `${(r.tokens.total_tokens / 1000).toFixed(1)}k tokens` : (r.completion_tokens ? `${((r.prompt_tokens + r.completion_tokens) / 1000).toFixed(1)}k tokens` : 'N/A');
+        const durationStr = (r.duration_seconds !== undefined && r.duration_seconds !== null) ? formatDuration(r.duration_seconds) : '-';
+        const turnsStr = (r.turns !== undefined && r.turns !== null) ? `${r.turns}` : '-';
+        
+        let rankBadge = `<span style="font-weight: 700; font-size: 0.95rem; color: var(--text-muted);">#${idx + 1}</span>`;
+        if (idx === 0) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #f1e05a;">🥇 #1</span>`;
+        else if (idx === 1) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #c0c0c0;">🥈 #2</span>`;
+        else if (idx === 2) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #cd7f32;">🥉 #3</span>`;
+
+        const taskBadgeHtml = showTaskCol 
+          ? `<span class="badge badge-info" style="font-size: 0.72rem; text-transform: uppercase;">${escapeHtml(r.task)}</span>` 
+          : '';
+
+        const scoreVal = (r.throughput_score !== undefined && r.throughput_score !== null ? r.throughput_score : r.efficiency_score);
+
+        return `<tr>
+          <td style="text-align: center;">${rankBadge}</td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${escapeHtml(r.model)}</span>
+                ${taskBadgeHtml}
+                <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success); font-size: 0.72rem;">${escapeHtml(r.language)}</span>
+              </div>
+              <div style="font-size: 0.72rem; color: var(--text-muted);">
+                ${formatTimestamp(r.timestamp)}
+              </div>
+            </div>
+          </td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div>${passBadge}</div>
+              <div>${effBadge}</div>
+            </div>
+          </td>
+          <td>
+            <span style="font-weight: 500; color: #fff; font-size: 0.85rem;">${durationStr}</span>
+          </td>
+          <td style="text-align: center;">
+            <span class="badge" style="background: rgba(88, 166, 255, 0.15); color: var(--primary); font-weight: 600;">${turnsStr}</span>
+          </td>
+          <td>
+            <span style="font-weight: 600; color: #fff; font-size: 0.85rem;">${tp}</span>
+            ${(r.reference_throughput_req_sec && r.throughput_req_sec) ? `<div style="font-size: 0.72rem; color: var(--success); font-weight: 600;">${Math.round((r.throughput_req_sec / r.reference_throughput_req_sec) * 100)}% of Ref</div>` : ''}
+          </td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <div>
+                <span style="font-weight: 600; color: var(--accent); font-size: 0.88rem;">$${((r.effective_cost_usd !== undefined && r.effective_cost_usd !== null) ? r.effective_cost_usd : r.total_cost_usd).toFixed(4)}</span>
+                ${(r.effective_cost_usd !== undefined && r.effective_cost_usd !== null && Math.abs(r.effective_cost_usd - r.total_cost_usd) > 0.00001) ? `<span style="font-size: 0.7rem; color: var(--text-muted);" title="Model API Spend">(API: $${r.total_cost_usd.toFixed(4)})</span>` : ''}
+              </div>
+              <span style="font-size: 0.72rem; color: var(--text-muted);">${tokensStr}</span>
+            </div>
+          </td>
+          <td style="text-align: right;">
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+              <span style="font-weight: 800; color: var(--primary); font-size: 1.05rem;" title="Base Efficiency: ${r.efficiency_score.toFixed(1)} pts/¢">${scoreVal.toFixed(1)} <span style="font-size:0.68rem; font-weight:normal; color:var(--text-muted);">Score/¢</span></span>
+              <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" data-run-id="${escapeHtml(r.id)}" onclick="inspectRun(this.dataset.runId)">🔍 Inspect</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderRunsTableContainerHtml(runs, showTaskCol, title, subHint) {
+      const rowsHtml = renderRunsTableRowsHtml(runs, showTaskCol);
+      return `
+        <div class="card" style="display: flex; flex-direction: column; gap: 10px; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 14px;">
+          ${title ? `
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+              <div>
+                <span style="font-weight: 700; color: #fff; font-size: 0.95rem;">${title}</span>
+                ${subHint ? `<div style="font-size: 0.72rem; color: var(--text-muted);">${subHint}</div>` : ''}
+              </div>
+              <span class="badge badge-info" style="font-size: 0.72rem;">${runs.length} Runs</span>
+            </div>
+          ` : ''}
+          <div style="overflow-x: auto; width: 100%;">
+            <table class="responsive-runs-table">
+              <thead>
+                <tr>
+                  <th style="width: 6%; text-align: center;">Rank</th>
+                  <th style="width: ${showTaskCol ? '28%' : '26%'};">Model${showTaskCol ? ' & Task' : ''}</th>
+                  <th style="width: 14%;">Pass Rate & Effort</th>
+                  <th style="width: 10%;">Duration</th>
+                  <th style="width: 8%; text-align: center;">Turns</th>
+                  <th style="width: 13%;">Throughput</th>
+                  <th style="width: 10%;">Cost</th>
+                  <th style="width: 11%; text-align: right;">Score / ¢</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderModelStandingsCardHtml(runs) {
+      // Group runs by model
+      const modelMap = {};
+      runs.forEach(r => {
+        if (!modelMap[r.model]) {
+          modelMap[r.model] = {
+            model: r.model,
+            runs: [],
+            tasks: new Set(),
+            passCount: 0,
+            bestScore: 0.0,
+            sumScore: 0.0,
+            totalCost: 0.0,
+            languages: {},
+            bestRunId: r.id
+          };
+        }
+        const m = modelMap[r.model];
+        m.runs.push(r);
+        m.tasks.add(r.task);
+        if (r.pass_rate >= 100) m.passCount += 1;
+        const s = (r.throughput_score !== undefined && r.throughput_score !== null ? r.throughput_score : r.efficiency_score);
+        if (s > m.bestScore) {
+          m.bestScore = s;
+          m.bestRunId = r.id;
+        }
+        m.sumScore += s;
+        m.totalCost += ((r.effective_cost_usd !== undefined && r.effective_cost_usd !== null) ? r.effective_cost_usd : r.total_cost_usd);
+        m.languages[r.language] = (m.languages[r.language] || 0) + 1;
+      });
+
+      const modelList = Object.values(modelMap);
+      modelList.sort((a, b) => {
+        const aPass = a.passCount > 0;
+        const bPass = b.passCount > 0;
+        if (aPass !== bPass) return bPass ? 1 : -1;
+        if (Math.abs(b.bestScore - a.bestScore) > 0.01) return b.bestScore - a.bestScore;
+        return a.totalCost - b.totalCost;
+      });
+
+      if (modelList.length === 0) return '';
+
+      const rows = modelList.map((m, idx) => {
+        let rankBadge = `<span style="font-weight: 700; font-size: 0.95rem; color: var(--text-muted);">#${idx + 1}</span>`;
+        if (idx === 0) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #f1e05a;">🥇 #1</span>`;
+        else if (idx === 1) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #c0c0c0;">🥈 #2</span>`;
+        else if (idx === 2) rankBadge = `<span style="font-weight: 800; font-size: 1.05rem; color: #cd7f32;">🥉 #3</span>`;
+
+        const taskBadges = Array.from(m.tasks).map(t => `<span class="badge badge-info" style="font-size: 0.68rem; text-transform: uppercase;">${escapeHtml(t)}</span>`).join(' ');
+        
+        // Find top language
+        const topLang = Object.keys(m.languages).sort((x, y) => m.languages[y] - m.languages[x])[0] || 'Unknown';
+        const passBadge = m.passCount > 0 
+          ? `<span class="badge badge-pass">✔ ${m.passCount}/${m.runs.length} Passed</span>` 
+          : `<span class="badge badge-fail">✕ 0/${m.runs.length} Passed</span>`;
+        const avgScore = (m.sumScore / m.runs.length).toFixed(1);
+
+        return `<tr>
+          <td style="text-align: center;">${rankBadge}</td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-weight: 600; color: var(--primary); font-size: 0.9rem;">${escapeHtml(m.model)}</span>
+              <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--success); font-size: 0.72rem;">${escapeHtml(topLang)}</span>
+            </div>
+          </td>
+          <td>${taskBadges}</td>
+          <td>${passBadge}</td>
+          <td><span style="font-weight: 800; color: var(--primary); font-size: 0.95rem;">${m.bestScore.toFixed(1)}</span> <span style="font-size: 0.7rem; color: var(--text-muted);">pts/¢</span></td>
+          <td style="color: var(--text-muted); font-size: 0.85rem;">${avgScore}</td>
+          <td style="font-weight: 600; color: var(--accent); font-size: 0.85rem;">$${m.totalCost.toFixed(4)}</td>
+          <td style="text-align: right;">
+            <button class="btn-secondary" style="padding: 3px 10px; font-size: 0.75rem;" data-run-id="${escapeHtml(m.bestRunId)}" onclick="inspectRun(this.dataset.runId)">🔍 Inspect Top Run</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      return `
+        <div class="card" style="display: flex; flex-direction: column; gap: 10px; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+            <div>
+              <span style="font-weight: 700; color: #fff; font-size: 0.95rem;">📊 Consolidated Model Standings</span>
+              <div style="font-size: 0.72rem; color: var(--text-muted);">Aggregated cross-task rankings across evaluated LLMs</div>
+            </div>
+            <span class="badge badge-info" style="font-size: 0.72rem;">${modelList.length} Unique Models</span>
+          </div>
+          <div style="overflow-x: auto; width: 100%;">
+            <table class="responsive-runs-table">
+              <thead>
+                <tr>
+                  <th style="width: 6%; text-align: center;">Rank</th>
+                  <th style="width: 30%;">Model</th>
+                  <th style="width: 14%;">Tasks Evaluated</th>
+                  <th style="width: 14%;">Pass Success</th>
+                  <th style="width: 11%;">Best Score / ¢</th>
+                  <th style="width: 10%;">Avg Score</th>
+                  <th style="width: 9%;">Total Spend</th>
+                  <th style="width: 6%; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTaskHeaderBannerHtml(taskKey) {
+      const spec = TASK_SPECS[taskKey] || {
+        name: taskKey.toUpperCase(),
+        icon: '📋',
+        desc: 'Autonomous SWE coding benchmark task.',
+        stagesCount: 4,
+        refInfo: 'Reference baseline',
+        benchTool: 'Verification suite'
+      };
+
+      return `
+        <div class="card" style="background: linear-gradient(135deg, rgba(88,166,255,0.06) 0%, rgba(33,38,45,0.8) 100%); border: 1px solid var(--border); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.8rem;">${spec.icon}</span>
+              <div>
+                <h3 style="margin: 0; color: #fff; font-size: 1.1rem; font-weight: 700;">${spec.name} Leaderboard</h3>
+                <span class="badge badge-info" style="margin-top: 4px; font-size: 0.7rem;">task: ${taskKey}</span>
+              </div>
+            </div>
+            <button class="btn btn-primary" style="padding: 6px 14px; font-size: 0.78rem;" onclick="switchConsoleTask('${taskKey}')">🚀 Run ${spec.name} in Console</button>
+          </div>
+          <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #c9d1d9; line-height: 1.45;">
+            ${spec.desc}
+          </p>
+          <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid rgba(48,54,61,0.6); padding-top: 8px; margin-top: 4px;">
+            <div>🎯 <b>Test Protocol:</b> ${spec.stagesCount} Automated Conformance Stages</div>
+            <div>⚡ <b>Reference Baseline:</b> ${spec.refInfo}</div>
+            <div>⏱️ <b>Benchmark Tool:</b> <code>${spec.benchTool}</code></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEmptyTaskNoticeHtml(taskKey) {
+      const spec = TASK_SPECS[taskKey] || { name: taskKey };
+      return `
+        <div class="card" style="background: #0d1117; border: 1px dashed var(--border); border-radius: 6px; padding: 36px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+          <span style="font-size: 2.2rem;">${spec.icon || '📋'}</span>
+          <div style="font-weight: 600; color: #fff; font-size: 1rem;">No Verified Runs for ${spec.name} Yet</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); max-width: 480px; line-height: 1.5;">
+            There are currently no benchmark results recorded for <code>task: ${taskKey}</code> in the results directory.
+            Launch an autonomous run using the web console or headless CLI to evaluate under-$1 LLMs on this task.
+          </div>
+          <button class="btn btn-primary" style="padding: 8px 18px; font-size: 0.82rem; margin-top: 6px;" onclick="switchConsoleTask('${taskKey}')">🚀 Start Benchmark for ${spec.name}</button>
+        </div>
+      `;
+    }
+
+    function renderLeaderboardUI() {
+      const container = document.getElementById('leaderboardDynamicContainer');
+      if (!container) return;
+
+      // Filter by search query if any
+      let filtered = rawLeaderboardData;
+      if (lbSearchQuery) {
+        filtered = rawLeaderboardData.filter(r => 
+          (r.model || '').toLowerCase().includes(lbSearchQuery) ||
+          (r.language || '').toLowerCase().includes(lbSearchQuery) ||
+          (r.task || '').toLowerCase().includes(lbSearchQuery)
+        );
+      }
+
+      if (currentLbFilter === 'all') {
+        // Consolidated View
+        const passingRuns = filtered.filter(r => r.pass_rate >= 100);
+        const topModel = passingRuns[0] ? passingRuns[0].model : (filtered[0] ? filtered[0].model : 'N/A');
+        const topScore = passingRuns[0] ? (passingRuns[0].throughput_score || passingRuns[0].efficiency_score).toFixed(1) : '0.0';
+        
+        let peakTp = 0;
+        let peakTpRatio = 0;
+        filtered.forEach(r => {
+          if (r.throughput_req_sec && r.throughput_req_sec > peakTp) {
+            peakTp = r.throughput_req_sec;
+            if (r.reference_throughput_req_sec) {
+              peakTpRatio = Math.round((peakTp / r.reference_throughput_req_sec) * 100);
+            }
+          }
+        });
+
+        let lowestCostPass = null;
+        passingRuns.forEach(r => {
+          const c = r.effective_cost_usd !== undefined && r.effective_cost_usd !== null ? r.effective_cost_usd : r.total_cost_usd;
+          if (lowestCostPass === null || c < lowestCostPass) lowestCostPass = c;
+        });
+
+        const metricsCardsHtml = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px;">
+            <div class="card" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">🥇 Leading Performer</span>
+              <span style="font-weight: 700; color: #f1e05a; font-size: 0.95rem; word-break: break-all;">${escapeHtml(topModel)}</span>
+              <span style="font-size: 0.75rem; color: var(--primary); font-weight: 600;">${topScore} Score/¢</span>
+            </div>
+            <div class="card" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">⚡ Peak Candidate TP</span>
+              <span style="font-weight: 700; color: #fff; font-size: 1rem;">${peakTp ? `${Math.round(peakTp).toLocaleString()} req/s` : 'N/A'}</span>
+              <span style="font-size: 0.75rem; color: var(--success); font-weight: 600;">${peakTpRatio ? `${peakTpRatio}% of reference` : '-'}</span>
+            </div>
+            <div class="card" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">💰 Lowest Cost (100% Pass)</span>
+              <span style="font-weight: 700; color: var(--accent); font-size: 1rem;">${lowestCostPass !== null ? `$${lowestCostPass.toFixed(4)}` : 'N/A'}</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Under-$1 benchmark target</span>
+            </div>
+            <div class="card" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">📊 Verified Submissions</span>
+              <span style="font-weight: 700; color: #fff; font-size: 1rem;">${filtered.length} Runs Recorded</span>
+              <span style="font-size: 0.75rem; color: var(--success); font-weight: 600;">${passingRuns.length} Passed (${Math.round((passingRuns.length / (filtered.length || 1)) * 100)}%)</span>
+            </div>
+          </div>
+        `;
+
+        const modelStandingsHtml = renderModelStandingsCardHtml(filtered);
+        const runsTableHtml = renderRunsTableContainerHtml(filtered, true, '🏆 Consolidated Global Leaderboard (All Runs)', 'Sorted by 100% pass rate requirement, reference-adjusted throughput score, and cost efficiency');
+
+        container.innerHTML = `
+          ${metricsCardsHtml}
+          ${modelStandingsHtml}
+          ${runsTableHtml}
+        `;
+      } else if (currentLbFilter === 'grouped') {
+        // Grouped View: Redis, HTTP, DNS, and Consolidated on one page
+        const redisRuns = filtered.filter(r => (r.task || '').toLowerCase() === 'redis');
+        const httpRuns = filtered.filter(r => (r.task || '').toLowerCase() === 'http');
+        const dnsRuns = filtered.filter(r => (r.task || '').toLowerCase() === 'dns');
+
+        const redisSection = `
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${renderTaskHeaderBannerHtml('redis')}
+            ${redisRuns.length > 0 ? renderRunsTableContainerHtml(redisRuns, false, '⚡ Task: Redis Clone Rankings', 'RESP2 Concurrent In-Memory Server') : renderEmptyTaskNoticeHtml('redis')}
+          </div>
+        `;
+
+        const httpSection = `
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${renderTaskHeaderBannerHtml('http')}
+            ${httpRuns.length > 0 ? renderRunsTableContainerHtml(httpRuns, false, '🌐 Task: HTTP/1.1 Server Rankings', 'RFC 7230/7231 Conformance & wrk Throughput') : renderEmptyTaskNoticeHtml('http')}
+          </div>
+        `;
+
+        const dnsSection = `
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${renderTaskHeaderBannerHtml('dns')}
+            ${dnsRuns.length > 0 ? renderRunsTableContainerHtml(dnsRuns, false, '📡 Task: DNS Server Rankings', 'RFC 1035 UDP 5353 Conformance') : renderEmptyTaskNoticeHtml('dns')}
+          </div>
+        `;
+
+        const consolidatedSection = renderRunsTableContainerHtml(filtered, true, '🏆 Consolidated Global Leaderboard (All Runs)', 'Global multi-task ranking');
+
+        container.innerHTML = `
+          ${httpSection}
+          ${redisSection}
+          ${dnsSection}
+          ${consolidatedSection}
+        `;
+      } else {
+        // Single Task View ('http', 'redis', 'dns')
+        const taskRuns = filtered.filter(r => (r.task || '').toLowerCase() === currentLbFilter);
+        const bannerHtml = renderTaskHeaderBannerHtml(currentLbFilter);
+        const tableOrEmpty = taskRuns.length > 0 
+          ? renderRunsTableContainerHtml(taskRuns, false, `${TASK_SPECS[currentLbFilter] ? TASK_SPECS[currentLbFilter].name : currentLbFilter.toUpperCase()} Leaderboard`, `Verified runs for task: ${currentLbFilter}`)
+          : renderEmptyTaskNoticeHtml(currentLbFilter);
+
+        container.innerHTML = `
+          ${bannerHtml}
+          ${tableOrEmpty}
+        `;
       }
     }
 
@@ -2397,7 +2869,8 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         document.getElementById('modalInspectTokens').innerHTML = tokenStr;
 
         document.getElementById('modalInspectThroughput').textContent = m.throughput_req_sec ? `${Math.round(m.throughput_req_sec).toLocaleString()} req/s` : 'N/A';
-        document.getElementById('modalInspectDuration').textContent = `${Math.round(m.duration_seconds || 0)}s`;
+        document.getElementById('modalInspectDuration').textContent = formatDuration(m.duration_seconds || 0);
+        document.getElementById('modalInspectTurns').textContent = (m.turns !== undefined && m.turns !== null) ? m.turns : '-';
         document.getElementById('modalInspectEffort').innerHTML = `${escapeHtml(m.effort || 'auto')} <span style="color:var(--text-muted); font-size:0.72rem;">· ${escapeHtml(m.task)}</span>`;
 
         // Render Test Stages
@@ -2780,7 +3253,11 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
                 break;
               }
             }
-            const cleanText = lines.filter(l => !l.includes('[TELEMETRY]')).join('\n');
+            let filtered = lines.filter(l => !l.includes('[TELEMETRY]'));
+            if (!showCodeDetails) {
+              filtered = filtered.filter(l => !l.includes('  | ') && !l.includes('  | ...'));
+            }
+            const cleanText = filtered.join('\n');
             term.textContent = cleanText;
             const autoScroll = document.getElementById('autoScrollCheck');
             if (!autoScroll || autoScroll.checked) {
@@ -3014,10 +3491,22 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         <div style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
           <div style="font-size: 0.75rem; color: var(--text-muted);">Score / ¢ Efficiency</div>
           <div style="font-size: 1.1rem; font-weight: 700; margin-top: 4px; color: var(--primary);">
-            ${a.score_per_cent.toFixed(1)} vs ${b.score_per_cent.toFixed(1)}
+            ${((a.efficiency_score !== undefined && a.efficiency_score !== null) ? a.efficiency_score : (a.score_per_cent || 0)).toFixed(1)} vs ${((b.efficiency_score !== undefined && b.efficiency_score !== null) ? b.efficiency_score : (b.score_per_cent || 0)).toFixed(1)}
           </div>
           <div style="font-size: 0.72rem; color: ${scoreDiff >= 0 ? 'var(--success)' : 'var(--danger)'}; margin-top: 2px;">
             ${scoreDiff >= 0 ? '+' : ''}${scoreDiff} pts/¢
+          </div>
+        </div>
+
+        <div style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Duration & Turns</div>
+          <div style="font-size: 1.0rem; font-weight: 700; margin-top: 4px; color: #fff;">
+            ${formatDuration(a.duration_seconds || 0)} (${(a.turns !== undefined && a.turns !== null) ? a.turns : '-'}t)
+            <span style="color: var(--text-muted); font-size: 0.8rem;"> vs </span>
+            ${formatDuration(b.duration_seconds || 0)} (${(b.turns !== undefined && b.turns !== null) ? b.turns : '-'}t)
+          </div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+            Δ ${(Math.round(b.duration_seconds || 0) - Math.round(a.duration_seconds || 0))}s wall time
           </div>
         </div>
 
@@ -3151,7 +3640,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
           if (data.last_run && liveTelemetry.turns === 0 && liveTelemetry.spent === 0) {
             const lr = data.last_run;
             liveTelemetry.turns = lr.turns || 0;
-            liveTelemetry.maxTurns = lr.max_turns || 15;
+            liveTelemetry.maxTurns = lr.max_turns || 50;
             liveTelemetry.spent = lr.cost_usd || 0.0;
             liveTelemetry.tokens = lr.tokens || 0;
             if (lr.duration_secs) {
@@ -3173,7 +3662,7 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
       const effort = document.getElementById('effortSelect').value;
       const task = document.getElementById('task').value;
       const budget = parseFloat(document.getElementById('budget').value) || 0.20;
-      const turns = parseInt(document.getElementById('turns').value, 10) || 15;
+      const turns = parseInt(document.getElementById('turns').value, 10) || 50;
       const timeoutMin = parseInt(document.getElementById('timeout_min').value, 10) || 15;
       const evalOnly = document.getElementById('evalOnly').checked;
 
@@ -3521,6 +4010,10 @@ cargo run --release -- publish --run-id &lt;run_id&gt;</code></pre>
         <div class="kpi-chip">
           <div class="kpi-val" id="modalInspectDuration">-</div>
           <div class="kpi-lbl">Wall Duration</div>
+        </div>
+        <div class="kpi-chip">
+          <div class="kpi-val" id="modalInspectTurns" style="color: var(--primary);">-</div>
+          <div class="kpi-lbl">Turns Taken</div>
         </div>
         <div class="kpi-chip">
           <div class="kpi-val" id="modalInspectEffort" style="color: var(--warning);">-</div>

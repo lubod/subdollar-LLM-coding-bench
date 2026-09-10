@@ -427,6 +427,32 @@ impl HttpVerifier {
             }
         }
 
+        // Path Traversal Security Check: request paths with directory traversal
+        let traversal_payloads = [
+            "../../../../etc/passwd",
+            "../start.sh",
+            "..%2F..%2Fetc%2Fpasswd",
+        ];
+        for payload in &traversal_payloads {
+            let traversal_url = format!("http://127.0.0.1:{}/files/{}", self.target_port, payload);
+            if let Ok(resp) = self.client.get(&traversal_url).send().await {
+                if resp.status() == reqwest::StatusCode::OK {
+                    let body = resp.text().await.unwrap_or_default();
+                    if body.contains("root:") || body.contains("#!/bin") || body.contains("exec ") {
+                        return StageResult {
+                            stage: 5,
+                            name,
+                            passed: false,
+                            error: Some(format!(
+                                "Security failure: server allows directory traversal ({}) leaking sensitive content",
+                                payload
+                            )),
+                        };
+                    }
+                }
+            }
+        }
+
         StageResult {
             stage: 5,
             name,

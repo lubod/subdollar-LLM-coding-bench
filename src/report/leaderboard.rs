@@ -17,6 +17,8 @@ pub struct BenchmarkRunResult {
     pub passed_stages: u32,
     pub total_stages: u32,
     pub throughput_req_sec: Option<f64>,
+    #[serde(default)]
+    pub reference_throughput_req_sec: Option<f64>,
     pub prompt_tokens: u64,
     pub cached_tokens: u64,
     pub completion_tokens: u64,
@@ -25,10 +27,26 @@ pub struct BenchmarkRunResult {
     pub effective_cost_usd: Option<f64>,
     #[serde(default)]
     pub duration_seconds: Option<f64>,
+    #[serde(default)]
+    pub turns: Option<u32>,
     pub savings_percent: f64,
     pub efficiency_score: f64,
+    #[serde(default)]
+    pub throughput_score: Option<f64>,
     pub timestamp: String,
     pub method_version: Option<String>,
+}
+
+pub fn format_duration(secs: f64) -> String {
+    if secs <= 0.0 {
+        "-".to_string()
+    } else if secs < 60.0 {
+        format!("{:.0}s", secs)
+    } else {
+        let mins = (secs / 60.0).floor() as u64;
+        let rem_secs = (secs % 60.0).round() as u64;
+        format!("{}m {}s", mins, rem_secs)
+    }
 }
 
 impl BenchmarkRunResult {
@@ -162,12 +180,20 @@ impl LeaderboardManager {
             }
         }
         list.sort_by(|a, b| {
-            b.pass_rate
-                .partial_cmp(&a.pass_rate)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            let a_pass_100 = a.pass_rate >= 100.0;
+            let b_pass_100 = b.pass_rate >= 100.0;
+            b_pass_100
+                .cmp(&a_pass_100)
                 .then_with(|| {
-                    b.efficiency_score
-                        .partial_cmp(&a.efficiency_score)
+                    b.pass_rate
+                        .partial_cmp(&a.pass_rate)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    let b_score = b.throughput_score.unwrap_or(b.efficiency_score);
+                    let a_score = a.throughput_score.unwrap_or(a.efficiency_score);
+                    b_score
+                        .partial_cmp(&a_score)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .then_with(|| {
@@ -177,32 +203,61 @@ impl LeaderboardManager {
                         .partial_cmp(&b_cost)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
+                .then_with(|| {
+                    let a_tp = a.throughput_req_sec.unwrap_or(0.0);
+                    let b_tp = b.throughput_req_sec.unwrap_or(0.0);
+                    b_tp.partial_cmp(&a_tp).unwrap_or(std::cmp::Ordering::Equal)
+                })
         });
         list
     }
 
     pub fn print_table(results: &[BenchmarkRunResult]) {
+        Self::print_table_with_title("Benchmark Leaderboard", results);
+    }
+
+    pub fn print_table_with_title(title: &str, results: &[BenchmarkRunResult]) {
+        if results.is_empty() {
+            println!("\n=== {} ===\nNo results to display.\n", title);
+            return;
+        }
+
+        println!("\n=== {} ===", title);
         let mut table = Table::new();
         table
             .load_preset(UTF8_FULL)
             .apply_modifier(UTF8_ROUND_CORNERS)
             .set_header(vec![
+                "Rank",
                 "Model",
                 "Effort",
                 "Task",
                 "Lang",
                 "Pass Rate",
+                "Duration",
+                "Turns",
                 "Throughput",
                 "Cost ($)",
                 "Cache Savings",
                 "Score / ¢",
             ]);
 
-        for r in results {
-            let tp = r
-                .throughput_req_sec
-                .map(|t| format!("{:.0} req/s", t))
-                .unwrap_or_else(|| "N/A".to_string());
+        for (idx, r) in results.iter().enumerate() {
+            let rank_str = match idx {
+                0 => "🥇 1".to_string(),
+                1 => "🥈 2".to_string(),
+                2 => "🥉 3".to_string(),
+                _ => format!("{}", idx + 1),
+            };
+
+            let tp = match (r.throughput_req_sec, r.reference_throughput_req_sec) {
+                (Some(cand_tp), Some(ref_tp)) if ref_tp > 0.0 => {
+                    let ratio = (cand_tp / ref_tp) * 100.0;
+                    format!("{:.0} req/s ({:.0}% ref)", cand_tp, ratio)
+                }
+                (Some(cand_tp), _) => format!("{:.0} req/s", cand_tp),
+                _ => "N/A".to_string(),
+            };
 
             let pass_str = format!(
                 "{:.0}% ({}/{})",
@@ -210,8 +265,17 @@ impl LeaderboardManager {
             );
             let savings_str = format!("{:.0}%", r.savings_percent);
             let eff_str = r.effort.clone().unwrap_or_else(|| "auto".to_string());
+            let dur_str = r
+                .duration_seconds
+                .map(format_duration)
+                .unwrap_or_else(|| "-".to_string());
+            let turns_str = r
+                .turns
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "-".to_string());
 
             table.add_row(Row::from(vec![
+                Cell::new(rank_str).fg(Color::Yellow),
                 Cell::new(&r.model).fg(Color::Cyan),
                 Cell::new(eff_str).fg(Color::Yellow),
                 Cell::new(&r.task),
@@ -221,14 +285,70 @@ impl LeaderboardManager {
                 } else {
                     Color::Yellow
                 }),
+                Cell::new(dur_str).fg(Color::White),
+                Cell::new(turns_str).fg(Color::Cyan),
                 Cell::new(tp),
                 Cell::new(format!("${:.4}", r.total_cost_usd)).fg(Color::Magenta),
                 Cell::new(savings_str).fg(Color::Green),
-                Cell::new(format!("{:.1}", r.efficiency_score)).fg(Color::Cyan),
+                Cell::new(format!("{:.1}", r.throughput_score.unwrap_or(r.efficiency_score))).fg(Color::Cyan),
             ]));
         }
 
         println!("\n{}", table);
+    }
+
+    pub fn print_leaderboard_views(results: &[BenchmarkRunResult], task_filter: &str) {
+        let trimmed = task_filter.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("all") {
+            // Group distinct tasks preserving order
+            let mut tasks: Vec<String> = Vec::new();
+            for r in results {
+                if !tasks.contains(&r.task) {
+                    tasks.push(r.task.clone());
+                }
+            }
+
+            // Print per-task leaderboards first
+            for task in &tasks {
+                let task_results: Vec<BenchmarkRunResult> = results
+                    .iter()
+                    .filter(|r| r.task.eq_ignore_ascii_case(task))
+                    .cloned()
+                    .collect();
+
+                let title = match task.to_lowercase().as_str() {
+                    "redis" => "⚡ Task: In-Memory Redis Server Leaderboard",
+                    "http" => "🌐 Task: HTTP/1.1 Web Server Leaderboard",
+                    "dns" => "📡 Task: DNS Server Leaderboard",
+                    _ => &format!("Task: {} Leaderboard", task),
+                };
+                Self::print_table_with_title(title, &task_results);
+            }
+
+            // Print consolidated global leaderboard
+            Self::print_table_with_title(
+                "🏆 Consolidated Global Leaderboard (All Tasks)",
+                results,
+            );
+        } else {
+            let task_results: Vec<BenchmarkRunResult> = results
+                .iter()
+                .filter(|r| r.task.eq_ignore_ascii_case(trimmed))
+                .cloned()
+                .collect();
+
+            if task_results.is_empty() {
+                println!("\nNo benchmark results found for task '{}'.\n", trimmed);
+            } else {
+                let title = match trimmed.to_lowercase().as_str() {
+                    "redis" => "⚡ Task: In-Memory Redis Server Leaderboard",
+                    "http" => "🌐 Task: HTTP/1.1 Web Server Leaderboard",
+                    "dns" => "📡 Task: DNS Server Leaderboard",
+                    _ => &format!("Task: {} Leaderboard", trimmed),
+                };
+                Self::print_table_with_title(title, &task_results);
+            }
+        }
     }
 }
 
@@ -325,14 +445,17 @@ mod tests {
             passed_stages: 4,
             total_stages: 4,
             throughput_req_sec: Some(60000.0),
+            reference_throughput_req_sec: Some(71000.0),
             prompt_tokens: 1000,
             cached_tokens: 500,
             completion_tokens: 100,
             total_cost_usd: 0.005,
             effective_cost_usd: Some(0.008),
             duration_seconds: Some(60.0),
+            turns: Some(4),
             savings_percent: 50.0,
             efficiency_score: 200.0,
+            throughput_score: Some(538.0),
             timestamp: "2026-09-04T12:00:00Z".to_string(),
             method_version: Some("0.1.0".to_string()),
         };
@@ -356,14 +479,17 @@ mod tests {
             passed_stages: 2,
             total_stages: 4,
             throughput_req_sec: None,
+            reference_throughput_req_sec: None,
             prompt_tokens: 1000,
             cached_tokens: 500,
             completion_tokens: 200,
             total_cost_usd: 0.001,
             effective_cost_usd: Some(0.003),
             duration_seconds: Some(40.0),
+            turns: Some(2),
             savings_percent: 25.0,
-            efficiency_score: 300.0,
+            efficiency_score: 0.0,
+            throughput_score: Some(0.0),
             timestamp: "2026-09-04T06:00:00Z".to_string(),
             method_version: Some("0.1.0".to_string()),
         };
@@ -379,14 +505,17 @@ mod tests {
             passed_stages: 4,
             total_stages: 4,
             throughput_req_sec: Some(50000.0),
+            reference_throughput_req_sec: Some(71000.0),
             prompt_tokens: 2000,
             cached_tokens: 1500,
             completion_tokens: 300,
             total_cost_usd: 0.005,
             effective_cost_usd: Some(0.008),
             duration_seconds: Some(50.0),
+            turns: Some(3),
             savings_percent: 60.0,
             efficiency_score: 200.0,
+            throughput_score: Some(481.0),
             timestamp: "2026-09-04T06:05:00Z".to_string(),
             method_version: Some("0.1.0".to_string()),
         };

@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::report::archive::{RunArchiver, RunManifest};
+use crate::report::leaderboard::format_duration;
 use crate::report::environment::EnvironmentInfo;
 
 pub struct SummaryGenerator;
@@ -70,8 +71,8 @@ impl SummaryGenerator {
         if runs.is_empty() {
             md.push_str("*No benchmark runs recorded yet. Run a benchmark to populate the leaderboard!*\n\n");
         } else {
-            md.push_str("| Rank | Model | Effort | Task | Lang | Pass Rate | Throughput | Cost (USD) | Efficiency | Full Trace & Code |\n");
-            md.push_str("|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
+            md.push_str("| Rank | Model | Effort | Task | Lang | Pass Rate | Duration | Turns | Throughput | Cost (USD) | Efficiency | Full Trace & Code |\n");
+            md.push_str("|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
 
             for (idx, r) in runs.iter().enumerate() {
                 let rank = match idx {
@@ -92,10 +93,15 @@ impl SummaryGenerator {
                     "{:.0}% ({}/{})",
                     r.pass_rate, r.passed_stages, r.total_stages
                 );
-                let tp_str = r
-                    .throughput_req_sec
-                    .map(|t| format!("{:.0} req/s", t))
-                    .unwrap_or_else(|| "N/A".to_string());
+                let dur_str = format_duration(r.duration_seconds);
+                let turns_str = r.turns.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
+                let tp_str = match (r.throughput_req_sec, r.reference_throughput_req_sec) {
+                    (Some(cand), Some(refr)) if refr > 0.0 => {
+                        format!("{:.0} req/s *({:.0}% ref)*", cand, (cand / refr) * 100.0)
+                    }
+                    (Some(cand), _) => format!("{:.0} req/s", cand),
+                    _ => "N/A".to_string(),
+                };
 
                 let eff_c = r.effective_cost();
                 let cost_str = if (eff_c - r.cost_usd).abs() > 0.0001 {
@@ -103,17 +109,27 @@ impl SummaryGenerator {
                 } else {
                     format!("${:.4}", r.cost_usd)
                 };
-                let score_str = format!("**{:.1}** pts/¢", r.efficiency_score);
+                let score_str = if let Some(ts) = r.throughput_score {
+                    if (ts - r.efficiency_score).abs() > 0.1 && r.pass_rate >= 100.0 {
+                        format!("**{:.1}** pts/¢ *(base: {:.1})*", ts, r.efficiency_score)
+                    } else {
+                        format!("**{:.1}** pts/¢", ts)
+                    }
+                } else {
+                    format!("**{:.1}** pts/¢", r.efficiency_score)
+                };
                 let link_str = format!("[Inspect](runs/{}/)", r.run_id);
 
                 md.push_str(&format!(
-                    "| {} | `{}` | `{}` | {} | `{}` | {} | {} | {} | {} | {} |\n",
+                    "| {} | `{}` | `{}` | {} | `{}` | {} | {} | {} | {} | {} | {} | {} |\n",
                     rank,
                     r.model,
                     eff_str,
                     task_display,
                     r.language,
                     pass_str,
+                    dur_str,
+                    turns_str,
                     tp_str,
                     cost_str,
                     score_str,
@@ -134,20 +150,24 @@ impl SummaryGenerator {
         let redis_runs: Vec<&RunManifest> = runs.iter().filter(|r| r.task == "redis").collect();
         if !redis_runs.is_empty() {
             md.push_str(
-                "| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |\n",
+                "| Model | Effort | Lang | Pass Rate | Duration | Turns | Throughput | Cost | Score | Run Archive |\n",
             );
-            md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
+            md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
             for r in redis_runs {
+                let dur_str = format_duration(r.duration_seconds);
+                let turns_str = r.turns.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
                 let tp_str = r
                     .throughput_req_sec
                     .map(|t| format!("{:.0} req/s", t))
                     .unwrap_or_else(|| "N/A".to_string());
                 md.push_str(&format!(
-                    "| `{}` | `{}` | `{}` | {:.0}% | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
+                    "| `{}` | `{}` | `{}` | {:.0}% | {} | {} | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
                     r.model,
                     r.effort.as_deref().unwrap_or("auto"),
                     r.language,
                     r.pass_rate,
+                    dur_str,
+                    turns_str,
                     tp_str,
                     r.cost_usd,
                     r.efficiency_score,
@@ -168,20 +188,63 @@ impl SummaryGenerator {
         let http_runs: Vec<&RunManifest> = runs.iter().filter(|r| r.task == "http").collect();
         if !http_runs.is_empty() {
             md.push_str(
-                "| Model | Effort | Lang | Pass Rate | Throughput | Cost | Score | Run Archive |\n",
+                "| Model | Effort | Lang | Pass Rate | Duration | Turns | Throughput | Cost | Score | Run Archive |\n",
             );
-            md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
+            md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
             for r in http_runs {
+                let dur_str = format_duration(r.duration_seconds);
+                let turns_str = r.turns.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
                 let tp_str = r
                     .throughput_req_sec
                     .map(|t| format!("{:.0} req/s", t))
                     .unwrap_or_else(|| "N/A".to_string());
                 md.push_str(&format!(
-                    "| `{}` | `{}` | `{}` | {:.0}% | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
+                    "| `{}` | `{}` | `{}` | {:.0}% | {} | {} | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
                     r.model,
                     r.effort.as_deref().unwrap_or("auto"),
                     r.language,
                     r.pass_rate,
+                    dur_str,
+                    turns_str,
+                    tp_str,
+                    r.cost_usd,
+                    r.efficiency_score,
+                    r.run_id,
+                    r.run_id
+                ));
+            }
+            md.push('\n');
+        }
+
+                md.push_str("---\n\n");
+        md.push_str("## 📡 Task 3: DNS Server (`task: dns`)\n\n");
+        md.push_str("The candidate LLM is instructed to build an RFC 1035 UDP DNS Server from scratch.\n");
+        md.push_str("- **Wire Protocol**: Raw UDP query resolver handling RFC 1035 packet headers, question queries, and A-record resolution.\n");
+        md.push_str("- **Supported Queries**: A record lookups, standard query flags (QR, Opcode, AA, RD, RA, RCODE), dynamic port listening.\n");
+        md.push_str("- **Packaging Freedom**: Working multi-stage `Dockerfile` (automatically built and containerized) or `./start.sh`.\n");
+        md.push_str("- **Verification**: 4-stage automated UDP conformance suite + `queryperf` load test.\n\n");
+
+        let dns_runs: Vec<&RunManifest> = runs.iter().filter(|r| r.task == "dns").collect();
+        if !dns_runs.is_empty() {
+            md.push_str(
+                "| Model | Effort | Lang | Pass Rate | Duration | Turns | Throughput | Cost | Score | Run Archive |\n",
+            );
+            md.push_str("|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n");
+            for r in dns_runs {
+                let dur_str = format_duration(r.duration_seconds);
+                let turns_str = r.turns.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
+                let tp_str = r
+                    .throughput_req_sec
+                    .map(|t| format!("{:.0} req/s", t))
+                    .unwrap_or_else(|| "N/A".to_string());
+                md.push_str(&format!(
+                    "| `{}` | `{}` | `{}` | {:.0}% | {} | {} | {} | ${:.4} | {:.1} pts/¢ | [runs/{}/](runs/{}/) |\n",
+                    r.model,
+                    r.effort.as_deref().unwrap_or("auto"),
+                    r.language,
+                    r.pass_rate,
+                    dur_str,
+                    turns_str,
                     tp_str,
                     r.cost_usd,
                     r.efficiency_score,
@@ -294,11 +357,13 @@ mod tests {
             started_at: "2026-09-04T08:00:00Z".to_string(),
             completed_at: "2026-09-04T08:02:00Z".to_string(),
             duration_seconds: 120.0,
+            turns: Some(5),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,
             stages: vec![],
             throughput_req_sec: Some(74000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 1000,
                 cached_tokens: 500,
@@ -309,6 +374,7 @@ mod tests {
             effective_cost_usd: Some(0.015),
             savings_percent: 50.0,
             efficiency_score: 100.0,
+            throughput_score: Some(308.5),
             files: vec![],
             env: Some(env.clone()),
             git_commit: Some("abc1234".to_string()),

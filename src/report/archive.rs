@@ -32,17 +32,23 @@ pub struct RunManifest {
     pub started_at: String,
     pub completed_at: String,
     pub duration_seconds: f64,
+    #[serde(default)]
+    pub turns: Option<u32>,
     pub pass_rate: f64,
     pub passed_stages: u32,
     pub total_stages: u32,
     pub stages: Vec<StageResult>,
     pub throughput_req_sec: Option<f64>,
+    #[serde(default)]
+    pub reference_throughput_req_sec: Option<f64>,
     pub tokens: RunTokenUsage,
     pub cost_usd: f64,
     #[serde(default)]
     pub effective_cost_usd: Option<f64>,
     pub savings_percent: f64,
     pub efficiency_score: f64,
+    #[serde(default)]
+    pub throughput_score: Option<f64>,
     pub files: Vec<FileInfo>,
     #[serde(default)]
     pub env: Option<EnvironmentInfo>,
@@ -258,6 +264,7 @@ mod tests {
             started_at: "2026-09-04T06:30:00Z".to_string(),
             completed_at: "2026-09-04T06:31:00Z".to_string(),
             duration_seconds: 60.0,
+            turns: Some(5),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,
@@ -268,6 +275,7 @@ mod tests {
                 error: None,
             }],
             throughput_req_sec: Some(45000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 10000,
                 cached_tokens: 8000,
@@ -278,6 +286,7 @@ mod tests {
             effective_cost_usd: Some(0.005),
             savings_percent: 65.0,
             efficiency_score: 400.0,
+            throughput_score: Some(907.0),
             files: scanned,
             env: None,
             git_commit: None,

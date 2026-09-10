@@ -33,13 +33,38 @@ impl ModelPricing {
     }
 
     /// Calculates Engineering Efficiency Score (pts/¢): Pass Rate (%) / (Effective Cost in Cents)
+    /// Only fully functional implementations (strictly 100% pass rate) earn efficiency points.
     pub fn calculate_efficiency_score(pass_rate: f64, effective_cost_usd: f64) -> f64 {
-        if effective_cost_usd > 0.0 {
+        if pass_rate < 100.0 || effective_cost_usd <= 0.0 {
+            0.0
+        } else {
             let cost_cents = (effective_cost_usd * 100.0).max(0.0001);
-            pass_rate / cost_cents
+            100.0 / cost_cents
+        }
+    }
+
+    /// Calculates the Throughput-Adjusted Score.
+    /// Score = Base Efficiency * (1.0 + 2.0 * (candidate_tp / reference_tp))
+    pub fn calculate_throughput_score(
+        pass_rate: f64,
+        effective_cost_usd: f64,
+        throughput_req_sec: Option<f64>,
+        reference_throughput_req_sec: Option<f64>,
+    ) -> f64 {
+        let base_eff = Self::calculate_efficiency_score(pass_rate, effective_cost_usd);
+        if base_eff <= 0.0 {
+            return 0.0;
+        }
+        let cand_tp = throughput_req_sec.unwrap_or(0.0).max(0.0);
+        let ref_tp = reference_throughput_req_sec.unwrap_or(0.0).max(0.0);
+        let speed_ratio = if ref_tp > 0.0 {
+            cand_tp / ref_tp
+        } else if cand_tp > 0.0 {
+            cand_tp / 33_000.0
         } else {
             0.0
-        }
+        };
+        base_eff * (1.0 + 2.0 * speed_ratio)
     }
 
     pub fn new(
@@ -450,6 +475,10 @@ mod tests {
         assert!((score - (100.0 / 1.3)).abs() < 1e-3);
 
         assert_eq!(ModelPricing::calculate_efficiency_score(0.0, eff), 0.0);
+        assert_eq!(ModelPricing::calculate_efficiency_score(50.0, eff), 0.0);
+
+        let tp_score = ModelPricing::calculate_throughput_score(100.0, eff, Some(30_000.0), Some(30_000.0));
+        assert!((tp_score - (score * 3.0)).abs() < 1e-3);
     }
 
     #[test]

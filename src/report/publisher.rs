@@ -83,8 +83,11 @@ impl RunPublisher {
             total_cost_usd: manifest.cost_usd,
             effective_cost_usd: manifest.effective_cost_usd,
             duration_seconds: Some(manifest.duration_seconds),
+            turns: manifest.turns,
             savings_percent: manifest.savings_percent,
             efficiency_score: manifest.efficiency_score,
+            throughput_score: manifest.throughput_score,
+            reference_throughput_req_sec: manifest.reference_throughput_req_sec,
             timestamp: manifest.completed_at.clone(),
             method_version: manifest.method_version.clone(),
         };
@@ -188,7 +191,20 @@ impl RunPublisher {
             m.pass_rate, m.passed_stages, m.total_stages
         ));
         if let Some(tp) = m.throughput_req_sec {
-            md.push_str(&format!("- **Throughput**: {:.0} req/sec\n", tp));
+            if let Some(ref_tp) = m.reference_throughput_req_sec {
+                md.push_str(&format!(
+                    "- **Throughput**: {:.0} req/sec (Reference: {:.0} req/sec, {:.1}% of ref)\n",
+                    tp, ref_tp, (tp / ref_tp) * 100.0
+                ));
+            } else {
+                md.push_str(&format!("- **Throughput**: {:.0} req/sec\n", tp));
+            }
+        }
+        if let Some(tp_score) = m.throughput_score {
+            md.push_str(&format!(
+                "- **Throughput Score**: **{:.1} pts/¢**\n",
+                tp_score
+            ));
         }
         md.push_str(&format!("- **API Cost**: ${:.4} USD\n", m.cost_usd));
         if let Some(eff_cost) = m.effective_cost_usd {
@@ -205,6 +221,9 @@ impl RunPublisher {
             "- **Execution Duration**: {:.1}s\n",
             m.duration_seconds
         ));
+        if let Some(turns) = m.turns {
+            md.push_str(&format!("- **Turns Taken**: {}\n", turns));
+        }
         md.push_str(&format!(
             "- **Tokens**: {} total ({} prompt, {} cached, {} completion)\n\n",
             m.tokens.total_tokens, m.tokens.prompt_tokens, m.tokens.cached_tokens, m.tokens.completion_tokens
@@ -280,6 +299,7 @@ mod tests {
             started_at: "2026-09-04T11:58:00Z".to_string(),
             completed_at: "2026-09-04T12:00:00Z".to_string(),
             duration_seconds: 120.0,
+            turns: Some(6),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,
@@ -298,6 +318,7 @@ mod tests {
                 },
             ],
             throughput_req_sec: Some(55000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 1000,
                 cached_tokens: 500,
@@ -308,6 +329,7 @@ mod tests {
             effective_cost_usd: Some(0.015),
             savings_percent: 50.0,
             efficiency_score: 100.0,
+            throughput_score: Some(254.9),
             files: vec![FileInfo {
                 name: "main.rs".to_string(),
                 size_bytes: 1234,
@@ -387,11 +409,13 @@ mod tests {
             started_at: "2026-09-04T12:00:00Z".to_string(),
             completed_at: "2026-09-04T12:01:00Z".to_string(),
             duration_seconds: 60.0,
+            turns: Some(3),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,
             stages: vec![],
             throughput_req_sec: Some(40000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 500,
                 cached_tokens: 0,
@@ -402,6 +426,7 @@ mod tests {
             effective_cost_usd: Some(0.008),
             savings_percent: 0.0,
             efficiency_score: 200.0,
+            throughput_score: Some(425.4),
             files: vec![],
             env: None,
             git_commit: None,

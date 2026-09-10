@@ -96,6 +96,9 @@ impl SandboxManager {
                 &net,
                 "--network-alias",
                 "ref-redis",
+                "--memory=2g",
+                "--cpus=2.0",
+                "--pids-limit=256",
                 "-p",
                 &format!("{}:6379", port),
                 "redis:alpine",
@@ -126,8 +129,9 @@ impl SandboxManager {
                 &net,
                 "--network-alias",
                 "ref-http",
-                "--memory=512m",
-                "--cpus=1.0",
+                "--memory=2g",
+                "--cpus=2.0",
+                "--pids-limit=256",
                 "-p",
                 &format!("{}:80", port),
                 "nginx:alpine",
@@ -185,6 +189,29 @@ impl SandboxManager {
 
     fn coredns_corefile_path(instance_id: &str) -> PathBuf {
         std::env::temp_dir().join(format!("subdollar-coredns-{}.corefile", instance_id))
+    }
+
+    fn find_go_main_recursive(dir: &Path) -> Option<PathBuf> {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("go") {
+                    if let Ok(content) = fs::read_to_string(&p) {
+                        if content.contains("package main") && content.contains("func main()") {
+                            return Some(p);
+                        }
+                    }
+                } else if p.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.starts_with('.') && name != "target" && name != "node_modules" && name != "vendor" {
+                        if let Some(found) = Self::find_go_main_recursive(&p) {
+                            return Some(found);
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Recursively find a file by name within directory
@@ -257,6 +284,27 @@ impl SandboxManager {
                     let _ = fs::write(&root_start_sh, bridge_content);
                     return Ok(true);
                 }
+            }
+        }
+
+        // Search for any Go file with 'package main' and 'func main()'
+        if let Some(main_go) = Self::find_go_main_recursive(workdir) {
+            if let Ok(rel) = main_go.strip_prefix(workdir) {
+                let parent = rel.parent().unwrap_or(Path::new(""));
+                let cd_part = if parent.as_os_str().is_empty() {
+                    "".to_string()
+                } else {
+                    format!("cd /workspace/{}\n", parent.display())
+                };
+                let bridge = format!("#!/bin/bash\n{}exec go run .\n", cd_part);
+                info!("Found Go main at {:?}. Synthesizing root start.sh...", main_go);
+                let _ = fs::write(&root_start_sh, bridge);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&root_start_sh, fs::Permissions::from_mode(0o755));
+                }
+                return Ok(true);
             }
         }
 

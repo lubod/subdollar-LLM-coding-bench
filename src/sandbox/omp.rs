@@ -22,7 +22,7 @@ pub struct AgentExecutionLimits {
 impl Default for AgentExecutionLimits {
     fn default() -> Self {
         Self {
-            max_turns: Some(15),
+            max_turns: Some(50),
             max_budget_usd: Some(0.50),
             timeout_seconds: Some(900), // 15 minutes default
         }
@@ -488,7 +488,14 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
                     let trimmed = line.trim();
-                    if !trimmed.is_empty() {
+                    // If session file tailing is active, stdout mostly duplicates assistant text.
+                    // Only forward non-empty stdout if it contains system, error, or container notifications.
+                    if !trimmed.is_empty()
+                        && (trimmed.starts_with('[')
+                            || trimmed.starts_with("Error")
+                            || trimmed.starts_with("warn")
+                            || trimmed.starts_with("fatal"))
+                    {
                         let _ = tx_out.send(trimmed.to_string());
                     }
                 }
@@ -686,13 +693,30 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
         let mut reader = BufReader::new(file);
         let mut line_buf = String::new();
 
+        let mut last_activity = std::time::Instant::now();
+        let mut last_heartbeat = std::time::Instant::now();
+
         while ctx.running.load(Ordering::SeqCst) {
             line_buf.clear();
             match reader.read_line(&mut line_buf) {
                 Ok(0) => {
-                    thread::sleep(Duration::from_millis(200));
+                    let cur_turns = ctx.turn_counter.load(Ordering::SeqCst);
+                    let max_t = ctx.limits.max_turns.unwrap_or(0);
+                    let elapsed = last_activity.elapsed().as_secs();
+                    if elapsed >= 3 && last_heartbeat.elapsed() >= Duration::from_secs(3) {
+                        last_heartbeat = std::time::Instant::now();
+                        let max_str = if max_t > 0 { max_t.to_string() } else { "∞".to_string() };
+                        let _ = ctx.tx.send(format!(
+                            "[WAITING] Turn {}/{} in progress: Model is reasoning and generating response... (elapsed: {}s)",
+                            cur_turns + 1,
+                            max_str,
+                            elapsed
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(150));
                 }
                 Ok(_) => {
+                    last_activity = std::time::Instant::now();
                     if line_buf.ends_with('\n') {
                         // Check limits & telemetry in session line
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line_buf.trim())
@@ -873,39 +897,33 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
             .and_then(|m| m.get("role"))
             .and_then(|s| s.as_str());
 
-        if custom_type == Some("tool_execution_start") {
-            if let Some(d) = v.get("data") {
-                let tool = d.get("toolName").and_then(|s| s.as_str()).unwrap_or("tool");
-                let intent = d.get("intent").and_then(|s| s.as_str()).unwrap_or("");
-                if intent.is_empty() {
-                    results.push(format!("[ACTION] {}", tool));
-                } else {
-                    results.push(format!("[ACTION] {}: {}", tool, intent));
+        // 1. User Task Instructions & Directives
+        if role == Some("user") {
+            let mut text = String::new();
+            if let Some(msg) = v.get("message") {
+                if let Some(c_arr) = msg.get("content").and_then(|c| c.as_array()) {
+                    for part in c_arr {
+                        if let Some(t) = part.get("text").and_then(|s| s.as_str()) {
+                            text.push_str(t);
+                        }
+                    }
+                } else if let Some(s) = msg.get("content").and_then(|c| c.as_str()) {
+                    text.push_str(s);
                 }
-                if let Some(args) = d.get("args") {
-                    if let Some(cmd) = args.get("command").and_then(|s| s.as_str()) {
-                        for line in cmd.lines() {
-                            let t = line.trim();
-                            if !t.is_empty() {
-                                results.push(format!("  $ {}", t));
-                            }
-                        }
-                    } else if let Some(p) = args.get("path").and_then(|s| s.as_str()) {
-                        results.push(format!("  path: {}", p));
-                    } else if let Some(code) = args.get("code").and_then(|s| s.as_str()) {
-                        let lines_vec: Vec<&str> = code.lines().collect();
-                        for (i, c_line) in lines_vec.iter().enumerate() {
-                            if i < 20 {
-                                results.push(format!("  | {}", c_line));
-                            } else {
-                                results.push(format!("  | ... (+{} lines)", lines_vec.len() - 20));
-                                break;
-                            }
-                        }
+            }
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                results.push("[PROMPT] Task Instructions & Directives:".to_string());
+                for l in trimmed.lines() {
+                    let clean = l.trim();
+                    if !clean.is_empty() {
+                        results.push(format!("  | {}", clean));
                     }
                 }
             }
-        } else if role == Some("assistant") {
+        }
+        // 2. Assistant Turn: Thoughts, Text Response, and Tool Calls (with code preview)
+        else if role == Some("assistant") {
             if let Some(msg) = v.get("message") {
                 if let Some(usage) = msg.get("usage") {
                     let tin = usage
@@ -951,14 +969,128 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
                                     }
                                 }
                             }
+                        } else if item_type == Some("toolCall")
+                            || item_type == Some("function_call")
+                            || item_type == Some("tool_use")
+                        {
+                            let tool = item
+                                .get("name")
+                                .or_else(|| item.get("toolName"))
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("tool");
+                            let intent = item.get("intent").and_then(|s| s.as_str()).unwrap_or("");
+                            if intent.is_empty() {
+                                results.push(format!("[ACTION] {}", tool));
+                            } else {
+                                results.push(format!("[ACTION] {}: {}", tool, intent));
+                            }
+
+                            // Extract arguments (either JSON object or stringified JSON)
+                            let maybe_args = item
+                                .get("arguments")
+                                .cloned()
+                                .or_else(|| item.get("args").cloned())
+                                .or_else(|| item.get("input").cloned());
+                            let args_val = match maybe_args {
+                                Some(serde_json::Value::Object(map)) => {
+                                    Some(serde_json::Value::Object(map))
+                                }
+                                Some(serde_json::Value::String(s)) => {
+                                    serde_json::from_str::<serde_json::Value>(&s).ok()
+                                }
+                                _ => None,
+                            };
+
+                            if let Some(args) = args_val {
+                                if let Some(cmd) = args.get("command").and_then(|s| s.as_str()) {
+                                    for line in cmd.lines() {
+                                        let t = line.trim();
+                                        if !t.is_empty() {
+                                            results.push(format!("  $ {}", t));
+                                        }
+                                    }
+                                } else if let Some(p) = args.get("path").and_then(|s| s.as_str()) {
+                                    results.push(format!("  path: {}", p));
+                                }
+
+                                if let Some(content) = args
+                                    .get("content")
+                                    .or_else(|| args.get("code"))
+                                    .and_then(|s| s.as_str())
+                                {
+                                    let lines_vec: Vec<&str> = content.lines().collect();
+                                    for (i, c_line) in lines_vec.iter().enumerate() {
+                                        if i < 35 {
+                                            results.push(format!("  | {}", c_line));
+                                        } else {
+                                            results.push(format!(
+                                                "  | ... (+{} lines omitted)",
+                                                lines_vec.len() - 35
+                                            ));
+                                            break;
+                                        }
+                                    }
+                                } else if let Some(old_s) = args.get("oldText").or_else(|| args.get("old_str")).and_then(|s| s.as_str()) {
+                                    results.push(format!("  - {}", old_s.lines().next().unwrap_or("")));
+                                    if let Some(new_s) = args.get("newText").or_else(|| args.get("new_str")).and_then(|s| s.as_str()) {
+                                        results.push(format!("  + {}", new_s.lines().next().unwrap_or("")));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-        } else if role == Some("toolResult") {
+        }
+        // 3. Tool Execution Start
+        else if custom_type == Some("tool_execution_start") {
+            if let Some(d) = v.get("data") {
+                let tool = d.get("toolName").and_then(|s| s.as_str()).unwrap_or("tool");
+                let intent = d.get("intent").and_then(|s| s.as_str()).unwrap_or("");
+                if intent.is_empty() {
+                    results.push(format!("[ACTION] {}", tool));
+                } else {
+                    results.push(format!("[ACTION] {}: {}", tool, intent));
+                }
+                if let Some(args) = d.get("args") {
+                    if let Some(cmd) = args.get("command").and_then(|s| s.as_str()) {
+                        for line in cmd.lines() {
+                            let t = line.trim();
+                            if !t.is_empty() {
+                                results.push(format!("  $ {}", t));
+                            }
+                        }
+                    } else if let Some(p) = args.get("path").and_then(|s| s.as_str()) {
+                        results.push(format!("  path: {}", p));
+                    }
+
+                    if let Some(content) = args
+                        .get("content")
+                        .or_else(|| args.get("code"))
+                        .and_then(|s| s.as_str())
+                    {
+                        let lines_vec: Vec<&str> = content.lines().collect();
+                        for (i, c_line) in lines_vec.iter().enumerate() {
+                            if i < 20 {
+                                results.push(format!("  | {}", c_line));
+                            } else {
+                                results.push(format!(
+                                    "  | ... (+{} lines)",
+                                    lines_vec.len() - 20
+                                ));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 4. Tool Execution Results (OpenAI 'tool' or OMP 'toolResult')
+        else if role == Some("toolResult") || role == Some("tool") {
             if let Some(msg) = v.get("message") {
                 let tool = msg
                     .get("toolName")
+                    .or_else(|| msg.get("name"))
                     .and_then(|s| s.as_str())
                     .unwrap_or("tool");
                 let is_err = msg
@@ -993,6 +1125,12 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
                     }
                 }
             }
+        }
+        // 5. System Interventions and Guards
+        else if custom_type == Some("thinking-loop-redirect") {
+            results.push("[SYSTEM INTERRUPT] Loop guard triggered: repetitive reasoning detected, agent was redirected.".to_string());
+        } else if custom_type == Some("session_exit") {
+            results.push("[SESSION] Agent session concluded.".to_string());
         }
 
         if results.is_empty() {
@@ -1125,6 +1263,53 @@ CRITICAL DIRECTIVES FOR AUTONOMOUS AGENT EXECUTION:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_format_session_line_user_prompt() {
+        let json_user = r#"{
+            "message": {
+                "role": "user",
+                "content": [{"type": "text", "text": "Build a Redis server on port 6379"}]
+            }
+        }"#;
+        let res = OmpRunner::format_session_line(json_user).unwrap();
+        assert!(res.iter().any(|s| s.contains("[PROMPT] Task Instructions & Directives:")));
+        assert!(res.iter().any(|s| s.contains("| Build a Redis server on port 6379")));
+    }
+
+    #[test]
+    fn test_format_session_line_assistant_tool_call_with_code() {
+        let json_assistant = serde_json::json!({
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "Writing the main logic"},
+                    {
+                        "type": "toolCall",
+                        "name": "write",
+                        "intent": "Create main.rs",
+                        "arguments": {
+                            "path": "main.rs",
+                            "content": "fn main() {\n    println!(\"hello\");\n}"
+                        }
+                    }
+                ]
+            }
+        }).to_string();
+        let res = OmpRunner::format_session_line(&json_assistant).unwrap();
+        assert!(res.iter().any(|s| s.contains("[THOUGHT] Writing the main logic")));
+        assert!(res.iter().any(|s| s.contains("[ACTION] write: Create main.rs")));
+        assert!(res.iter().any(|s| s.contains("path: main.rs")));
+        assert!(res.iter().any(|s| s.contains("| fn main() {")));
+        assert!(res.iter().any(|s| s.contains("println!(\"hello\");")));
+    }
+
+    #[test]
+    fn test_format_session_line_system_interrupt() {
+        let json_interrupt = r#"{"customType": "thinking-loop-redirect"}"#;
+        let res = OmpRunner::format_session_line(json_interrupt).unwrap();
+        assert!(res.iter().any(|s| s.contains("[SYSTEM INTERRUPT] Loop guard triggered")));
+    }
 
     #[test]
     fn test_format_session_line_tool_start() {

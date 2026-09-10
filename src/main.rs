@@ -164,12 +164,12 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
             }
         }
 
-        Commands::Leaderboard { results_dir } => {
+        Commands::Leaderboard { results_dir, task } => {
             let all = LeaderboardManager::load_all(&results_dir);
             if all.is_empty() {
                 println!("No benchmark results found in {}", results_dir);
             } else {
-                LeaderboardManager::print_table(&all);
+                LeaderboardManager::print_leaderboard_views(&all, &task);
             }
         }
 
@@ -242,6 +242,7 @@ mod tests {
         let cli_empty = Cli {
             command: Commands::Leaderboard {
                 results_dir: temp_dir.to_string_lossy().to_string(),
+                task: "all".to_string(),
             },
         };
         assert!(run_cli(cli_empty).await.is_ok());
@@ -256,14 +257,17 @@ mod tests {
             passed_stages: 4,
             total_stages: 4,
             throughput_req_sec: Some(1000.0),
+            reference_throughput_req_sec: Some(71000.0),
             prompt_tokens: 100,
             cached_tokens: 50,
             completion_tokens: 20,
             total_cost_usd: 0.01,
             effective_cost_usd: Some(0.015),
             duration_seconds: Some(60.0),
+            turns: Some(4),
             savings_percent: 10.0,
             efficiency_score: 100.0,
+            throughput_score: Some(102.8),
             timestamp: "2026-09-04T12:00:00Z".to_string(),
             method_version: Some("0.1.0".to_string()),
         };
@@ -272,6 +276,7 @@ mod tests {
         let cli_with_res = Cli {
             command: Commands::Leaderboard {
                 results_dir: temp_dir.to_string_lossy().to_string(),
+                task: "redis".to_string(),
             },
         };
         assert!(run_cli(cli_with_res).await.is_ok());
@@ -372,11 +377,13 @@ mod tests {
             started_at: "2026-09-04T12:00:00Z".to_string(),
             completed_at: "2026-09-04T12:01:00Z".to_string(),
             duration_seconds: 60.0,
+            turns: Some(3),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,
             stages: Vec::new(),
             throughput_req_sec: Some(1000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 100,
                 cached_tokens: 50,
@@ -387,6 +394,7 @@ mod tests {
             effective_cost_usd: Some(0.015),
             savings_percent: 10.0,
             efficiency_score: 100.0,
+            throughput_score: Some(102.8),
             files: Vec::new(),
             env: None,
             git_commit: None,

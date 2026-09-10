@@ -80,12 +80,17 @@ fn default_trials() -> u32 {
     1
 }
 
+fn default_max_turns() -> u32 {
+    50
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RunRequest {
     pub model: String,
     pub task: String,
     pub api_key: Option<String>,
     pub budget_usd: f64,
+    #[serde(default = "default_max_turns")]
     pub max_turns: u32,
     pub eval_only: bool,
     #[serde(default)]
@@ -301,7 +306,7 @@ impl UiServer {
         if repo.exists() {
             let _ = std::env::set_current_dir(&repo);
         }
-        let (log_sender, _) = broadcast::channel(500);
+        let (log_sender, _) = broadcast::channel(4096);
         let state = AppState {
             log_sender,
             is_running: Arc::new(AtomicBool::new(false)),
@@ -478,9 +483,20 @@ async fn save_prompt(
     }
 }
 
-async fn get_leaderboard() -> Json<Vec<BenchmarkRunResult>> {
+#[derive(Deserialize)]
+pub struct LeaderboardQuery {
+    pub task: Option<String>,
+}
+
+async fn get_leaderboard(Query(query): Query<LeaderboardQuery>) -> Json<Vec<BenchmarkRunResult>> {
     let r_dir = resolve_results_dir();
-    let list = LeaderboardManager::load_all(r_dir.to_str().unwrap_or("./results"));
+    let mut list = LeaderboardManager::load_all(r_dir.to_str().unwrap_or("./results"));
+    if let Some(task_filter) = query.task {
+        let trimmed = task_filter.trim();
+        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("all") {
+            list.retain(|r| r.task.eq_ignore_ascii_case(trimmed));
+        }
+    }
     Json(list)
 }
 
@@ -1091,7 +1107,9 @@ async fn stream_logs(
             let clean = line.replace("\r", "").replace("\n", " ");
             Some(Ok(Event::default().data(clean)))
         }
-        Err(_) => None,
+        Err(_) => {
+            Some(Ok(Event::default().data("[STREAM NOTICE] Event burst: log stream caught up (full log preserved in console)".to_string())))
+        }
     });
 
     let combined = initial_stream.chain(live_stream);
@@ -1455,11 +1473,13 @@ mod tests {
             started_at: "2026-09-04T12:00:00Z".to_string(),
             completed_at: "2026-09-04T12:01:00Z".to_string(),
             duration_seconds: 60.0,
+            turns: Some(3),
             pass_rate: 75.0,
             passed_stages: 3,
             total_stages: 4,
             stages: Vec::new(),
             throughput_req_sec: Some(40000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 1000,
                 cached_tokens: 500,
@@ -1470,6 +1490,7 @@ mod tests {
             effective_cost_usd: Some(0.055),
             savings_percent: 25.0,
             efficiency_score: 15.0,
+            throughput_score: Some(31.9),
             files: Vec::new(),
             env: None,
             git_commit: None,
@@ -1486,11 +1507,13 @@ mod tests {
             started_at: "2026-09-04T12:05:00Z".to_string(),
             completed_at: "2026-09-04T12:06:00Z".to_string(),
             duration_seconds: 50.0,
+            turns: Some(4),
             pass_rate: 100.0,
             passed_stages: 4,
             total_stages: 4,
             stages: Vec::new(),
             throughput_req_sec: Some(55000.0),
+            reference_throughput_req_sec: Some(71000.0),
             tokens: RunTokenUsage {
                 prompt_tokens: 1500,
                 cached_tokens: 600,
@@ -1501,6 +1524,7 @@ mod tests {
             effective_cost_usd: Some(0.085),
             savings_percent: 20.0,
             efficiency_score: 12.5,
+            throughput_score: Some(31.9),
             files: Vec::new(),
             env: None,
             git_commit: None,
