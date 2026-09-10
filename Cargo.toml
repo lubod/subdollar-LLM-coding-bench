@@ -1,10 +1,10 @@
 [package]
-name = "subdollar-bench"
+name = "subdollarbench"
 version = "0.2.0"
 edition = "2021"
 description = "Autonomous under-$1 system-building benchmark for budget LLMs"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/lubod/subdollar-LLM-coding-bench"
+repository = "https://github.com/lubod/subdollarbench"
 
 [dependencies]
 tokio = { version = "1.38", features = ["full"] }

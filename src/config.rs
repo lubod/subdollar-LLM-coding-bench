@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "subdollar-bench")]
+#[command(name = "subdollarbench")]
 #[command(about = "Autonomous Under-$1 System-Building Benchmark for Budget LLMs", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -200,7 +200,7 @@ pub fn get_repo_root() -> PathBuf {
         }
     }
 
-    let default_vm = PathBuf::from("/home/ubuntu/subdollar-LLM-coding-bench");
+    let default_vm = PathBuf::from("/home/ubuntu/subdollarbench");
     if default_vm.exists() {
         return default_vm;
     }
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_run() {
         let args = [
-            "subdollar-bench",
+            "subdollarbench",
             "run",
             "--model",
             "test-model",
@@ -286,7 +286,7 @@ mod tests {
         }
 
         let args_http = [
-            "subdollar-bench",
+            "subdollarbench",
             "run",
             "--model",
             "test-model-2",
@@ -326,7 +326,7 @@ mod tests {
         }
 
         let args_key = [
-            "subdollar-bench",
+            "subdollarbench",
             "run",
             "--model",
             "m",
@@ -344,7 +344,7 @@ mod tests {
         }
 
         std::env::set_var("OPENROUTER_API_KEY", "sk-env-key-123");
-        let args_env = ["subdollar-bench", "run", "--model", "m", "--task", "redis"];
+        let args_env = ["subdollarbench", "run", "--model", "m", "--task", "redis"];
         let cli_env = Cli::try_parse_from(args_env).unwrap();
         match cli_env.command {
             Commands::Run { api_key, .. } => {
@@ -355,7 +355,7 @@ mod tests {
         std::env::remove_var("OPENROUTER_API_KEY");
 
         let args_short = [
-            "subdollar-bench",
+            "subdollarbench",
             "run",
             "-m",
             "test-model-3",
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_eval() {
         let args = [
-            "subdollar-bench",
+            "subdollarbench",
             "eval",
             "--task",
             "redis",
@@ -403,7 +403,7 @@ mod tests {
             _ => panic!("Expected Eval command"),
         }
 
-        let args2 = ["subdollar-bench", "eval", "--task", "http"];
+        let args2 = ["subdollarbench", "eval", "--task", "http"];
         let cli2 = Cli::try_parse_from(args2).unwrap();
         match cli2.command {
             Commands::Eval { task, port } => {
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_leaderboard() {
         let args = [
-            "subdollar-bench",
+            "subdollarbench",
             "leaderboard",
             "--results-dir",
             "./custom_results",
@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_portal() {
         let args = [
-            "subdollar-bench",
+            "subdollarbench",
             "portal",
             "--out",
             "./public",
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_summary() {
         let args = [
-            "subdollar-bench",
+            "subdollarbench",
             "summary",
             "--runs-dir",
             "./test_runs",
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_ui() {
         let args = [
-            "subdollar-bench",
+            "subdollarbench",
             "ui",
             "--port",
             "8080",
@@ -505,7 +505,7 @@ mod tests {
             _ => panic!("Expected Ui command"),
         }
 
-        let args_default = ["subdollar-bench", "ui"];
+        let args_default = ["subdollarbench", "ui"];
         let cli_default = Cli::try_parse_from(args_default).unwrap();
         match cli_default.command {
             Commands::Ui { port, host } => {

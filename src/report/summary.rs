@@ -274,8 +274,8 @@ impl SummaryGenerator {
 
         md.push_str("### 2. Clone the Repository\n");
         md.push_str("```bash\n");
-        md.push_str("git clone https://github.com/username/subdollar-LLM-coding-bench.git\n");
-        md.push_str("cd subdollar-LLM-coding-bench\n");
+        md.push_str("git clone https://github.com/username/subdollarbench.git\n");
+        md.push_str("cd subdollarbench\n");
         md.push_str("export OPENROUTER_API_KEY=\"sk-or-v1-your-key-here\"\n");
         md.push_str("```\n\n");
 

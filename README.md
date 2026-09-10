@@ -1,8 +1,8 @@
-# 🏆 subdollar-LLM-coding-bench
+# 🏆 subdollarbench
 
 > **Autonomous, Under-$1 Systems Engineering Benchmark for Budget & Flash LLMs**
 
-`subdollar-LLM-coding-bench` is a reproducible, fully isolated benchmarking framework designed to evaluate budget / flash LLMs (< $1.00 / 1M tokens) on real-world systems programming tasks.
+`subdollarbench` is a reproducible, fully isolated benchmarking framework designed to evaluate budget / flash LLMs (< $1.00 / 1M tokens) on real-world systems programming tasks.
 
 Instead of evaluating trivial single-function code snippets ([HumanEval](https://github.com/openai/human-eval)) or relying on heavyweight, multi-hour git patches on legacy repos ([SWE-bench](https://www.swebench.com/)), this benchmark challenges models to **autonomously design, implement, debug, package, and optimize complete protocol-compliant network servers from scratch**.
 
@@ -90,8 +90,8 @@ Instead of evaluating trivial single-function code snippets ([HumanEval](https:/
 
 ### 2. Build the Multi-Language Sandbox Image
 ```bash
-git clone https://github.com/username/subdollar-LLM-coding-bench.git
-cd subdollar-LLM-coding-bench
+git clone https://github.com/username/subdollarbench.git
+cd subdollarbench
 docker build -t subdollar-sandbox -f Dockerfile.sandbox .
 ```
 
@@ -134,7 +134,7 @@ cargo run --release -- run \
 
 #### CLI Options Reference
 ```text
-Usage: subdollar-bench run [OPTIONS] --model <MODEL>
+Usage: subdollarbench run [OPTIONS] --model <MODEL>
 
 Options:
   -m, --model <MODEL>            OpenRouter model ID (e.g. openrouter/deepseek/deepseek-chat)

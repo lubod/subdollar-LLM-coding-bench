@@ -1,7 +1,7 @@
 use std::fs;
-use subdollar_bench::cost::ModelPricing;
-use subdollar_bench::report::{RunArchiver, RunManifest, RunTokenUsage};
-use subdollar_bench::verifier::StageResult;
+use subdollarbench::cost::ModelPricing;
+use subdollarbench::report::{RunArchiver, RunManifest, RunTokenUsage};
+use subdollarbench::verifier::StageResult;
 
 #[test]
 fn test_traceability_archive_and_retrieval_flow() {

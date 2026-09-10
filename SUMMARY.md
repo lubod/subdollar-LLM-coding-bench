@@ -2,7 +2,7 @@
 
 > **Measuring under-$1/1M token LLMs on autonomous, production-grade SWE systems engineering tasks (Redis & HTTP/1.1) in isolated Docker sandboxes.**
 
-*Last Updated: 2026-09-10 07:45:28 UTC*
+*Last Updated: 2026-09-10 08:13:08 UTC*
 
 ## 📑 Quick Navigation
 - [📊 Global Leaderboard](#-global-leaderboard)
@@ -103,14 +103,14 @@ All runs recorded in this repository were benchmarked under identical, isolated 
 | **Rust Version** | N/A |
 | **Python Version** | Python 3.12.3 |
 | **Node.js Version** | v24.13.0 |
-| **Git Baseline** | Commit `1ed9025` (branch `master`) |
-| **Benchmark Captured** | 2026-09-10T07:45:28.384007912+00:00 |
+| **Git Baseline** | Commit `7ff2203` (branch `master`) |
+| **Benchmark Captured** | 2026-09-10T08:13:08.766072937+00:00 |
 
 ---
 
 ## 🚀 How to Reproduce & Submit Your Results
 
-Anyone can clone this repository, run benchmarks on their own models or hardware, and publish verified results.
+Anyone can clone this repository, run benchmarks on their own models or hardware; results are mirrored to the public static portal.
 
 ### 1. Prerequisites
 - **Docker**: Docker CE 24+ installed and running.
@@ -120,8 +120,8 @@ Anyone can clone this repository, run benchmarks on their own models or hardware
 
 ### 2. Clone the Repository
 ```bash
-git clone https://github.com/username/subdollar-LLM-coding-bench.git
-cd subdollar-LLM-coding-bench
+git clone https://github.com/username/subdollarbench.git
+cd subdollarbench
 export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 ```
 
@@ -135,7 +135,7 @@ cargo run --release -- ui --port 3000
 1. Select an under-$1/1M token model from the live OpenRouter catalog.
 2. Select task (`redis` or `http`) and reasoning effort (`low`, `medium`, `high`, `max`).
 3. Click **Start Benchmark Run** to watch live thoughts, tool actions, and verifications.
-4. If you are satisfied with the results, click **Publish to Git** right from the UI!
+4. Finished runs are exported to the static portal (./portal/) automatically.
 
 #### Option B: Headless CLI
 ```bash
@@ -146,14 +146,11 @@ cargo run --release -- run --task redis --model openrouter/meta/muse-spark-1.3-c
 cargo run --release -- run --task http --model openrouter/meta/muse-spark-1.3-contributor --effort low
 ```
 
-### 4. Publishing & Contributing to This Repository
-When your benchmark completes and you approve the results:
+### 4. Public Portal Mirror
+Each completed run refreshes the static portal and SUMMARY.md automatically. Sync it to your VPS:
 ```bash
-# 1. Commit run, snapshot environment info, and update SUMMARY.md:
-cargo run --release -- publish --run-id <run_id>
-
-# 2. Push to your branch and submit a Pull Request:
-git push origin my-benchmark-results
+cargo run --release -- portal --out ./portal
+rsync -az --delete ./portal/ <vps>:/srv/bench/
 ```
 Your run directory (`runs/<run_id>/`) contains:
 - `workspace/`: The complete candidate codebase produced by the model.

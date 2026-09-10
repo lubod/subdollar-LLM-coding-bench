@@ -5,12 +5,12 @@ use colored::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use subdollar_bench::config::{Cli, Commands, TaskType};
-use subdollar_bench::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
-use subdollar_bench::report::{LeaderboardManager, PortalExporter, SummaryGenerator};
-use subdollar_bench::verifier::{DnsVerifier, HttpVerifier, RedisVerifier};
-use subdollar_bench::web;
-use subdollar_bench::web::server::compute_pass_at_k;
+use subdollarbench::config::{Cli, Commands, TaskType};
+use subdollarbench::pipeline::{BenchmarkConfig, BenchmarkPipeline, PipelineLogger};
+use subdollarbench::report::{LeaderboardManager, PortalExporter, SummaryGenerator};
+use subdollarbench::verifier::{DnsVerifier, HttpVerifier, RedisVerifier};
+use subdollarbench::web;
+use subdollarbench::web::server::compute_pass_at_k;
 
 struct CliPipelineLogger;
 
@@ -49,7 +49,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
             let work_path_buf = if Path::new(&workdir).is_absolute() {
                 PathBuf::from(&workdir)
             } else {
-                subdollar_bench::config::get_repo_root().join(&workdir)
+                subdollarbench::config::get_repo_root().join(&workdir)
             };
 
             for trial_idx in 1..=total_trials {
@@ -123,7 +123,7 @@ pub async fn run_cli(cli: Cli) -> Result<()> {
                 println!("{}", "=================================".bold().magenta());
             }
 
-            let results_dir_buf = subdollar_bench::config::get_repo_root().join("results");
+            let results_dir_buf = subdollarbench::config::get_repo_root().join("results");
             let results_dir_str = results_dir_buf.to_str().unwrap_or("./results");
             let all = LeaderboardManager::load_all(results_dir_str);
             LeaderboardManager::print_table(&all);
@@ -219,7 +219,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::time::Duration;
-    use subdollar_bench::report::{BenchmarkRunResult, RunArchiver, RunManifest, RunTokenUsage};
+    use subdollarbench::report::{BenchmarkRunResult, RunArchiver, RunManifest, RunTokenUsage};
 
     #[tokio::test]
     async fn test_main_cli_leaderboard() {
@@ -319,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_main_cli_portal_export() {
-        use subdollar_bench::report::PortalExporter;
+        use subdollarbench::report::PortalExporter;
 
         let temp_dir = std::env::temp_dir().join(format!("test_main_portal_{}", std::process::id()));
         let runs_dir = temp_dir.join("runs");
@@ -487,7 +487,7 @@ mod tests {
                 }
             }
         }
-        let res_dir = subdollar_bench::config::get_repo_root().join("results");
+        let res_dir = subdollarbench::config::get_repo_root().join("results");
         if let Ok(entries) = fs::read_dir(&res_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -534,7 +534,7 @@ mod tests {
                 }
             }
         }
-        let res_dir = subdollar_bench::config::get_repo_root().join("results");
+        let res_dir = subdollarbench::config::get_repo_root().join("results");
         if let Ok(entries) = fs::read_dir(&res_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
